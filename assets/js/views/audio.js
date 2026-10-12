@@ -96,6 +96,15 @@
       }
     }
 
+    // 从单词详情页带上 #/audio?book=xx&t=秒 跳转：定位到该词
+    if (query.t != null && query.t !== '') {
+      var seekT = parseFloat(query.t) || 0;
+      seekTo(seekT);
+      audio.addEventListener('loadedmetadata', function () {
+        if (!destroyed) setActive(currentIndexByTime(seekT), true);
+      });
+    }
+
     function currentIndexByTime(t) {
       var idx = -1;
       for (var i = 0; i < words.length; i++) {

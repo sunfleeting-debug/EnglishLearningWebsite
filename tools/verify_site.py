@@ -3,7 +3,9 @@
 
 用法：
     NODE_OPTIONS= python -u tools/verify_site.py
-前提：已在 5173 端口起好静态服务（python -m http.server 5173 --bind 127.0.0.1）
+前提：已在 5173 端口起好静态服务（本仓库自带 Range 支持的服务）：
+    python tools/serve.py 5173
+（不要用 python -m http.server，它不支持 Range，音频拖动会失败）
 """
 import json
 import os
@@ -18,7 +20,7 @@ SHOTS = ROOT / "docs" / "shots"
 LOG = SHOTS / "verify.log"
 
 EXE = pathlib.Path(r"C:\Users\Lenovo\AppData\Local\ms-playwright"
-                   r"\chromium_headless_shell-1228\chrome-headless-shell-win64\chrome-headless-shell.exe")
+                   r"\chromium_headless_shell-1243\chrome-headless-shell-win64\chrome-headless-shell.exe")
 
 errors = []
 checks = []
@@ -168,6 +170,56 @@ def main():
         check("点击字幕跳转了音频进度（>30s）", cur_time > 30, True)
         active_n = pg.evaluate("() => document.querySelectorAll('.lyric-item.active').length")
         check("当前字幕被高亮", active_n >= 1, True)
+
+        # ---------- 词典卡数据 ----------
+        goto("#/")
+        dict_n = pg.evaluate("() => Object.keys(TW.DICT || {}).length")
+        check("词典卡数量 >= 2000", dict_n >= 2000, True)
+        dr_id = pg.evaluate("() => (TW.WORDS.find(w => w.word === 'drastic') || {}).id")
+        check("drastic 在词库中", bool(dr_id), True)
+
+        # ---------- 单词详情页 ----------
+        goto("#/word?id=" + str(dr_id))
+        pg.screenshot(path=str(SHOTS / "19-word-detail.png"))
+        detail_word = pg.evaluate("() => (TW.$('.dc-word') || {}).textContent")
+        check("详情页显示单词", (detail_word or "").strip(), "drastic")
+        sec_titles = pg.evaluate("() => Array.from(document.querySelectorAll('.dc-sec-title span')).map(x=>x.textContent)")
+        check("详情页含「近义词」板块", "近义词" in sec_titles, True)
+        check("详情页含「经典例句」板块", "经典例句" in sec_titles, True)
+        ex_n = pg.evaluate("() => document.querySelectorAll('.dc-ex li').length")
+        check("例句取 3 句", ex_n, 3)
+        # 例句中单词渲染成链接
+        ex_links = pg.evaluate("() => document.querySelectorAll('.dc-ex-en .wref').length")
+        check("例句内有可跳转单词链接", ex_links >= 1, True)
+        # 近义词链接可跳转
+        syn_link = pg.locator(".dc-synwords .wref").first
+        has_syn_link = syn_link.count() > 0
+        check("近义词渲染为可跳转链接", has_syn_link, True)
+        if has_syn_link:
+            target = syn_link.get_attribute("href")
+            syn_link.click()
+            pg.wait_for_timeout(600)
+            href_now = pg.evaluate("() => location.hash")
+            check("点击近义词已跳转", "#/word" in href_now and href_now == target.replace("#", "#"), True)
+
+        # 有道没有反义词的词也不应报错；找一个有反义词的词看板块
+        goto("#/")
+        ant_word = pg.evaluate("() => { for (var k in TW.DICT) { if (TW.DICT[k].ant && TW.DICT[k].ant.length) return k; } return ''; }")
+        if ant_word:
+            aw_id = pg.evaluate("(w) => (TW.WORDS.find(x => x.word.toLowerCase() === w) || {}).id", ant_word)
+            if aw_id:
+                goto("#/word?id=" + str(aw_id))
+                ant_titles = pg.evaluate("() => Array.from(document.querySelectorAll('.dc-sec-title span')).map(x=>x.textContent)")
+                check("含反义词的词显示「反义词」板块", "反义词" in ant_titles, True)
+                pg.screenshot(path=str(SHOTS / "20-word-antonym.png"))
+
+        # 从词库列表进入详情页
+        goto("#/books?book=week1")
+        first_detail = pg.locator(".wl-row a[href^='#/word']").first
+        if first_detail.count() > 0:
+            first_detail.click()
+            pg.wait_for_timeout(600)
+            check("列表「详解」入口可进入详情页", "#/word" in pg.evaluate("() => location.hash"), True)
 
         # ---------- 移动端视口 ----------
         pg.set_viewport_size({"width": 390, "height": 844})

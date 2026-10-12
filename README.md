@@ -8,12 +8,20 @@
 
 ![预览](docs/preview-home.png)
 
+![词典详解](docs/preview-word.png)
+
 ## 功能
 
 **词库**
 - 9 本词书：Week 1–7（各 250 词）+ 认知词汇 1/2（474 / 490 词），共 **2714 个词条**
 - 每个词条带美/英音标与中文释义（含词性），释义离线打包，断网可用
 - 搜索（单词 / 释义）、按学习状态筛选（未学 / 错词 / 收藏 / 已掌握）、分页浏览
+
+**词典详解（一词一卡）**
+- 点词表右侧 💡 或任意链接，进入单词详情页：**搭配 / 派生词 / 辨析 / 近义词 / 反义词 / 经典例句 / 词源**
+- **近义词、反义词、例句中的每个单词都可点击**：在本词书里的直接跳词条；不在本词书里的近义/反义词，
+  也补了「扩展词条」（音标+释义）可以点开；自动做词形还原（`measures → measure`、`drastically → drastic`、`regulations → regulation`）
+- 数据来自有道词典 jsonapi（搭配、派生、辨析、近义、例句、词源）+ Datamuse（反义词），全部离线打包
 
 **练习（四种模式）**
 | 模式 | 说明 |
@@ -72,15 +80,17 @@ python tools/serve.py -p 8080  # 换端口
 │       ├── store.js        # 学习状态（localStorage 持久化）
 │       ├── speech.js       # 语音合成 + WebAudio 音效
 │       ├── data.js         # 词库访问层
-│       ├── components.js   # 共享 UI 片段
+│       ├── components.js   # 共享 UI 片段（含单词链接 / 例句分词）
 │       ├── app.js          # 侧边导航 + hash 路由
-│       └── views/          # 各页面（首页/词库/练习/生词本/音频/统计/资料/设置）
+│       └── views/          # 各页面（首页/词库/详情/练习/生词本/音频/统计/资料/设置）
 ├── data/
 │   ├── words.json/js       # 2714 个词条（含音标、释义、音频时间轴）
+│   ├── dict.json/js        # 词典卡（搭配/派生/辨析/近义/反义/例句/词源）
+│   ├── dict-ext.json/js    # 扩展词条（近义/反义词中非本词书者，音标+释义）
 │   └── books.json/js       # 词书元信息
 ├── audio/                  # 压缩后的课程音频 + 原始字幕
 ├── resources/              # 六级阅读 PDF
-└── tools/                  # 数据构建脚本（见下）
+└── tools/                  # 数据构建与核验脚本（见下）
 ```
 
 ## 数据是怎么来的
@@ -91,6 +101,9 @@ python tools/serve.py -p 8080  # 换端口
 有道词典 jsonapi（音标+释义）─┘                             │
                                                           ▼
                                         tools/make_js_data.py ──► data/words.js
+
+有道 jsonapi（搭配/派生/辨析/近义/例句/词源）─┐
+Datamuse api（反义词）──────────────────────┴──► tools/enrich_dict.py ──► data/dict.json/js
 ```
 
 ```bash
@@ -99,11 +112,49 @@ python tools/build_data.py
 
 # 2) 把 JSON 包装成可直接 <script> 引入的 JS
 python tools/make_js_data.py
+
+# 3) 构建词典卡（一词一卡：搭配/派生/辨析/近义/反义/例句/词源）
+python tools/enrich_dict.py
+
+# 4) 为词典卡里那些不在本地词书的近义/反义词补轻量词条（让链接真正跳得动）
+python tools/build_dict_ext.py
 ```
 
 - `build_data.py` 会自动处理三类特殊写法：同形异义标记 `bass①`、拼写变体
   `specialize,-ise`、编号 `utter1`
-- 抓取结果按单词缓存到 `tools/.cache/youdao/`，重跑不会重复请求
+- 抓取结果按单词缓存到 `tools/.cache/youdao/`（词典卡为 `tools/.cache/raw/` 与
+  `tools/.cache/datamuse/`），重跑不会重复请求
+- 有道没有「反义词」字段，`enrich_dict.py` 用 Datamuse 的 `rel_ant` 补充；
+  有道没有「搭配」的词，则从例句中挖掘与该词高频共现的短语（标注为「语料搭配」）
+
+### 各板块数据覆盖率（全量 2702 词）
+
+| 板块 | 来源 | 覆盖 |
+| --- | --- | --- |
+| 释义 / 音标 | 有道 jsonapi | 100% |
+| 经典例句 | 有道 jsonapi | 99% |
+| 考频标签 | 有道 jsonapi | 99% |
+| 近义词 | 有道 syno | 94% |
+| 词源 | 有道 etym | 91% |
+| 派生词 | 有道 rel_word | 81% |
+| 搭配 | 有道 phrs（不足则语料挖掘） | 67% + 30% |
+| 辨析 | 有道 discriminate | 43% |
+| 反义词 | Datamuse rel_ant | 25% |
+| 扩展词条 | 有道 jsonapi | 5653 条（近义/反义词里非本词书者） |
+
+> 没有数据的板块会自动隐藏，不会出现空标题。
+
+## 本地核验
+
+```bash
+bash tools/verify.sh          # 起服务 + 跑 Playwright，共 32 项断言 + 20 张截图
+```
+
+核验通过的标准：`失败 0 / 共 32 项断言`，且控制台错误数 = 0。截图落在 `docs/shots/`。
+
+> 启动 Chromium 需要真实环境（用沙箱 Bash 跑 Playwright 时需关闭沙箱，否则浏览器进程会被拦截）；
+> 另外 Playwright 版本必须与已下载的 `chromium_headless_shell` 版本一致，
+> 不匹配时先执行 `python -m playwright install chromium-headless-shell`。
 
 ## 说明
 

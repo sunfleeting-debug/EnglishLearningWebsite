@@ -39,7 +39,8 @@
     var m = /^\/([a-z-]+)/.exec(path);
     var name = m ? m[1] : 'home';
     var map = {
-      home: TW.views.home, books: TW.views.books, practice: TW.views.practice,
+      home: TW.views.home, books: TW.views.books, word: TW.views.word,
+      practice: TW.views.practice,
       review: TW.views.review, audio: TW.views.audio, stats: TW.views.stats,
       resources: TW.views.resources, settings: TW.views.settings
     };
@@ -99,7 +100,8 @@
     var route = parseHash();
     var r = resolve(route.path);
     current = r;
-    renderNav(r.name);
+    // 详情页归属「词库」高亮
+    renderNav(r.name === 'word' ? 'books' : r.name);
     var host = document.getElementById('view');
     host.innerHTML = '';
     try {
