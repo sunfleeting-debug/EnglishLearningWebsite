@@ -44,18 +44,23 @@ def main():
         pg.on("pageerror", lambda e: errors.append("pageerror:" + str(e)))
         pg.on("requestfailed", lambda r: failed.append(r.url + " :: " + str(r.failure)))
 
-        pg.goto(URL, wait_until="networkidle", timeout=60000)
+        pg.goto(URL, wait_until="load", timeout=60000)
         pg.wait_for_timeout(800)
         check("标题正确", "六级单词速记" in pg.title(), True)
         check("首页渲染出内容", pg.evaluate("() => document.body.innerText.length > 50"), True)
         pg.screenshot(path=str(SHOTS / "22-live-home.png"))
 
         # 词库页
-        pg.goto(URL + "#/books?book=week1", wait_until="networkidle", timeout=60000)
+        pg.goto(URL + "#/books?book=week1", wait_until="load", timeout=60000)
         pg.wait_for_timeout(900)
         rows = pg.evaluate("() => document.querySelectorAll('#bk-list .wl-row').length")
         check("线上词库列表有词条", rows >= 10, True)
         pg.screenshot(path=str(SHOTS / "23-live-books.png"))
+
+        # 词库页点单词文本 → 进入详情页（本次修复的核心交互）
+        pg.locator("#bk-list .wl-row .wl-link").first.click()
+        pg.wait_for_timeout(900)
+        check("线上点击单词进入详情页", "#/word" in pg.evaluate("() => location.hash"), True)
 
         # 详情页（按需加载 5MB 词典数据）
         wid = pg.evaluate("() => (TW.WORDS.find(w => w.word === 'drastic') || {}).id")
@@ -78,7 +83,7 @@ def main():
             check("线上近义词跳转", "#/word" in pg.evaluate("() => location.hash"), True)
 
         # 发音：默认「自动」模式应发出在线真人音频请求（有道 dictvoice）
-        pg.goto(URL, wait_until="networkidle", timeout=60000)
+        pg.goto(URL, wait_until="load", timeout=60000)
         pg.wait_for_timeout(500)
         audio_reqs = []
         pg.on("request", lambda r: audio_reqs.append(r.url) if "dictvoice" in r.url else None)
@@ -88,7 +93,7 @@ def main():
 
         # 移动端
         pg.set_viewport_size({"width": 390, "height": 844})
-        pg.goto(URL, wait_until="networkidle", timeout=60000)
+        pg.goto(URL, wait_until="load", timeout=60000)
         pg.wait_for_timeout(800)
         ovf = pg.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
         check("线上移动端无横向溢出", ovf <= 1, True)
@@ -97,8 +102,14 @@ def main():
         check("控制台错误数 = 0", len(errors), 0)
         check("资源加载失败数 = 0", len(failed), 0)
 
-        b.close()
+        # 收尾：刻意不调用 b.close()。
+        # 本机实测它偶发挂死（详情页 + 有道音频请求挂起时 Chromium 不响应 close，
+        # 进程停在 CPU 0 永不退出，连已完成的断言结果都被一起吞掉）。
+        # 改为直接输出汇总并 os._exit，由操作系统回收 Chromium 子进程。
+        report_and_exit()
 
+
+def report_and_exit():
     print("")
     print("=== 失败项 ===")
     print("失败 %d / 共 %d 项断言" % (len([c for c in checks if not c]), len(checks)))
