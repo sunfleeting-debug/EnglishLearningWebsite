@@ -82,6 +82,7 @@ def main():
             ("11-resources", "#/resources"),
             ("11b-reading", "#/reading"),
             ("11c-reading-card", "#/reading?tab=practice&test=mt1&mode=card"),
+            ("11d-srs-empty", "#/srs"),
             ("12-settings", "#/settings"),
         ]
         for name, route in pages:
@@ -205,18 +206,122 @@ def main():
         fav_n2 = pg.evaluate("() => Object.values(TW.store.state.progress).filter(p=>p.fav).length")
         check("刷新后收藏仍在（localStorage 生效）", fav_n2, 1)
 
-        # ---------- 搜索 ----------
-        goto("#/books")
+        # ---------- 搜索（#/books 现在是「词典选择」页，搜索在具体词表里） ----------
+        goto("#/books?book=all")
         pg.fill("#bk-search", "abbreviation")
         pg.wait_for_timeout(700)
         rows = pg.evaluate("() => document.querySelectorAll('#bk-list .wl-row').length")
         check("搜索命中 1 条", rows, 1)
 
-        # ---------- 生词本分组 ----------
+        # ========== 常用词典（搬运自 qwerty-learner）==========
+        goto("#/books")
+        check("词典目录 = 12 本", pg.evaluate("() => TW.DECKS_META.length"), 12)
+        check("词条总量 = 2714 + 39087",
+              pg.evaluate("() => TW.data.totalWords()"), 2714 + 39087)
+        check("词典 id 唯一", pg.evaluate(
+            "() => { var s = {}; return TW.DECKS_META.every(function(d){ if (s[d.id]) return false; s[d.id]=1; return d.count > 0; }); }"), True)
+        check("词典选择页卡片 >= 12", pg.locator(".deck-card").count() >= 12, True)
+        check("词典选择页有分组标题", pg.locator(".deck-group-title").count() >= 3, True)
+        pg.screenshot(path=str(SHOTS / "27-deck-chooser.png"))
+
+        # 词典按需加载：打开 CET6 词表时才注入 data/dicts/cet6.js
+        goto("#/books?book=cet6", 1600)
+        check("词典清单已就绪",
+              "cet6" in pg.evaluate("() => TW.data.decksLoaded()"), True)
+        check("CET6 词表有内容",
+              pg.evaluate("() => document.querySelectorAll('#bk-list .wl-row').length") > 0, True)
+        first_id = pg.evaluate("() => document.querySelector('#bk-list .wl-row').dataset.id")
+        check("词典词条 id 形如 cet6:xxx", str(first_id).startswith("cet6:"), True)
+        check("CET6 词条数 = 2345",
+              pg.evaluate("() => TW.data.byBook('cet6').length"), 2345)
+        pg.screenshot(path=str(SHOTS / "28-deck-cet6.png"))
+
+        # 词典词进入详情页（无有道词典卡，但要能显示音标与释义）
+        pg.locator("#bk-list .wl-row .wl-link").first.click()
+        pg.wait_for_timeout(1000)
+        check("词典词可进入详情页", "#/word" in pg.evaluate("() => location.hash"), True)
+        dword = pg.evaluate("() => (TW.$('.dc-word') || {}).textContent || ''")
+        check("详情页显示词典词", bool(dword.strip()), True)
+        check("详情页标注「仅提供音标与释义」",
+              "仅提供音标与释义" in pg.evaluate("() => document.body.innerText"), True)
+        pg.screenshot(path=str(SHOTS / "29-deck-word.png"))
+
+        # 词典词表一键练习（要等词典加载完再渲染）
+        goto("#/books?book=cet6", 1600)
+        pg.click("#bk-practice")
+        pg.wait_for_timeout(1600)
+        check("词典词表可进入练习",
+              bool(pg.evaluate("() => (TW.$('#p-word') || {}).textContent || ''")), True)
+        check("练习页标注词典名",
+              "大学英语六级" in pg.evaluate("() => (TW.$('.pp-src') || {}).textContent || ''"), True)
+
+        # ========== 生词本 + 艾宾浩斯复习队列 ==========
+        pg.evaluate("() => localStorage.removeItem('typingcet.state.v1')")
+        pg.reload(wait_until="domcontentloaded")
+        pg.wait_for_timeout(900)
+        check("复习队列初始为空", pg.evaluate("() => TW.store.srs.stats().total"), 0)
+
+        # 练习里连错两次 → 判错 → 自动进入复习队列
+        goto("#/practice?book=week1&mode=type&size=3")
+        auto_word = pg.evaluate("() => TW.$('#p-word').textContent.trim()")
+        pg.fill("#p-input", "zzzzzz")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(350)
+        pg.fill("#p-input", "yyyyyy")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(600)
+        st = pg.evaluate("(w) => TW.store.srs.get(w)", auto_word)
+        check("答错的词自动进入复习队列", bool(st), True)
+        check("复习记录带来源与简释", bool(st and st.get("s") and st.get("m")), True)
+        check("新入队的词今天到期",
+              bool(st and st.get("d") == pg.evaluate("() => TW.store.today()")), True)
+        check("导航出现待复习角标", pg.locator(".nav-badge.srs").count() >= 1, True)
+
+        # 生词本（跨所有词库）
         goto("#/review?tab=wrong")
-        wrong_rows = pg.evaluate("() => document.querySelectorAll('#rv-list .wl-row').length")
-        check("错词本有序（>=1）", wrong_rows >= 1, True)
+        check("错词本包含该词", pg.evaluate(
+            "(w) => TW.data.progressItems('wrong').some(function(x){ return x.word === w; })", auto_word), True)
+        check("错词本有序",
+              pg.evaluate("() => document.querySelectorAll('#rv-list .wl-row').length") >= 1, True)
+        check("错词行显示复习档位", pg.locator("#rv-list .tag.srs").count() >= 1, True)
         pg.screenshot(path=str(SHOTS / "16-review-wrong.png"))
+        pg.click("#rv-practice-top")
+        pg.wait_for_timeout(900)
+        check("生词本「练习这组」进入生词本会话",
+              "src=collection" in pg.evaluate("() => location.hash"), True)
+        check("生词本练习页标注分组名",
+              "待攻克错词" in pg.evaluate("() => (TW.$('.pp-src') || {}).textContent || ''"), True)
+
+        # 复习页
+        goto("#/srs", 1200)
+        check("复习页今日待复习 >= 1",
+              pg.evaluate("() => TW.store.srs.dueCount()") >= 1, True)
+        check("复习页有 8 天排期条", pg.locator(".sched-col").count(), 8)
+        check("复习页有开始按钮", pg.locator("#sr-start").count(), 1)
+        pg.screenshot(path=str(SHOTS / "30-srs.png"))
+
+        # 开始复习 → 答对一次 → 升档、到期日推到明天
+        pg.click("#sr-start")
+        pg.wait_for_timeout(1000)
+        check("复习会话已开始", "src=srs" in pg.evaluate("() => location.hash"), True)
+        check("复习页练习标注「今日复习」",
+              "今日复习" in pg.evaluate("() => (TW.$('.pp-src') || {}).textContent || ''"), True)
+        rword = pg.evaluate("() => TW.$('#p-word').textContent.trim()")
+        pg.fill("#p-input", rword)
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(700)
+        rec = pg.evaluate("(w) => TW.store.srs.get(w)", rword)
+        check("答对后复习档位升到第 1 档", bool(rec and rec.get("b") == 1), True)
+        check("答对后到期日 = 明天", bool(rec and rec.get("d") == pg.evaluate(
+            "() => TW.store.addDays(TW.store.today(), 1)")), True)
+        check("今日待复习清零", pg.evaluate("() => TW.store.srs.dueCount()"), 0)
+        pg.screenshot(path=str(SHOTS / "31-srs-done.png"))
+
+        # 设置页有复习相关开关
+        goto("#/settings")
+        check("设置里有「自动加入复习队列」开关",
+              pg.locator("[data-switch='srsAuto']").count(), 1)
+        check("设置里有「清空复习队列」按钮", pg.locator("#data-srs-clear").count(), 1)
 
         # ---------- 音频页 ----------
         goto("#/audio", 1200)
@@ -247,7 +352,7 @@ def main():
         # 静态服务完整性：大文件必须原样下发。
         # 背景：serve.py 曾在 keep-alive 下把上一次 Range 请求的长度残留给下一个普通请求，
         # 导致 dict.js 响应 200 但内容被截断（详情页因此空白）。这里做字节级兜底核验。
-        for _f in ("data/dict.js", "data/dict-ext.js", "data/words.js"):
+        for _f in ("data/dict.js", "data/dict-ext.js", "data/words.js", "data/dicts/cet6.js"):
             _local = (ROOT / _f).stat().st_size
             _served = len(pg.request.get(BASE + _f).body())
             check("原样下发 " + _f, _served == _local, True,
@@ -327,6 +432,17 @@ def main():
         goto("#/practice?book=week1&mode=type")
         pg.wait_for_timeout(400)
         pg.screenshot(path=str(SHOTS / "18-mobile-practice.png"))
+        # 移动端：词典选择页 / 复习页
+        goto("#/books")
+        pg.wait_for_timeout(600)
+        pg.screenshot(path=str(SHOTS / "32-mobile-decks.png"))
+        check("移动端词典选择页无横向溢出",
+              pg.evaluate("() => document.documentElement.scrollWidth - window.innerWidth") <= 1, True)
+        goto("#/srs")
+        pg.wait_for_timeout(700)
+        pg.screenshot(path=str(SHOTS / "33-mobile-srs.png"))
+        check("移动端复习页无横向溢出",
+              pg.evaluate("() => document.documentElement.scrollWidth - window.innerWidth") <= 1, True)
         # 底部导航是否显示、横向是否溢出
         overflow = pg.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
         check("移动端无横向溢出", overflow <= 1, True)

@@ -826,3 +826,70 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 @media (prefers-reduced-motion: reduce) {
   .rt-tag, .typing-box.shake .typing-input { animation: none; }
 }
+
+/* ==========================================================================
+   词典选择（词库页）/ 艾宾浩斯复习页
+   ========================================================================== */
+
+/* ---------- 词典分组 ---------- */
+.deck-group { margin-bottom: 1.6rem; }
+.deck-group-title { margin: 0; font-size: 15px; letter-spacing: -0.2px; }
+
+/* 词典卡：比首页 book-card 多一行「浏览 / 练习」 */
+.deck-card { gap: 0.45rem; }
+.deck-card .bk-name { padding-right: 3.6rem; }
+.deck-card .bk-desc { min-height: 2.2em; }
+.deck-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.5rem; margin-top: 0.15rem;
+}
+.deck-foot .btn { pointer-events: auto; }
+
+/* ---------- 复习页 ---------- */
+.nav-badge.srs { background: var(--accent); color: #fff; }
+
+.tag.srs { background: var(--accent-2); color: var(--accent); border-color: transparent; }
+
+/* 首页的「今日复习」提示条 */
+.srs-callout { border-left: 3px solid var(--accent); }
+.srs-callout .card-title { display: flex; align-items: center; gap: 0.35rem; }
+
+/* 未来排期条 */
+.sched { display: flex; align-items: flex-end; gap: 0.4rem; height: 120px; }
+.sched-col {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  gap: 0.25rem; height: 100%; min-width: 0;
+}
+.sched-n { font-size: 11px; color: var(--text-3); font-family: var(--mono); height: 14px; }
+.sched-bar {
+  flex: 1; width: 100%; display: flex; align-items: flex-end;
+  background: var(--bg-soft); border-radius: 6px; overflow: hidden;
+}
+.sched-bar > i { display: block; width: 100%; background: var(--line); border-radius: 6px; transition: height 0.4s ease; }
+.sched-col.today .sched-bar > i { background: var(--accent); }
+.sched-lbl { font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
+.sched-col.today .sched-lbl { color: var(--accent); font-weight: 700; }
+
+/* 到期词列表 */
+.srs-list { padding: 0.15rem 0; }
+.srs-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.5rem 1.05rem; border-bottom: 1px solid var(--line-soft);
+}
+.srs-row:last-child { border-bottom: none; }
+.srs-row:hover { background: var(--card-2); }
+.sr-main { flex: 1; display: flex; align-items: baseline; gap: 0.6rem; min-width: 0; flex-wrap: wrap; }
+.sr-main .wl-link { font-family: var(--mono); font-size: 15px; font-weight: 600; }
+.sr-brief { color: var(--text-3); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+.sr-side { display: flex; align-items: center; gap: 0.3rem; flex: none; }
+
+/* 练习页顶部的当前词源 */
+.pp-src { font-size: 12px; color: var(--text-3); margin-bottom: 0.15rem; }
+
+@media (max-width: 860px) {
+  .sched { height: 96px; }
+  .sched-lbl { font-size: 9.5px; }
+  .srs-row { padding: 0.5rem 0.7rem; }
+  .sr-brief { max-width: 18ch; }
+}
+

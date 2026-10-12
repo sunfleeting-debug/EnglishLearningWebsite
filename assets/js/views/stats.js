@@ -48,40 +48,38 @@
       else if (!daily[k]) break;
     }
 
-    // 分书进度
-    var bookRows = TW.data.books.map(function (b) {
-      var list = TW.data.byBook(b.id);
-      var master = 0, touched = 0;
-      list.forEach(function (w) {
-        var p = TW.store.get(w.id);
-        if (p && p.seen > 0) touched++;
-        if (p && p.master) master++;
-      });
-      var pct = TW.pct(master, list.length);
+    // 分词书进度（周计划 9 册 + 12 本词典，靠进度快照统计，无需加载词典）
+    var srcList = TW.data.books.map(function (b) {
+      return { id: b.id, name: b.name, count: b.count, group: '六级词汇周计划' };
+    }).concat(TW.data.decks.map(function (d) {
+      return { id: d.id, name: d.name, count: d.count, group: d.group };
+    }));
+    var bookRows = srcList.map(function (b) {
+      var st = TW.store.srcStats(b.id);
+      var pct = TW.pct(st.master, b.count);
       return '<div style="margin-bottom:.85rem">' +
         '<div class="row" style="justify-content:space-between;margin-bottom:.3rem">' +
           '<span style="font-weight:600">' + TW.esc(b.name) + '</span>' +
-          '<span class="small muted">掌握 ' + master + ' / ' + list.length + ' · 已练 ' + touched + '</span>' +
+          '<span class="small muted">掌握 ' + st.master + ' / ' + b.count + ' · 已练 ' + st.touched + '</span>' +
         '</div>' +
         '<div class="progress-line ok"><i style="width:' + pct + '%"></i></div>' +
       '</div>';
     }).join('');
 
-    // 最近错词
-    var wrongs = TW.data.words.filter(function (w) {
-      var p = TW.store.get(w.id); return p && p.w > 0 && !p.master;
+    // 最近错词（跨所有词库）
+    var wrongs = TW.data.progressItems('wrong').map(function (w) {
+      var p = TW.store.get(w.id);
+      return { w: w, p: p || {} };
     }).sort(function (a, b) {
-      var pa = TW.store.get(a.id), pb = TW.store.get(b.id);
-      return pb.w - pa.w || pb.ts - pa.ts;
+      return b.p.w - a.p.w || b.p.ts - a.p.ts;
     }).slice(0, 12);
 
     var wrongHtml = wrongs.length
       ? '<div class="card"><div class="wordlist" id="st-wrong">' +
-          wrongs.map(function (w) {
-            var p = TW.store.get(w.id);
-            return '<div class="wl-row" data-id="' + w.id + '"><div class="wl-main">' +
-              '<div class="wl-word">' + TW.esc(w.word) + '<span class="tag err">错 ' + p.w + ' 次</span></div>' +
-              '<div class="wl-trans">' + TW.esc(TW.data.brief(w)) + '</div></div></div>';
+          wrongs.map(function (it) {
+            return '<div class="wl-row" data-say="' + TW.esc(it.w.word) + '"><div class="wl-main">' +
+              '<div class="wl-word">' + TW.esc(it.w.word) + '<span class="tag err">错 ' + it.p.w + ' 次</span></div>' +
+              '<div class="wl-trans">' + TW.esc(TW.data.brief(it.w)) + '</div></div></div>';
           }).join('') +
         '</div></div>'
       : TW.ui.empty('暂无错词，保持住！', '✅');
@@ -90,10 +88,11 @@
       '<div class="wrap">' +
         TW.ui.pageHead('学习统计', '数据保存在本机浏览器，换设备不会同步') +
         '<div class="grid stats" style="margin-bottom:1.2rem">' +
-          card(c.total, '词库总量', '') +
+          card(c.total, '周计划词数', '') +
           card(c.touched, '已练过', 'accent') +
           card(c.master, '已掌握', 'ok') +
           card(c.wrong, '待攻克错词', 'err') +
+          card(TW.store.srs.dueCount(), '今日待复习', 'accent') +
           card(streak, '连续学习天数', 'accent') +
         '</div>' +
 
@@ -123,8 +122,8 @@
     if (lw) lw.addEventListener('click', function (e) {
       var row = e.target.closest('.wl-row');
       if (!row) return;
-      var w = TW.data.byId(+row.dataset.id);
-      if (w) TW.speech.speak(w.word, TW.store.settings.accent);
+      var say = row.dataset.say || '';
+      if (say) TW.speech.speak(say, TW.store.settings.accent);
     });
     var rv = TW.$('#st-review', host);
     if (rv) rv.addEventListener('click', function () { TW.app.go('/review?tab=wrong'); });

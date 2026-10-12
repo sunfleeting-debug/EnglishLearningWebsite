@@ -30,6 +30,7 @@
     var acc = d.done ? Math.round((d.right / d.done) * 100) : 0;
     var lastBook = TW.store.state.lastBook;
     var lastBk = lastBook ? TW.data.getBook(lastBook) : null;
+    var srs = TW.store.srs.stats();
 
     var booksHtml = TW.data.books.map(function (b) {
       var pr = bookProgress(b);
@@ -49,22 +50,33 @@
       '<div class="wrap">' +
         '<div class="hero">' +
           '<h1>' + greeting() + '，今天也来背几个词吧</h1>' +
-          '<p>词库来自你整理的「六级词汇周计划音频」字幕，共 ' + c.total + ' 个单词，按 7 个周计划与 2 册认知词汇分组。练习记录保存在本机浏览器中。</p>' +
+          '<p>共 ' + TW.data.totalWords() + ' 个单词：六级词汇周计划（' + c.total + ' 词）' +
+            ' 加上 ' + TW.data.decks.length + ' 本常用词典。练习记录保存在本机浏览器中。</p>' +
           '<div class="row">' +
             (lastBk
               ? '<button class="btn primary" id="btn-continue">' + TW.icon('play', 16) + ' 继续「' + TW.esc(lastBk.name) + '」</button>'
               : '<button class="btn primary" id="btn-start">' + TW.icon('play', 16) + ' 开始学习</button>') +
             '<button class="btn" id="btn-random">' + TW.icon('shuffle', 16) + ' 随机练习</button>' +
-            '<button class="btn ghost" id="btn-audio">' + TW.icon('headphone', 16) + ' 音频跟读</button>' +
+            '<button class="btn ghost" id="btn-decks">' + TW.icon('book', 16) + ' 选词典</button>' +
           '</div>' +
         '</div>' +
 
+        (srs.due
+          ? '<div class="card card-pad srs-callout" style="margin-bottom:1.2rem">' +
+              '<div class="row" style="justify-content:space-between">' +
+                '<div><div class="card-title">' + TW.icon('refresh', 15) + ' 今日复习</div>' +
+                  '<div class="small muted">按艾宾浩斯曲线，今天有 <b>' + srs.due + '</b> 个词到期</div></div>' +
+                '<button class="btn primary" id="btn-srs">' + TW.icon('play', 16) + ' 开始复习</button>' +
+              '</div>' +
+            '</div>'
+          : '') +
+
         '<div class="grid stats" style="margin-bottom:1.2rem">' +
-          statCard(c.total, '词库总量', 'accent') +
+          statCard(c.total, '周计划词数', 'accent') +
           statCard(c.touched, '已练过的词', '') +
           statCard(c.master, '已掌握', 'ok') +
           statCard(c.wrong, '待攻克错词', 'err') +
-          statCard(c.fav, '收藏', 'fav') +
+          statCard(srs.due, '今日待复习', srs.due ? 'accent' : '') +
         '</div>' +
 
         '<div class="card card-pad" style="margin-bottom:1.2rem">' +
@@ -100,8 +112,11 @@
       var id = TW.data.books[Math.floor(Math.random() * TW.data.books.length)].id;
       TW.app.go('/practice?book=' + id + '&order=random');
     });
-    TW.$('#btn-audio', host).addEventListener('click', function () { TW.app.go('/audio'); });
-    TW.$('#btn-all-books', host).addEventListener('click', function () { TW.app.go('/books'); });
+    var db = TW.$('#btn-decks', host);
+    if (db) db.addEventListener('click', function () { TW.app.go('/books'); });
+    var sb = TW.$('#btn-srs', host);
+    if (sb) sb.addEventListener('click', function () { TW.app.go('/srs'); });
+    TW.$('#btn-all-books', host).addEventListener('click', function () { TW.app.go('/books?book=all'); });
   }
 
   TW.views.home = { render: render };

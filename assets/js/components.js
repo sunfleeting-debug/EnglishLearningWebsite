@@ -14,18 +14,19 @@
       '<button class="star-btn master' + (p.master ? ' on' : '') + '" data-act="master" data-id="' + w.id + '" title="已掌握">' + TW.icon('check') + '</button>';
     // 注意：词典卡改为「按需加载」，列表渲染时还没有 dict 数据，所以这里不再判断有无卡片，一律给入口
     var detailBtn = opts.noCard ? '' :
-      '<a class="star-btn" href="#/word?id=' + w.id + '" title="词典详解">' + TW.icon('lightbulb') + '</a>';
+      '<a class="star-btn" href="#/word?id=' + encodeURIComponent(w.id) + '" title="查看详情">' + TW.icon('lightbulb') + '</a>';
     // 发音按钮：整行点击改为「进词典详解」后，发音收进右侧图标，不再靠点单词触发
     var speakBtn = opts.noStar ? '' :
-      '<button class="star-btn" data-act="speak" data-id="' + w.id + '" title="发音">' + TW.icon('volume') + '</button>';
-    return '<div class="wl-row" data-id="' + w.id + '">' +
+      '<button class="star-btn" data-act="speak" data-id="' + TW.esc(w.id) + '" data-say="' + TW.esc(w.word) + '" title="发音">' + TW.icon('volume') + '</button>';
+    return '<div class="wl-row" data-id="' + TW.esc(w.id) + '">' +
       (opts.showNum ? '<span class="wl-num">' + (opts.num != null ? opts.num : w.idx + 1) + '</span>' : '') +
       '<div class="wl-main">' +
         // 单词本身也是链接：可右键「在新标签打开」，鼠标悬停能看到链接
-        '<div class="wl-word"><a class="wl-link" href="#/word?id=' + w.id + '" title="查看词典详解">' + TW.esc(w.word) + '</a>' +
+        '<div class="wl-word"><a class="wl-link" href="#/word?id=' + encodeURIComponent(w.id) + '" title="查看详情">' + TW.esc(w.word) + '</a>' +
           (opts.showPhonetic !== false && w.us ? '<span class="wl-phon">/' + TW.esc(w.us) + '/</span>' : '') +
           (p.master ? '<span class="tag ok">已掌握</span>' : '') +
           (p.w > 0 && !p.master ? '<span class="tag err">错 ' + p.w + '</span>' : '') +
+          (opts.extraTags || '') +
         '</div>' +
         '<div class="wl-trans" title="' + TW.esc(w.trans.join(' | ')) + '">' + TW.esc(brief || '（无释义）') + '</div>' +
       '</div>' +
@@ -44,7 +45,7 @@
       var btn = e.target.closest('[data-act]');
       if (btn) {
         e.stopPropagation();
-        var id = +btn.dataset.id;
+        var id = btn.dataset.id;           // 词 id 可能是 "cet6:abandon" 这样的字符串，不能做数字转换
         var act = btn.dataset.act;
         if (act === 'fav') {
           var on = TW.store.toggleFav(id);
@@ -56,17 +57,15 @@
           TW.toast(m ? '已标记掌握' : '已取消掌握');
         } else if (act === 'speak') {
           var sw = TW.data.byId(id);
-          if (sw) {
-            if (opts.onSpeak) opts.onSpeak(sw);
-            else TW.speech.speak(sw.word, TW.store.settings.accent);
-          }
+          if (opts.onSpeak) opts.onSpeak(sw);
+          else TW.speech.speak((sw && sw.word) || btn.dataset.say || '', TW.store.settings.accent);
         }
         return;
       }
       var row = e.target.closest('.wl-row');
       if (!row) return;
       if (e.target.closest('a')) return;   // 行内链接（单词本身）交给浏览器跳转
-      var w = TW.data.byId(+row.dataset.id);
+      var w = TW.data.byId(row.dataset.id);
       if (!w) return;
       if (opts.onOpen) opts.onOpen(w);
       else if (opts.onSpeak) opts.onSpeak(w);
@@ -80,7 +79,7 @@
     opts = opts || {};
     var t = TW.esc(term);
     var w = TW.data.byWord(term);
-    if (w) return '<a class="wref" href="#/word?id=' + w.id + '" title="' + TW.esc(TW.data.brief(w)) + '">' + t + '</a>';
+    if (w) return '<a class="wref" href="#/word?id=' + encodeURIComponent(w.id) + '" title="' + TW.esc(TW.data.brief(w)) + '">' + t + '</a>';
     var e = TW.data.ext(term);
     if (e) return '<a class="wref ext" href="#/word?w=' + encodeURIComponent(String(term).toLowerCase()) + '" title="扩展词条">' + t + '</a>';
     return '<span class="wref dead">' + t + '</span>';
@@ -97,7 +96,7 @@
         var low = seg.toLowerCase();
         if (self && low === self) return '<b class="wself">' + TW.esc(seg) + '</b>';
         var w = TW.data.byWord(seg);
-        if (w) return '<a class="wref" href="#/word?id=' + w.id + '" title="' + TW.esc(TW.data.brief(w)) + '">' + TW.esc(seg) + '</a>';
+        if (w) return '<a class="wref" href="#/word?id=' + encodeURIComponent(w.id) + '" title="' + TW.esc(TW.data.brief(w)) + '">' + TW.esc(seg) + '</a>';
         var e = TW.data.ext(seg);
         if (e) return '<a class="wref ext" href="#/word?w=' + encodeURIComponent(low) + '" title="扩展词条">' + TW.esc(seg) + '</a>';
         return TW.esc(seg);

@@ -32,6 +32,7 @@
             '</select></div>' +
           switchRow('autoNext', '答对后自动进入下一词', '关闭后可自己按 Enter 继续') +
           switchRow('showPhonetic', '显示音标', '') +
+          switchRow('srsAuto', '答错的词自动加入复习队列', '开启后按艾宾浩斯曲线安排复习；关闭则只在单词页手动加入') +
         '</div>' +
 
         '<div class="card card-pad" style="margin-bottom:1rem">' +
@@ -65,12 +66,14 @@
         '<div class="card card-pad">' +
           '<div class="card-title" style="margin-bottom:.3rem">数据管理</div>' +
           '<div class="card-title" style="font-weight:400;font-size:13px;color:var(--text-3);margin:.5rem 0 .8rem">' +
-            '当前共有 ' + TW.store.counts().touched + ' 个单词的学习记录。数据仅存本机，清理浏览器数据会丢失。' +
+            '当前共有 ' + TW.store.counts().touched + ' 个单词的学习记录，复习队列 ' +
+            TW.store.srs.stats().total + ' 词。数据仅存本机，清理浏览器数据会丢失。' +
           '</div>' +
           '<div class="row">' +
             '<button class="btn" id="data-export">' + TW.icon('download', 15) + ' 导出备份</button>' +
             '<button class="btn" id="data-import">导入备份</button>' +
             '<input type="file" id="data-file" accept="application/json" style="display:none" />' +
+            '<button class="btn" id="data-srs-clear">清空复习队列</button>' +
             '<button class="btn danger" id="data-reset">' + TW.icon('trash', 15) + ' 清空学习记录</button>' +
           '</div>' +
         '</div>' +
@@ -135,12 +138,22 @@
           if (d.settings) TW.store.state.settings = Object.assign({}, TW.store.settings, d.settings);
           if (d.progress) TW.store.state.progress = d.progress;
           if (d.daily) TW.store.state.daily = d.daily;
+          if (d.srs) TW.store.state.srs = d.srs;
+          if (d.srsInit != null) TW.store.state.srsInit = !!d.srsInit;
+          TW.store.migrate();
           TW.store.save();
           TW.toast('导入成功', 'ok');
           TW.app.render();
         } catch (err) { TW.toast('文件格式不正确', 'err'); }
       };
       fr.readAsText(f);
+    });
+    TW.$('#data-srs-clear', host).addEventListener('click', function () {
+      if (confirm('确定清空复习队列吗？学习记录不受影响。')) {
+        TW.store.srs.reset();
+        TW.toast('复习队列已清空');
+        TW.app.render();
+      }
     });
     TW.$('#data-reset', host).addEventListener('click', function () {
       if (confirm('确定清空全部学习记录吗？此操作不可撤销。')) {

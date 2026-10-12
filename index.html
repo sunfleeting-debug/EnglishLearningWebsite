@@ -24,10 +24,12 @@
   <div id="toast-host"></div>
 
   <!-- 数据（构建产出，作为全局变量直接加载，无需服务器即可用）
-       注意：dict.js / dict-ext.js 体积大，改为打开单词详情页时按需注入，首屏不加载 -->
+       注意：dict.js / dict-ext.js 体积大，改为打开单词详情页时按需注入，首屏不加载；
+            data/dicts/<id>.js（常用词典）亦为按需注入，index 里只有目录。 -->
   <script src="data/books.js"></script>
   <script src="data/words.js"></script>
   <script src="data/reading.js"></script>
+  <script src="data/dicts/index.js"></script>
 
   <!-- 应用脚本（按依赖顺序加载） -->
   <script src="assets/js/util.js"></script>
@@ -40,6 +42,7 @@
   <script src="assets/js/views/word.js"></script>
   <script src="assets/js/views/practice.js"></script>
   <script src="assets/js/views/review.js"></script>
+  <script src="assets/js/views/srs.js"></script>
   <script src="assets/js/views/audio.js"></script>
   <script src="assets/js/views/stats.js"></script>
   <script src="assets/js/views/resources.js"></script>

@@ -22,20 +22,58 @@
   }
 
   function render(host, query) {
-    var w = query.id ? TW.data.byId(+query.id) : null;
+    // 路由复用同一个 #view，用 token 认领，避免异步回调写进别的页面
+    var token = 'wd' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+    host.dataset.owner = token;
+    function alive() { return host.dataset.owner === token; }
+
+    var id = query.id == null ? '' : String(query.id);
+    var w = id ? TW.data.byId(id) : null;
+
+    // 词典词条是懒加载的，id 形如 "<deck>:<word>"：先把对应词典载进来再找
+    if (!w && id.indexOf(':') > 0) {
+      var deckId = id.slice(0, id.indexOf(':'));
+      if (TW.data.isDeck(deckId)) {
+        host.innerHTML = '<div class="wrap wrap-narrow"><div class="card card-pad muted">正在加载词典数据…</div></div>';
+        TW.data.loadBook(deckId, function () {
+          if (!alive()) return;
+          var ww = TW.data.byId(id);
+          if (ww) paintWithDict(host, ww, alive);
+          else paintMissing(host);
+        });
+        return;
+      }
+    }
+
     var term = null;
     if (!w && query.w) {
       w = TW.data.byWord(query.w);
-      if (!w) term = query.w;              // 本地词库没有 → 可能是扩展词条
+      if (!w) {
+        // 复习页是「?w=单词」跳过来的，词可能属于尚未加载的词典：查复习记录里的来源再加载
+        var rec = TW.store.srs.get(query.w);
+        if (rec && rec.s && TW.data.isDeck(rec.s)) {
+          host.innerHTML = '<div class="wrap wrap-narrow"><div class="card card-pad muted">正在加载词典数据…</div></div>';
+          TW.data.loadBook(rec.s, function () {
+            if (!alive()) return;
+            var ww = TW.data.byWord(query.w);
+            paintWithDict(host, ww || null, alive, ww ? undefined : query.w);
+          });
+          return;
+        }
+        term = query.w;                    // 本地词库没有 → 可能是扩展词条
+      }
     }
 
     if (!w && !term) { paintMissing(host); return; }
+    paintWithDict(host, w, alive, term);
+  }
 
-    // 词典数据按需加载：首屏不加载 dict.js/dict-ext.js 这两份大文件（移动端更省流量与内存）
+  /** 加载词典卡数据（按需），随后渲染详情 */
+  function paintWithDict(host, w, alive, term) {
     host.innerHTML = '<div class="wrap wrap-narrow"><div class="card card-pad muted">正在加载词典数据…</div></div>';
     var pending = w ? 2 : 1;               // 本地词要「词典卡 + 扩展词条（供链接跳转）」；扩展词只需要后者
     function ready() {
-      if (!host.isConnected) return;        // 已离开该页面，别再写 DOM
+      if (alive && !alive()) return;        // 已离开该页面，别再写 DOM
       if (--pending > 0) return;
       if (w) { paintLocal(host, w); return; }
       var e = TW.data.ext(term);
@@ -71,24 +109,35 @@
 
     var p = TW.store.get(w.id) || {};
 
+    // 复习队列状态（艾宾浩斯）
+    var srs = TW.store.srs.get(w.word);
+    var srsChip = '';
+    if (srs) {
+      var dt = TW.store.diffDays(TW.store.today(), srs.d);
+      srsChip = '<span class="tag srs">' + TW.icon('refresh', 12) + ' 复习第 ' + (srs.b + 1) + ' 档 · ' +
+        (dt <= 0 ? '今天到期' : dt + ' 天后') + '</span>';
+    }
+
     var head = '<div class="card card-pad dc-head">' +
       '<div class="dc-crumb"><button class="btn sm ghost" id="dc-back">' + TW.icon('arrowLeft', 15) + ' 返回</button>' +
         '<span class="muted small">' + TW.esc(book ? book.name : '') + ' · 第 ' + (w.idx + 1) + ' 词</span>' +
         '<span class="dc-nav-sp">' +
-          (prev ? '<a class="btn sm ghost" href="#/word?id=' + prev.id + '">' + TW.icon('arrowLeft', 15) + '</a>' : '') +
-          (next ? '<a class="btn sm ghost" href="#/word?id=' + next.id + '">' + TW.icon('arrowRight', 15) + '</a>' : '') +
+          (prev ? '<a class="btn sm ghost" href="#/word?id=' + encodeURIComponent(prev.id) + '">' + TW.icon('arrowLeft', 15) + '</a>' : '') +
+          (next ? '<a class="btn sm ghost" href="#/word?id=' + encodeURIComponent(next.id) + '">' + TW.icon('arrowRight', 15) + '</a>' : '') +
         '</span></div>' +
       '<div class="dc-title">' +
         '<div class="dc-word">' + TW.esc(w.word) + '</div>' +
         '<div class="dc-actions">' +
           '<button class="star-btn' + (p.fav ? ' on' : '') + '" data-act="fav" title="收藏">' + TW.icon('star') + '</button>' +
           '<button class="star-btn master' + (p.master ? ' on' : '') + '" data-act="master" title="已掌握">' + TW.icon('check') + '</button>' +
+          '<button class="star-btn' + (srs ? ' on' : '') + '" data-act="srs" title="' + (srs ? '移出复习队列' : '加入复习队列') + '">' + TW.icon('refresh') + '</button>' +
           '<button class="star-btn" data-act="speak" data-say="' + TW.esc(w.word) + '" title="朗读">' + TW.icon('volume') + '</button>' +
         '</div>' +
       '</div>' +
       (phon ? '<div class="dc-phons">' + phon + '</div>' : '') +
       (w.note ? '<div class="muted small">字幕原形：' + TW.esc(w.note) + '</div>' : '') +
-      '<div class="row dc-tags">' + exams + (book && book.audio ? '<a class="tag link" href="#/audio?book=' + book.id + '&t=' + w.time + '">' + TW.icon('headphone', 13) + ' 转到音频</a>' : '') + '</div>' +
+      (w.deck ? '<div class="muted small">该词条来自词典「' + TW.esc(book ? book.name : '') + '」，仅提供音标与释义</div>' : '') +
+      '<div class="row dc-tags">' + exams + srsChip + (book && book.audio ? '<a class="tag link" href="#/audio?book=' + book.id + '&t=' + w.time + '">' + TW.icon('headphone', 13) + ' 转到音频</a>' : '') + '</div>' +
     '</div>';
 
     /* ---- 各板块 ---- */
@@ -157,7 +206,9 @@
     }
 
     if (!card.syn && !card.ant && !card.deriv && !card.discrim && !card.colloc && !card.colloc_raw && !card.ex) {
-      secs += '<div class="card card-pad muted">该词暂无词典卡数据。</div>';
+      secs += '<div class="card card-pad muted">' + (w.deck
+        ? '词典词条仅提供音标与释义；搭配 / 派生 / 例句等详解目前只覆盖「六级词汇周计划」词库。'
+        : '该词暂无词典卡数据。') + '</div>';
     }
 
     host.innerHTML = '<div class="wrap wrap-narrow dc-wrap">' + head + secs + '</div>';
@@ -166,6 +217,17 @@
     var backBtn = TW.$('#dc-back', host);
     if (backBtn) backBtn.addEventListener('click', back);
     TW.ui.bindWordActions(host, w.id);
+    var srsBtn = TW.$('[data-act="srs"]', host);
+    if (srsBtn) srsBtn.addEventListener('click', function () {
+      if (TW.store.srs.has(w.word)) {
+        TW.store.srs.remove(w.word);
+        TW.toast('已移出复习队列');
+      } else {
+        TW.store.srs.enroll(w.word, w.book || '', TW.data.brief(w));
+        TW.toast('已加入复习队列');
+      }
+      TW.app.render();
+    });
   }
 
   function back() {

@@ -8,6 +8,7 @@
     { key: 'home', label: '首页', path: '/', icon: 'home' },
     { key: 'books', label: '词库', path: '/books', icon: 'book' },
     { key: 'practice', label: '练习', path: '/practice', icon: 'keyboard' },
+    { key: 'srs', label: '复习', path: '/srs', icon: 'refresh', badge: 'srs' },
     { key: 'review', label: '生词本', path: '/review', icon: 'star', badge: 'review' },
     { key: 'audio', label: '音频跟读', path: '/audio', icon: 'headphone' },
     { key: 'stats', label: '学习统计', path: '/stats', icon: 'chart' },
@@ -41,7 +42,7 @@
     var name = m ? m[1] : 'home';
     var map = {
       home: TW.views.home, books: TW.views.books, word: TW.views.word,
-      practice: TW.views.practice,
+      practice: TW.views.practice, srs: TW.views.srs,
       review: TW.views.review, audio: TW.views.audio, stats: TW.views.stats,
       reading: TW.views.reading, resources: TW.views.resources, settings: TW.views.settings
     };
@@ -50,12 +51,15 @@
 
   function renderNav(active) {
     var c = TW.store.counts();
+    var due = TW.store.srs.dueCount();
     var host = document.getElementById('sidebar');
     var items = NAV.map(function (n) {
       var badge = '';
       if (n.badge === 'review') {
         var num = c.wrong + c.fav;
         badge = num ? '<span class="nav-badge">' + num + '</span>' : '';
+      } else if (n.badge === 'srs') {
+        badge = due ? '<span class="nav-badge srs">' + due + '</span>' : '';
       }
       return '<button class="nav-item' + (n.key === active ? ' active' : '') + '" data-path="' + n.path + '">' +
         '<span class="nav-ico">' + TW.icon(n.icon) + '</span>' +
@@ -122,12 +126,13 @@
   window.addEventListener('hashchange', render);
   TW.store.on('progress', function () {
     renderNav(current.name);
-    // 生词本自身需要实时刷新
-    if (current.name === 'review' || current.name === 'home') render();
+    // 生词本 / 复习 / 首页需要实时刷新
+    if (current.name === 'review' || current.name === 'home' || current.name === 'srs') render();
   });
 
   function boot() {
     TW.store.load();
+    TW.store.migrate();          // 补词面快照 + 首次把历史错词导入复习队列
     applyTheme();
     TW.speech.sound.enabled = TW.store.settings.keySound;
     if (!location.hash) location.hash = '/';

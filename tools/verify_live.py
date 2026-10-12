@@ -123,6 +123,37 @@ def main():
         pg.wait_for_timeout(800)
         check("线上重做仍错才判错", "答错" in pg.evaluate("() => document.body.innerText"), True)
 
+        # 常用词典：选择页 + 按需加载一本词典
+        pg.goto(URL + "#/books", wait_until="load", timeout=60000)
+        pg.wait_for_timeout(900)
+        check("线上词典目录 = 12 本", pg.evaluate("() => TW.DECKS_META.length"), 12)
+        check("线上词典选择页卡片 >= 12", pg.locator(".deck-card").count() >= 12, True)
+        pg.screenshot(path=str(SHOTS / "30-live-decks.png"))
+        pg.goto(URL + "#/books?book=cet6", wait_until="load", timeout=60000)
+        pg.wait_for_timeout(1800)
+        check("线上词典按需加载成功", "cet6" in pg.evaluate("() => TW.data.decksLoaded()"), True)
+        check("线上词典词表有词条",
+              pg.evaluate("() => document.querySelectorAll('#bk-list .wl-row').length") > 0, True)
+
+        # 复习队列：练习答错 → 自动入队 → 导航角标 → 复习页可打开
+        pg.goto(URL + "#/practice?book=week1&mode=type&size=3", wait_until="load", timeout=60000)
+        pg.wait_for_timeout(1200)
+        auto_word = pg.evaluate("() => TW.$('#p-word').textContent.trim()")
+        pg.fill("#p-input", "zzzzzz")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(400)
+        pg.fill("#p-input", "yyyyyy")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(700)
+        check("线上答错的词自动进入复习队列",
+              bool(pg.evaluate("(w) => TW.store.srs.get(w)", auto_word)), True)
+        check("线上导航出现待复习角标", pg.locator(".nav-badge.srs").count() >= 1, True)
+        pg.goto(URL + "#/srs", wait_until="load", timeout=60000)
+        pg.wait_for_timeout(900)
+        srs_txt = pg.evaluate("() => document.body.innerText")
+        check("线上复习页可打开", ("今日待复习" in srs_txt) or ("复习队列" in srs_txt), True)
+        pg.screenshot(path=str(SHOTS / "31-live-srs.png"))
+
         # 移动端
         pg.set_viewport_size({"width": 390, "height": 844})
         pg.goto(URL, wait_until="load", timeout=60000)
