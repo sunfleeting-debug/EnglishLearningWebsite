@@ -8,6 +8,9 @@ node_modules/
 _ref_typewords/
 _target_repo/
 
+# ---------- 智能体本地记忆（不入库） ----------
+.workbuddy/
+
 # ---------- 系统 / 编辑器 ----------
 .DS_Store
 Thumbs.db
