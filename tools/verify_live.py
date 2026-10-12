@@ -108,6 +108,21 @@ def main():
         check("线上阅读页图可加载", img_ok, True)
         pg.screenshot(path=str(SHOTS / "27-live-reading.png"))
 
+        # 练习：答错先给一次重做机会
+        pg.goto(URL + "#/practice?book=week1&mode=recall&size=10", wait_until="load", timeout=60000)
+        pg.wait_for_timeout(1200)
+        pg.fill("#p-input", "zzzzzz")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(800)
+        retry_txt = pg.evaluate("() => document.body.innerText")
+        check("线上答错先给重做机会（不直接判错）",
+              ("再试一次" in retry_txt and "答错" not in retry_txt), True)
+        check("线上重做时输入框仍在", pg.locator("#p-input").count(), 1)
+        pg.fill("#p-input", "yyyyyy")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(800)
+        check("线上重做仍错才判错", "答错" in pg.evaluate("() => document.body.innerText"), True)
+
         # 移动端
         pg.set_viewport_size({"width": 390, "height": 844})
         pg.goto(URL, wait_until="load", timeout=60000)
