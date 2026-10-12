@@ -146,6 +146,8 @@
         '</div>' +
         (st.revealed
           ? '<div class="practice-actions">' +
+              // 翻面后与其它模式对齐，给出词典详解入口
+              '<a class="btn ghost" href="#/word?id=' + w.id + '">' + TW.icon('lightbulb', 16) + ' 详解</a>' +
               '<button class="btn" data-act="unknown">' + TW.icon('x', 16) + ' 不认识</button>' +
               '<button class="btn primary" data-act="known">' + TW.icon('check', 16) + ' 认识</button>' +
             '</div>'

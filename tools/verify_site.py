@@ -129,6 +129,20 @@ def main():
         check("答错后出现正确答案提示", "答错" in wrong_txt, True)
         pg.screenshot(path=str(SHOTS / "15-practice-wrong.png"))
 
+        # ---------- 练习：翻卡模式翻面后应有词典详解入口 ----------
+        goto("#/practice?book=week1&mode=flash&size=10")
+        pg.wait_for_timeout(600)
+        check("翻卡未翻面时不显示详解入口",
+              pg.locator(".practice-actions a[href^='#/word']").count(), 0)
+        pg.click("[data-act='reveal']")
+        pg.wait_for_timeout(500)
+        check("翻卡翻面后出现「详解」入口",
+              pg.locator(".practice-actions a[href^='#/word']").count() > 0, True)
+        pg.screenshot(path=str(SHOTS / "26-practice-flash-detail.png"))
+        pg.locator(".practice-actions a[href^='#/word']").first.click()
+        pg.wait_for_timeout(800)
+        check("翻卡「详解」可进入详情页", "#/word" in pg.evaluate("() => location.hash"), True)
+
         # ---------- 收藏 + localStorage 持久化 ----------
         pg.evaluate("() => localStorage.clear()")
         goto("#/books?book=week1")
