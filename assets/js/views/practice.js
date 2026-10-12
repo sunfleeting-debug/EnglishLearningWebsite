@@ -22,7 +22,16 @@
     return set.map(function (s) { return s.trim(); }).filter(Boolean);
   }
 
+  /* 上一次练习实例的全局键盘监听清理器。
+     路由复用同一个 #view 容器，旧实例不会被「卸载」，其 setTimeout（如答对后
+     750ms 自动下一词）会继续跑并写进新页面的同名节点。每次 render 先拆掉上一次的监听，
+     各回调再用 alive() 认领舞台，双保险。 */
+  var prevGlobal = null;
+
   function render(host, query) {
+    // 干掉上一个练习实例遗留的全局键盘监听
+    if (prevGlobal) { prevGlobal(); prevGlobal = null; }
+
     var cfg = {
       book: query.book || 'all',
       mode: MODES.some(function (m) { return m.id === query.mode; }) ? query.mode : 'type',
@@ -43,9 +52,19 @@
 
     var st = {
       i: 0, correct: 0, wrong: 0, phase: 'answering', // answering | feedback | done
-      revealed: false, lastOk: false, hintShown: false
+      revealed: false, lastOk: false, hintShown: false,
+      tries: 0   // 本题已答错次数：第一次错只提示重做，不改判、不揭答案
     };
-    var destroyed = false;   // 离开本页后置真，阻止异步回调回写已卸载的 DOM
+
+    /* 本实例的认领标记：路由复用同一个 #view，#p-stage 的 id 会被新页面覆盖，
+       因此不能用 host.isConnected 判断「我还在不在」，要用 token 认领。 */
+    var token = 'pv' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+
+    /** 本实例是否仍是当前页面上的那个练习会话 */
+    function alive() {
+      var s = TW.$('#p-stage', host);
+      return !!(s && s.dataset.owner === token);
+    }
 
     if (!session.length) {
       host.innerHTML = '<div class="wrap-narrow">' + TW.ui.pageHead('练习', '') +
@@ -73,6 +92,8 @@
     TW.$('#p-back', host).addEventListener('click', function () {
       TW.app.go('/books' + (cfg.book !== 'all' ? '?book=' + cfg.book : ''));
     });
+    // 认领本次舞台（异步回调靠它判断自己是否已被新页面取代）
+    TW.$('#p-stage', host).dataset.owner = token;
 
     TW.$('#p-mode', host).innerHTML = MODES.map(function (m) {
       return '<button data-mode="' + m.id + '" class="' + (cfg.mode === m.id ? 'active' : '') + '" title="' + m.desc + '">' + m.name + '</button>';
@@ -87,7 +108,7 @@
 
     /* ---------- 顶部进度 ---------- */
     function drawProgress() {
-      if (destroyed) return;
+      if (!alive()) return;
       var pos = Math.min(st.i + 1, session.length);
       var posEl = TW.$('#p-pos', host), accEl = TW.$('#p-acc', host), barEl = TW.$('#p-bar', host);
       if (!posEl || !accEl || !barEl) return;
@@ -113,6 +134,7 @@
           '<div class="word-display" id="p-word">' + TW.esc(w.word) + '</div>' +
           means +
           '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="在这里打出这个单词…" /></div>' +
+          retryLineHtml() +
           '<div class="hint-keys"><kbd>Enter</kbd> 提交 · <kbd>Esc</kbd> 跳过</div>' +
           '</div>';
       }
@@ -122,6 +144,7 @@
             '· '.repeat(Math.max(3, Math.min(12, w.word.length))) + '</div>' +
           means +
           '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="根据释义拼写英文单词…" /></div>' +
+          retryLineHtml() +
           '<div class="hint-keys"><kbd>Enter</kbd> 提交 · <kbd>Esc</kbd> 跳过 · ' + w.word.length + ' 个字母</div>' +
           '</div>';
       }
@@ -132,6 +155,7 @@
             (TW.store.settings.showPhonetic && w.us ? '/' + TW.esc(w.us) + '/' : '听发音写单词') + '</div>' +
           (st.hintShown ? means : '<button class="btn ghost sm" data-act="hint">' + TW.icon('lightbulb', 15) + ' 看中文提示</button>') +
           '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="听音拼写…" /></div>' +
+          retryLineHtml() +
           '<div class="hint-keys"><kbd>Enter</kbd> 提交 · <kbd>Esc</kbd> 跳过</div>' +
           '</div>';
       }
@@ -155,6 +179,11 @@
         '</div>';
     }
 
+    /** 「再试一次」提示位：位于输入框下方，内容由 retry() 填充 */
+    function retryLineHtml() {
+      return '<div class="retry-line" id="p-retry"></div>';
+    }
+
     function meaningsHtml(w) {
       if (!w.trans || !w.trans.length) {
         return '<div class="mean-line muted">（该词暂无释义，可点击右上角发音按钮跟读）</div>';
@@ -167,7 +196,7 @@
     }
 
     function drawStage() {
-      if (destroyed) return;
+      if (!alive()) return;
       var w = session[st.i];
       var wrap = TW.$('#p-stage', host);
       if (!wrap) return;
@@ -225,10 +254,12 @@
 
     document.addEventListener('keydown', globalKey);
     function globalKey(e) {
-      if (cfg.mode !== 'flash' || !host.isConnected) return;
+      if (cfg.mode !== 'flash' || !alive()) return;
       if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
       if (e.key === ' ') { e.preventDefault(); if (!st.revealed) { st.revealed = true; drawStage(); } }
     }
+    // 交给下一次 render 拆掉；本实例的文档级监听不会永远堆积
+    prevGlobal = function () { document.removeEventListener('keydown', globalKey); };
 
     function visibleAnswerHtml(w, ok) {
       return '<div class="feedback" style="margin-top:.4rem">' +
@@ -243,12 +274,45 @@
     function check() {
       if (!input) return;
       var w = session[st.i];
-      var ok = answers(w.word).some(function (a) { return TW.isCorrect(input.value, a); });
-      grade(ok);
+      var val = (input.value || '').trim();
+      if (!val) { input.focus(); return; }   // 空输入不判分，避免误按 Enter 被记错
+      var ok = answers(w.word).some(function (a) { return TW.isCorrect(val, a); });
+      if (ok) { st.tries = 0; grade(true); return; }
+      st.tries++;
+      if (st.tries === 1) { retry(); return; }   // 第一次错：只提示重做，不改判、不揭答案
+      st.tries = 0;
+      grade(false);
     }
 
+    /** 第一次答错：给一次重做机会（sunfleeting 要求「打错了要给个重做的机会」） */
+    function retry() {
+      TW.speech.sound.wrong();
+      var line = TW.$('#p-retry', host);
+      if (line) {
+        line.innerHTML = '<span class="rt-tag">' + TW.icon('x', 13) +
+          ' 还不对，再试一次（最后一次）</span>' +
+          '<button class="btn ghost sm" data-act="giveup">看答案</button>';
+        var g = TW.$('[data-act="giveup"]', line);
+        if (g) g.onclick = giveUp;
+      }
+      if (input) {
+        input.value = '';
+        input.focus();
+        var box = TW.$('.typing-box', host);
+        if (box) {
+          box.classList.remove('shake');
+          void box.offsetWidth;      // 强制重排，保证动画可重复播放
+          box.classList.add('shake');
+        }
+      }
+      drawProgress();
+    }
+
+    /** 放弃重做：按答错处理并揭示答案 */
+    function giveUp() { st.tries = 0; grade(false); }
+
     function grade(ok) {
-      if (destroyed) return;
+      if (!alive()) return;
       var w = session[st.i];
       st.phase = 'feedback';
       st.lastOk = ok;
@@ -260,6 +324,8 @@
       if (box) box.remove();
       var hint = TW.$('.hint-keys', host);
       if (hint) hint.remove();
+      var rl = TW.$('.retry-line', host);
+      if (rl) rl.remove();
       var actionsHost = TW.$('.stage', host);
       if (actionsHost) {
         if (cfg.mode === 'flash') {
@@ -290,18 +356,19 @@
     }
 
     function next() {
-      if (destroyed) return;
+      if (!alive()) return;
       if (st.i >= session.length - 1) { finish(); return; }
       st.i++;
       st.phase = 'answering';
       st.revealed = false;
       st.hintShown = false;
+      st.tries = 0;
       drawProgress();
       drawStage();
     }
 
     function finish() {
-      if (destroyed) return;
+      if (!alive()) return;
       st.phase = 'done';
       drawProgress();
       TW.speech.sound.complete();
@@ -340,15 +407,6 @@
     /* ---------- 启动 ---------- */
     drawProgress();
     drawStage();
-
-    // 离开页面时清理全局键盘监听与异步回调
-    function cleanup() {
-      if (host.isConnected) return;
-      destroyed = true;
-      document.removeEventListener('keydown', globalKey);
-      window.removeEventListener('hashchange', cleanup);
-    }
-    window.addEventListener('hashchange', cleanup);
   }
 
   TW.views.practice = { render: render };

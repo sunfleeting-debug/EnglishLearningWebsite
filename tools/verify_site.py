@@ -58,6 +58,15 @@ def main():
             pg.goto(BASE + route, wait_until="domcontentloaded")
             pg.wait_for_timeout(wait)
 
+        def goto_fresh(route, wait=900):
+            """SPA 下 hash 与当前相同时 goto 不触发 hashchange、不会重渲染；
+            需要「重新开始一个场景」时先绕回家，再进目标路由。"""
+            if pg.evaluate("() => location.hash") == route:
+                pg.evaluate("() => { location.hash = '/'; }")
+                pg.wait_for_timeout(250)
+            pg.goto(BASE + route, wait_until="domcontentloaded")
+            pg.wait_for_timeout(wait)
+
         # ---------- 各页面截图 ----------
         pages = [
             ("01-home", "#/"),
@@ -122,18 +131,57 @@ def main():
         pos_txt = pg.evaluate("() => TW.$('#p-pos').textContent")
         check("进度已推进到第 2 词", "第 2 " in pos_txt, True)
 
-        # ---------- 练习：答错 ----------
+        # ---------- 练习：答错先给一次重做机会，再错才判错 ----------
         goto("#/practice?book=week1&mode=recall&size=10")
         pg.fill("#p-input", "zzzzzz")
         pg.keyboard.press("Enter")
         pg.wait_for_timeout(500)
-        wrong_txt = pg.evaluate("() => document.body.innerText")
-        check("答错后出现正确答案提示", "答错" in wrong_txt, True)
+        t1 = pg.evaluate("() => document.body.innerText")
+        check("第一次答错只提示重做、不揭答案", ("再试一次" in t1 and "答错" not in t1), True)
+        check("重做时输入框仍在（未进入反馈态）", pg.locator("#p-input").count(), 1)
+        check("第一次答错不改判（正确率仍为「开始吧」）",
+              pg.evaluate("() => TW.$('#p-acc').textContent"), "开始吧")
+        check("输入框已清空待重打", pg.evaluate("() => TW.$('#p-input').value"), "")
+        pg.screenshot(path=str(SHOTS / "15-practice-retry.png"))
+
+        # 重做仍错 → 这次才判错并给出正确答案
+        pg.fill("#p-input", "yyyyyy")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(500)
+        t2 = pg.evaluate("() => document.body.innerText")
+        check("重做仍错才判错并给出正确答案", ("答错" in t2), True)
         pg.screenshot(path=str(SHOTS / "15-practice-wrong.png"))
 
-        # ---------- 练习：翻卡模式翻面后应有词典详解入口 ----------
-        goto("#/practice?book=week1&mode=flash&size=10")
+        # 「看答案」= 放弃重做，直接判错
+        goto_fresh("#/practice?book=week1&mode=recall&size=10")
+        pg.fill("#p-input", "zzzzzz")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(400)
+        pg.locator("[data-act='giveup']").click()
+        pg.wait_for_timeout(400)
+        check("点「看答案」直接判错并揭示答案",
+              "答错" in pg.evaluate("() => document.body.innerText"), True)
+
+        # 重做答对 → 正常计入答对
+        goto_fresh("#/practice?book=week1&mode=type&size=10")
+        w_retry = pg.evaluate("() => TW.$('#p-word').textContent.trim()")
+        pg.fill("#p-input", "zzzzzz")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(400)
+        check("看词打字答错也先给重做机会",
+              "再试一次" in pg.evaluate("() => document.body.innerText"), True)
+        pg.fill("#p-input", w_retry)
+        pg.keyboard.press("Enter")
         pg.wait_for_timeout(600)
+        check("重做答对后判为「正确」",
+              "正确" in pg.evaluate("() => document.body.innerText"), True)
+
+        # ---------- 练习：翻卡模式翻面后应有词典详解入口 ----------
+        goto_fresh("#/practice?book=week1&mode=flash&size=10")
+        pg.wait_for_timeout(600)
+        # 先确认真的渲染成了翻卡页：否则下面的 count==0 断言在「空白页」上也会假通过
+        # （旧实例的 autoNext 定时器曾把新页面覆盖掉，就是这一条抓出来的）
+        check("翻卡页渲染出卡片（未被上一会话覆盖）", pg.locator("#p-card").count(), 1)
         check("翻卡未翻面时不显示详解入口",
               pg.locator(".practice-actions a[href^='#/word']").count(), 0)
         pg.click("[data-act='reveal']")

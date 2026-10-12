@@ -806,3 +806,23 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 @media (max-width: 860px) {
   .ans-bar { bottom: 4.5rem; }
 }
+
+/* ---------- 答错后「再试一次」（练习页打字类模式） ---------- */
+/* 第一次答错只提示重做：不改判、不揭答案，给一次纠正机会 */
+.retry-line {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0.5rem; flex-wrap: wrap; margin-top: 0.65rem;
+}
+.retry-line:empty { display: none; }
+.rt-tag {
+  display: inline-flex; align-items: center; gap: 0.32rem;
+  font-size: 13.5px; color: var(--err); background: var(--err-soft);
+  border-radius: 999px; padding: 0.28rem 0.72rem;
+  animation: shake 0.36s;
+}
+/* 复用已有的 shake 关键帧，抖动输入框提示「不对」 */
+.typing-box.shake .typing-input { animation: shake 0.36s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rt-tag, .typing-box.shake .typing-input { animation: none; }
+}
