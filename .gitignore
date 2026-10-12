@@ -1,0 +1,16 @@
+# ---------- 原始素材（体积大，站点使用压缩后的 audio/ 与 resources/ 副本） ----------
+/六级词汇周计划音频/
+/DRJ172简六级阅读/
+
+# ---------- 构建缓存与临时目录 ----------
+tools/.cache/
+node_modules/
+_ref_typewords/
+_target_repo/
+
+# ---------- 系统 / 编辑器 ----------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

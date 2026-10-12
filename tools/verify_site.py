@@ -1,0 +1,201 @@
+# -*- coding: utf-8 -*-
+"""本地核验：逐页截图 + 控制台错误收集 + 关键交互断言。
+
+用法：
+    NODE_OPTIONS= python -u tools/verify_site.py
+前提：已在 5173 端口起好静态服务（python -m http.server 5173 --bind 127.0.0.1）
+"""
+import json
+import os
+import pathlib
+import sys
+
+from playwright.sync_api import sync_playwright
+
+BASE = "http://127.0.0.1:5173/"
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+SHOTS = ROOT / "docs" / "shots"
+LOG = SHOTS / "verify.log"
+
+EXE = pathlib.Path(r"C:\Users\Lenovo\AppData\Local\ms-playwright"
+                   r"\chromium_headless_shell-1228\chrome-headless-shell-win64\chrome-headless-shell.exe")
+
+errors = []
+checks = []
+
+
+def log(msg):
+    with open(LOG, "a", encoding="utf-8") as f:
+        f.write(msg + "\n")
+    print(msg)
+
+
+def check(name, got, want=True):
+    ok = got == want
+    checks.append(ok)
+    log(("  [OK]   " if ok else "  [FAIL] ") + name + ("" if ok else "  got=%r want=%r" % (got, want)))
+    return ok
+
+
+def main():
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    LOG.write_text("", encoding="utf-8")   # 覆盖旧日志，靠 mtime 判断新鲜度
+
+    with sync_playwright() as pw:
+        kwargs = {}
+        if EXE.exists():
+            kwargs["executable_path"] = str(EXE)
+        browser = pw.chromium.launch(**kwargs)
+        pg = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=2)
+        pg.on("console", lambda m: errors.append("console:" + m.text) if m.type == "error" else None)
+        pg.on("pageerror", lambda e: errors.append("pageerror:" + str(e)))
+
+        def goto(route, wait=900):
+            pg.goto(BASE + route, wait_until="domcontentloaded")
+            pg.wait_for_timeout(wait)
+
+        # ---------- 各页面截图 ----------
+        pages = [
+            ("01-home", "#/"),
+            ("02-books", "#/books"),
+            ("03-books-week1", "#/books?book=week1"),
+            ("04-practice-type", "#/practice?book=week1&mode=type"),
+            ("05-practice-recall", "#/practice?book=week1&mode=recall"),
+            ("06-practice-listen", "#/practice?book=week1&mode=listen"),
+            ("07-practice-flash", "#/practice?book=week1&mode=flash"),
+            ("08-review", "#/review"),
+            ("09-audio", "#/audio"),
+            ("10-stats", "#/stats"),
+            ("11-resources", "#/resources"),
+            ("12-settings", "#/settings"),
+        ]
+        for name, route in pages:
+            goto(route)
+            pg.screenshot(path=str(SHOTS / (name + ".png")))
+            log("[shot] " + name + "  (" + route + ")")
+
+        # ---------- 数据层断言 ----------
+        goto("#/")
+        n_words = pg.evaluate("() => TW.WORDS.length")
+        n_books = pg.evaluate("() => TW.BOOKS.length")
+        n_missing = pg.evaluate("() => TW.WORDS.filter(w => !w.trans || !w.trans.length).length")
+        check("词条总数 = 2714", n_words, 2714)
+        check("词书数量 = 9", n_books, 9)
+        check("缺释义词条 = 0", n_missing, 0)
+        total_count = pg.evaluate("() => TW.BOOKS.reduce((a,b)=>a+b.count,0)")
+        check("各书 count 之和 = 2714", total_count, 2714)
+
+        # ---------- 导航 ----------
+        goto("#/")
+        nav_n = pg.locator(".nav-item").count()
+        check("侧边导航项 >= 8", nav_n >= 8, True)
+
+        # ---------- 主题切换 ----------
+        goto("#/")
+        cur_dark = pg.evaluate("() => document.documentElement.classList.contains('dark')")
+        pg.click("#theme-btn")
+        pg.wait_for_timeout(400)
+        new_dark = pg.evaluate("() => document.documentElement.classList.contains('dark')")
+        check("主题切换生效", new_dark != cur_dark, True)
+        pg.screenshot(path=str(SHOTS / "13-dark-home.png"))
+        pg.click("#theme-btn")   # 切回浅色
+        pg.wait_for_timeout(300)
+
+        # ---------- 练习：看词打字，答对 ----------
+        goto("#/practice?book=week1&mode=type&size=10")
+        word = pg.evaluate("() => TW.$('#p-word').textContent.trim()")
+        check("练习页显示了单词", bool(word), True)
+        pg.fill("#p-input", word)
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(500)
+        feedback = pg.evaluate("() => document.body.innerText")
+        check("答对后出现「正确」提示", "正确" in feedback, True)
+        pg.screenshot(path=str(SHOTS / "14-practice-correct.png"))
+        # 等自动跳转（autoNext 延迟 750ms）走完再读进度
+        pg.wait_for_timeout(1300)
+        pos_txt = pg.evaluate("() => TW.$('#p-pos').textContent")
+        check("进度已推进到第 2 词", "第 2 " in pos_txt, True)
+
+        # ---------- 练习：答错 ----------
+        goto("#/practice?book=week1&mode=recall&size=10")
+        pg.fill("#p-input", "zzzzzz")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(500)
+        wrong_txt = pg.evaluate("() => document.body.innerText")
+        check("答错后出现正确答案提示", "答错" in wrong_txt, True)
+        pg.screenshot(path=str(SHOTS / "15-practice-wrong.png"))
+
+        # ---------- 收藏 + localStorage 持久化 ----------
+        pg.evaluate("() => localStorage.clear()")
+        goto("#/books?book=week1")
+        pg.locator(".star-btn[data-act='fav']").first.click()
+        pg.wait_for_timeout(400)
+        fav_n = pg.evaluate("() => Object.values(TW.store.state.progress).filter(p=>p.fav).length")
+        check("收藏写入 state", fav_n, 1)
+        pg.reload(wait_until="domcontentloaded")
+        pg.wait_for_timeout(800)
+        fav_n2 = pg.evaluate("() => Object.values(TW.store.state.progress).filter(p=>p.fav).length")
+        check("刷新后收藏仍在（localStorage 生效）", fav_n2, 1)
+
+        # ---------- 搜索 ----------
+        goto("#/books")
+        pg.fill("#bk-search", "abbreviation")
+        pg.wait_for_timeout(700)
+        rows = pg.evaluate("() => document.querySelectorAll('#bk-list .wl-row').length")
+        check("搜索命中 1 条", rows, 1)
+
+        # ---------- 生词本分组 ----------
+        goto("#/review?tab=wrong")
+        wrong_rows = pg.evaluate("() => document.querySelectorAll('#rv-list .wl-row').length")
+        check("错词本有序（>=1）", wrong_rows >= 1, True)
+        pg.screenshot(path=str(SHOTS / "16-review-wrong.png"))
+
+        # ---------- 音频页 ----------
+        goto("#/audio", 1200)
+        audio_src = pg.evaluate("() => TW.$('#au-audio').getAttribute('src')")
+        check("音频已挂载 src", bool(audio_src), True)
+        lyric_n = pg.evaluate("() => document.querySelectorAll('.lyric-item').length")
+        check("字幕行加载 = 250", lyric_n, 250)
+        # 等音频元数据就绪（readyState>=1）后再点击字幕
+        for _ in range(40):
+            if pg.evaluate("() => TW.$('#au-audio').readyState >= 1"):
+                break
+            pg.wait_for_timeout(250)
+        check("音频元数据已就绪", pg.evaluate("() => TW.$('#au-audio').readyState >= 1"), True)
+        pg.locator(".lyric-item").nth(9).click()
+        pg.wait_for_timeout(1200)
+        cur_time = pg.evaluate("() => TW.$('#au-audio').currentTime")
+        check("点击字幕跳转了音频进度（>30s）", cur_time > 30, True)
+        active_n = pg.evaluate("() => document.querySelectorAll('.lyric-item.active').length")
+        check("当前字幕被高亮", active_n >= 1, True)
+
+        # ---------- 移动端视口 ----------
+        pg.set_viewport_size({"width": 390, "height": 844})
+        goto("#/")
+        pg.wait_for_timeout(600)
+        pg.screenshot(path=str(SHOTS / "17-mobile-home.png"))
+        goto("#/practice?book=week1&mode=type")
+        pg.wait_for_timeout(400)
+        pg.screenshot(path=str(SHOTS / "18-mobile-practice.png"))
+        # 底部导航是否显示、横向是否溢出
+        overflow = pg.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
+        check("移动端无横向溢出", overflow <= 1, True)
+
+        # ---------- 控制台错误 ----------
+        check("控制台错误数 = 0", len(errors), 0)
+
+        pg.wait_for_timeout(200)
+        log("")
+        log("=== 失败项 ===")
+        failed = [c for c in checks if not c]
+        log("失败 %d / 共 %d 项断言" % (len(failed), len(checks)))
+        if errors:
+            log("=== 控制台错误 ===")
+            for e in errors[:20]:
+                log("  " + e)
+        sys.stdout.flush()
+        os._exit(0 if not failed and not errors else 3)
+
+
+if __name__ == "__main__":
+    main()

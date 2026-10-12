@@ -1,0 +1,83 @@
+[
+  {
+    "id": "week1",
+    "name": "Week 1",
+    "desc": "六级词汇周计划 · 第 1 周",
+    "kind": "week",
+    "count": 250,
+    "audio": "audio/Week 1.mp3",
+    "lrc": "audio/Week 1.lrc"
+  },
+  {
+    "id": "week2",
+    "name": "Week 2",
+    "desc": "六级词汇周计划 · 第 2 周",
+    "kind": "week",
+    "count": 250,
+    "audio": "audio/Week 2.mp3",
+    "lrc": "audio/Week 2.lrc"
+  },
+  {
+    "id": "week3",
+    "name": "Week 3",
+    "desc": "六级词汇周计划 · 第 3 周",
+    "kind": "week",
+    "count": 250,
+    "audio": "audio/Week 3.mp3",
+    "lrc": "audio/Week 3.lrc"
+  },
+  {
+    "id": "week4",
+    "name": "Week 4",
+    "desc": "六级词汇周计划 · 第 4 周",
+    "kind": "week",
+    "count": 250,
+    "audio": "audio/Week 4.mp3",
+    "lrc": "audio/Week 4.lrc"
+  },
+  {
+    "id": "week5",
+    "name": "Week 5",
+    "desc": "六级词汇周计划 · 第 5 周",
+    "kind": "week",
+    "count": 250,
+    "audio": "audio/Week 5.mp3",
+    "lrc": "audio/Week 5.lrc"
+  },
+  {
+    "id": "week6",
+    "name": "Week 6",
+    "desc": "六级词汇周计划 · 第 6 周",
+    "kind": "week",
+    "count": 250,
+    "audio": "audio/Week 6.mp3",
+    "lrc": "audio/Week 6.lrc"
+  },
+  {
+    "id": "week7",
+    "name": "Week 7",
+    "desc": "六级词汇周计划 · 第 7 周",
+    "kind": "week",
+    "count": 250,
+    "audio": "audio/Week 7.mp3",
+    "lrc": "audio/Week 7.lrc"
+  },
+  {
+    "id": "cog1",
+    "name": "认知词汇 1",
+    "desc": "六级认知词汇 · 上册",
+    "kind": "cog",
+    "count": 474,
+    "audio": "audio/认知词汇1.mp3",
+    "lrc": "audio/认知词汇1.lrc"
+  },
+  {
+    "id": "cog2",
+    "name": "认知词汇 2",
+    "desc": "六级认知词汇 · 下册",
+    "kind": "cog",
+    "count": 490,
+    "audio": "audio/认知词汇2.mp3",
+    "lrc": "audio/认知词汇2.lrc"
+  }
+]

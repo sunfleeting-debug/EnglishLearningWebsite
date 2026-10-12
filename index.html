@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>六级单词速记 · 打字背单词</title>
+  <meta name="description" content="基于六级词汇周计划音频整理的单词本，支持看词打字、听音写词、看中文拼写、翻卡记忆等练习模式。" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234b8bff'/><text x='50' y='70' font-size='58' font-family='monospace' font-weight='700' fill='white' text-anchor='middle'>A</text></svg>" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main"><div id="view"></div></main>
+  </div>
+  <div id="toast-host"></div>
+
+  <!-- 数据（构建产出，作为全局变量直接加载，无需服务器即可用） -->
+  <script src="data/books.js"></script>
+  <script src="data/words.js"></script>
+
+  <!-- 应用脚本（按依赖顺序加载） -->
+  <script src="assets/js/util.js"></script>
+  <script src="assets/js/store.js"></script>
+  <script src="assets/js/speech.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/components.js"></script>
+  <script src="assets/js/views/home.js"></script>
+  <script src="assets/js/views/books.js"></script>
+  <script src="assets/js/views/practice.js"></script>
+  <script src="assets/js/views/review.js"></script>
+  <script src="assets/js/views/audio.js"></script>
+  <script src="assets/js/views/stats.js"></script>
+  <script src="assets/js/views/resources.js"></script>
+  <script src="assets/js/views/settings.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
