@@ -15,11 +15,26 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import socket
 import sys
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
+
+
+class ThreadingServer(ThreadingHTTPServer):
+    """守护线程模式 + 网络中断静默处理。"""
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # 关闭页面、拖动音频进度都会让浏览器在 keep-alive 连接上突然断开。
+        # socketserver 默认会打印整段 traceback，把日志淹没、掩盖真正的问题；
+        # 这类异常属正常现象，静默忽略。
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class RangeHandler(SimpleHTTPRequestHandler):
@@ -28,6 +43,13 @@ class RangeHandler(SimpleHTTPRequestHandler):
     protocol_version = "HTTP/1.1"   # 支持 keep-alive，也对 Range 必需
 
     def send_head(self):
+        # 🔴 每次请求入口都必须清空 Range 长度。
+        #    HTTP/1.1 keep-alive 会让同一个 handler 实例连续处理多个请求，
+        #    而 self._range_len 是实例属性：若不在入口重置，上一次 Range 请求
+        #    （如 mp3 拖动）的长度会残留到下一次普通请求（如 4MB 的 dict.js），
+        #    导致文件被「静默截断」——响应仍是 200，但内容不完整，脚本解析失败。
+        self._range_len = None
+
         rng = self.headers.get("Range")
         if not rng:
             return super().send_head()
@@ -76,17 +98,22 @@ class RangeHandler(SimpleHTTPRequestHandler):
         return f
 
     def copyfile(self, source, outputfile):
-        """发送时按 Range 长度截断，避免多写。"""
+        """发送时按 Range 长度截断，避免多写；客户端主动断开视为正常。"""
         limit = getattr(self, "_range_len", None)
-        if limit is None:
-            return super().copyfile(source, outputfile)
-        remaining = limit
-        while remaining > 0:
-            chunk = source.read(min(64 * 1024, remaining))
-            if not chunk:
-                break
-            outputfile.write(chunk)
-            remaining -= len(chunk)
+        try:
+            if limit is None:
+                return super().copyfile(source, outputfile)
+            remaining = limit
+            while remaining > 0:
+                chunk = source.read(min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                outputfile.write(chunk)
+                remaining -= len(chunk)
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            # 拖动音频进度、提前关闭页面都会让客户端主动断开连接，属正常现象，
+            # 不应打印 traceback（否则日志被噪声淹没，掩盖真正的问题）。
+            pass
 
     def log_message(self, fmt, *args):
         if args and str(args[0]).startswith(("GET", "HEAD")):
@@ -101,8 +128,25 @@ def main():
     args = ap.parse_args()
 
     root = args.dir or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # 端口占用自检：Windows 下 SO_REUSEADDR 允许两个进程绑同一端口而不报错，
+    # 于是会出现「新服务其实没起来、旧进程继续响应」的假象（调试时曾遇到 4 个进程叠加，
+    # 造成 4MB 的 dict.js 时好时坏）。这里主动连一次，明确失败，避免静默错乱。
+    probe = socket.socket()
+    probe.settimeout(0.3)
+    try:
+        busy = probe.connect_ex((args.bind, args.port)) == 0
+    finally:
+        probe.close()
+    if busy:
+        sys.stderr.write(
+            "端口 %d 已被占用，请先结束占用进程：\n"
+            "  netstat -ano | findstr :%d\n"
+            "  再用 taskkill /PID <pid> /F 结束它\n" % (args.port, args.port))
+        sys.exit(1)
+
     handler = partial(RangeHandler, directory=root)
-    srv = ThreadingHTTPServer((args.bind, args.port), handler)
+    srv = ThreadingServer((args.bind, args.port), handler)
     print("静态服务器已启动： http://%s:%d/   （根目录 %s）" % (args.bind, args.port, root))
     print("支持 Range 请求，音频可拖动进度 / 点击字幕跳转。Ctrl+C 停止。")
     try:

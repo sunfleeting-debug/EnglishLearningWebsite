@@ -19,9 +19,27 @@ VENV_PY="${VENV_PY:-C:/Users/Lenovo/.workbuddy/binaries/python/envs/default/Scri
 [ -x "$VENV_PY" ] || VENV_PY="$PY_BIN"
 
 mkdir -p tools/.cache docs/shots
+
+# 端口占用自检：Windows 下 SO_REUSEADDR 允许多个进程绑同一端口而不报错，
+# 端口一旦叠加，测试请求会随机落到旧进程上，产生「时好时坏」的假失败。
+# 这里先明确判断，避免把环境问题误当成代码问题。
+if "$PY_BIN" -c "import socket,sys; s=socket.socket(); s.settimeout(0.3); sys.exit(0 if s.connect_ex(('127.0.0.1',$PORT))==0 else 1)"; then
+  echo "端口 $PORT 已被占用，请先结束占用进程："
+  netstat -ano | grep ":$PORT" | grep LISTENING
+  echo "  结束方式：MSYS_NO_PATHCONV=1 taskkill /PID <pid> /F"
+  exit 1
+fi
+
 "$PY_BIN" tools/serve.py -p "$PORT" > tools/.cache/serve.log 2>&1 &
 SRV=$!
 trap 'kill $SRV 2>/dev/null' EXIT
 sleep 2
-curl -s -o /dev/null -w "服务自检 http=%{http_code}\n" "http://127.0.0.1:$PORT/index.html"
+
+HTTP="$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/index.html")"
+echo "服务自检 http=$HTTP"
+if [ "$HTTP" != "200" ]; then
+  echo "静态服务未就绪，中止（详见 tools/.cache/serve.log）"
+  exit 1
+fi
+
 NODE_OPTIONS= "$VENV_PY" -u tools/verify_site.py

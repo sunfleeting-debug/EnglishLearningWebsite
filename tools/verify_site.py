@@ -32,10 +32,12 @@ def log(msg):
     print(msg)
 
 
-def check(name, got, want=True):
+def check(name, got, want=True, extra=""):
     ok = got == want
     checks.append(ok)
-    log(("  [OK]   " if ok else "  [FAIL] ") + name + ("" if ok else "  got=%r want=%r" % (got, want)))
+    log(("  [OK]   " if ok else "  [FAIL] ") + name
+        + (("  " + str(extra)) if extra else "")
+        + ("" if ok else "  got=%r want=%r" % (got, want)))
     return ok
 
 
@@ -177,6 +179,15 @@ def main():
         check("首屏不加载词典卡（按需加载）", boot_dict, False)
         dr_id = pg.evaluate("() => (TW.WORDS.find(w => w.word === 'drastic') || {}).id")
         check("drastic 在词库中", bool(dr_id), True)
+
+        # 静态服务完整性：大文件必须原样下发。
+        # 背景：serve.py 曾在 keep-alive 下把上一次 Range 请求的长度残留给下一个普通请求，
+        # 导致 dict.js 响应 200 但内容被截断（详情页因此空白）。这里做字节级兜底核验。
+        for _f in ("data/dict.js", "data/dict-ext.js", "data/words.js"):
+            _local = (ROOT / _f).stat().st_size
+            _served = len(pg.request.get(BASE + _f).body())
+            check("原样下发 " + _f, _served == _local, True,
+                  "server=%d local=%d" % (_served, _local))
 
         # ---------- 单词详情页（打开时触发按需加载）----------
         pg.goto(BASE + "#/word?id=" + str(dr_id), wait_until="domcontentloaded")
