@@ -6,6 +6,12 @@
 
 零依赖、零构建：**双击 `index.html` 就能用**，也可以直接托管到 GitHub Pages。
 
+🌐 **在线地址**：<https://sunfleeting-debug.github.io/EnglishLearningWebsite/>
+
+📱 **手机上一句话搞定**：用手机浏览器打开上面的网址 → 分享菜单 → 「添加到主屏幕」，
+之后就像 App 一样全屏打开（已配 PWA 图标与 manifest）。
+移动端做了针对性优化：底部导航栏、单列布局、**词典数据按需加载**（首屏 JS 从 ~5.7MB 降到 ~0.8MB）。
+
 ![预览](docs/preview-home.png)
 
 ![词典详解](docs/preview-word.png)
@@ -44,6 +50,11 @@
 - 学习数据存于浏览器 localStorage，支持导出 / 导入 JSON 备份
 - 发音使用浏览器内置语音合成（Web Speech API），无需联网音频
 
+**移动端**
+- 自适应布局：窄屏改为底部导航栏 + 单列卡片，已断言「无横向溢出」（390×844 实测）
+- PWA：`manifest.json` + 图标（192 / 512 / maskable / apple-touch），可「添加到主屏幕」全屏打开
+- 词典卡与扩展词条按需加载，首屏 JS 约 0.8MB（详情页才加载余下的约 4.9MB）
+
 ## 快速开始
 
 方式一：直接双击 `index.html`（推荐，无需任何环境）。
@@ -60,21 +71,33 @@ python tools/serve.py -p 8080  # 换端口
 
 也可以用 Node：`npx --yes serve . -l 5173`。
 
-## 部署到 GitHub Pages
+## 部署到 GitHub Pages（已启用）
 
-1. 打开仓库 Settings → Pages
-2. Source 选择 `Deploy from a branch`，Branch 选 `main`、目录选 `/ (root)`
-3. 稍等片刻即可通过 `https://<用户名>.github.io/<仓库名>/` 访问
+线上地址：<https://sunfleeting-debug.github.io/EnglishLearningWebsite/>
 
-页面内全部使用相对路径，放在任意子路径下都能正常工作。
+这个站**零构建**，所以部署就是「推 main」——Pages 已配成 `main` 分支 `/ (root)`，
+`git push` 之后一两分钟自动重新发布，无需任何构建步骤。
+
+```bash
+git push origin main    # 推完等 1~2 分钟即可
+```
+
+- 根目录放了 `.nojekyll`，让 Pages 跳过 Jekyll 处理，所有文件按原样提供
+- 页面内全部使用相对路径 ⇒ 放在任意子路径（如 `/EnglishLearningWebsite/`）都能正常工作
+- 首次开启 Pages（换仓库时）：Settings → Pages → Source 选 `Deploy from a branch`，
+  Branch 选 `main`、目录 `/ (root)`；或用 API：
+  `gh api --method POST repos/<owner>/<repo>/pages -f "source[branch]=main" -f "source[path]=/"`
 
 ## 目录结构
 
 ```
 .
 ├── index.html              # 入口（单页应用）
+├── manifest.json           # PWA 清单（添加到主屏幕）
+├── .nojekyll               # 让 GitHub Pages 跳过 Jekyll
 ├── assets/
 │   ├── css/style.css       # 全部样式
+│   ├── img/                # PWA 图标（192 / 512 / maskable / apple-touch）
 │   └── js/
 │       ├── util.js         # 工具函数、SVG 图标、Toast
 │       ├── store.js        # 学习状态（localStorage 持久化）
@@ -147,10 +170,19 @@ python tools/build_dict_ext.py
 ## 本地核验
 
 ```bash
-bash tools/verify.sh          # 起服务 + 跑 Playwright，共 32 项断言 + 20 张截图
+bash tools/verify.sh          # 起服务 + 跑 Playwright，共 38 项断言 + 截图
 ```
 
-核验通过的标准：`失败 0 / 共 32 项断言`，且控制台错误数 = 0。截图落在 `docs/shots/`。
+核验通过的标准：`失败 0 / 共 38 项断言`，且控制台错误数 = 0。截图落在 `docs/shots/`。
+
+线上验收（真开一次已部署的站点）：
+
+```bash
+NODE_OPTIONS= python -u tools/verify_live.py
+```
+
+10 项断言：标题 / 首页渲染 / 词库列表 / 详情页与按需加载 / 近义词跳转 /
+移动端无横向溢出 / 控制台错误 0 / 资源失败 0。
 
 > 启动 Chromium 需要真实环境（用沙箱 Bash 跑 Playwright 时需关闭沙箱，否则浏览器进程会被拦截）；
 > 另外 Playwright 版本必须与已下载的 `chromium_headless_shell` 版本一致，
