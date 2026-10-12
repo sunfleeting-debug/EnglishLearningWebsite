@@ -22,25 +22,39 @@
   }
 
   function render(host, query) {
-    var w = null;
-    if (query.id) w = TW.data.byId(+query.id);
-    if (!w && query.w) w = TW.data.byWord(query.w);
-
+    var w = query.id ? TW.data.byId(+query.id) : null;
+    var term = null;
     if (!w && query.w) {
-      var e = TW.data.ext(query.w);
-      if (e) { renderExt(host, query.w, e); return; }
+      w = TW.data.byWord(query.w);
+      if (!w) term = query.w;              // 本地词库没有 → 可能是扩展词条
     }
 
-    if (!w) {
-      host.innerHTML = '<div class="wrap"><div class="card card-pad">' +
-        TW.ui.empty('未找到这个单词', '🔍') +
-        '<div class="row" style="justify-content:center"><button class="btn" id="dc-back">' + TW.icon('arrowLeft', 16) + ' 返回</button></div>' +
-        '</div></div>';
-      var bb = TW.$('#dc-back', host);
-      if (bb) bb.addEventListener('click', back);
-      return;
-    }
+    if (!w && !term) { paintMissing(host); return; }
 
+    // 词典数据按需加载：首屏不加载 dict.js/dict-ext.js 这两份大文件（移动端更省流量与内存）
+    host.innerHTML = '<div class="wrap wrap-narrow"><div class="card card-pad muted">正在加载词典数据…</div></div>';
+    var pending = w ? 2 : 1;               // 本地词要「词典卡 + 扩展词条（供链接跳转）」；扩展词只需要后者
+    function ready() {
+      if (!host.isConnected) return;        // 已离开该页面，别再写 DOM
+      if (--pending > 0) return;
+      if (w) { paintLocal(host, w); return; }
+      var e = TW.data.ext(term);
+      if (e) renderExt(host, term, e); else paintMissing(host);
+    }
+    if (w) TW.data.loadDict(ready);
+    TW.data.loadDictExt(ready);
+  }
+
+  function paintMissing(host) {
+    host.innerHTML = '<div class="wrap"><div class="card card-pad">' +
+      TW.ui.empty('未找到这个单词', '🔍') +
+      '<div class="row" style="justify-content:center"><button class="btn" id="dc-back">' + TW.icon('arrowLeft', 16) + ' 返回</button></div>' +
+      '</div></div>';
+    var bb = TW.$('#dc-back', host);
+    if (bb) bb.addEventListener('click', back);
+  }
+
+  function paintLocal(host, w) {
     var card = TW.data.card(w.word) || {};
     var book = TW.data.getBook(w.book);
     var siblings = TW.data.byBook(w.book);

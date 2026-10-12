@@ -5,8 +5,13 @@
 
   var WORDS = TW.WORDS || [];
   var BOOKS = TW.BOOKS || [];
-  var DICT = TW.DICT || {};        // 单词 -> 词典卡（搭配/派生/辨析/近义/反义/例句/词源）
-  var DICT_EXT = TW.DICT_EXT || {}; // 单词 -> 轻量扩展词条（音标+释义），用于近义/反义跳转
+  // 词典卡与扩展词条体积大（dict.js 约 3.9MB、dict-ext.js 约 1MB）。
+  // 为照顾移动端首屏，这两份**不在 index.html 里静态引入**，而是打开单词详情页时才按需注入
+  // <script>（经典脚本不受 CORS 限制，file:// 下同样可用）。
+  var DICT = {};
+  var DICT_EXT = {};
+  var dictLoading = null, dictReady = false;
+  var extLoading = null, extReady = false;
   var byId = {};
   var byWordMap = {};              // 小写单词 -> 词条（跨词跳转用）
   var byBookMap = {};
@@ -104,10 +109,56 @@
     return DICT[String(word).toLowerCase()] || null;
   }
 
+  /* ---------- 按需加载大文件 ---------- */
+
+  function injectOnce(src, onDone, onFail) {
+    var s = document.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.onload = onDone;
+    s.onerror = onFail;
+    document.head.appendChild(s);
+  }
+
+  /** 加载 data/dict.js（词典卡） */
+  function loadDict(cb) {
+    if (dictReady) { if (cb) cb(); return; }
+    if (dictLoading) { if (cb) dictLoading.push(cb); return; }
+    dictLoading = cb ? [cb] : [];
+    injectOnce('data/dict.js', function () {
+      DICT = TW.DICT || {};
+      dictReady = true;
+      var q = dictLoading; dictLoading = null;
+      q.forEach(function (f) { if (f) f(); });
+    }, function () {
+      var q = dictLoading; dictLoading = null;
+      q.forEach(function (f) { if (f) f(); });
+    });
+  }
+
+  /** 加载 data/dict-ext.js（扩展词条：非本词书的近义/反义词） */
+  function loadDictExt(cb) {
+    if (extReady) { if (cb) cb(); return; }
+    if (extLoading) { if (cb) extLoading.push(cb); return; }
+    extLoading = cb ? [cb] : [];
+    injectOnce('data/dict-ext.js', function () {
+      DICT_EXT = TW.DICT_EXT || {};
+      extReady = true;
+      var q = extLoading; extLoading = null;
+      q.forEach(function (f) { if (f) f(); });
+    }, function () {
+      var q = extLoading; extLoading = null;
+      q.forEach(function (f) { if (f) f(); });
+    });
+  }
+
   TW.data = {
     words: WORDS,
     books: BOOKS,
-    dict: DICT,
+    loadDict: loadDict,
+    loadDictExt: loadDictExt,
+    dictReady: function () { return dictReady; },
+    extReady: function () { return extReady; },
     byId: function (id) { return byId[id]; },
     byWord: byWord,
     hasWord: hasWord,

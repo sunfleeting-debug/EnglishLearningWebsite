@@ -9,12 +9,12 @@
     opts = opts || {};
     var p = TW.store.get(w.id) || {};
     var brief = TW.data.brief(w);
-    var hasCard = !!TW.data.card(w.word);
     var stars =
       '<button class="star-btn' + (p.fav ? ' on' : '') + '" data-act="fav" data-id="' + w.id + '" title="收藏">' + TW.icon('star') + '</button>' +
       '<button class="star-btn master' + (p.master ? ' on' : '') + '" data-act="master" data-id="' + w.id + '" title="已掌握">' + TW.icon('check') + '</button>';
+    // 注意：词典卡改为「按需加载」，列表渲染时还没有 dict 数据，所以这里不再判断有无卡片，一律给入口
     var detailBtn = opts.noCard ? '' :
-      '<a class="star-btn' + (hasCard ? '' : ' dim') + '" href="#/word?id=' + w.id + '" title="词典详解">' + TW.icon('lightbulb') + '</a>';
+      '<a class="star-btn" href="#/word?id=' + w.id + '" title="词典详解">' + TW.icon('lightbulb') + '</a>';
     return '<div class="wl-row" data-id="' + w.id + '">' +
       (opts.showNum ? '<span class="wl-num">' + (opts.num != null ? opts.num : w.idx + 1) + '</span>' : '') +
       '<div class="wl-main">' +

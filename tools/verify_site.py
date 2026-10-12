@@ -171,15 +171,24 @@ def main():
         active_n = pg.evaluate("() => document.querySelectorAll('.lyric-item.active').length")
         check("当前字幕被高亮", active_n >= 1, True)
 
-        # ---------- 词典卡数据 ----------
+        # ---------- 词典卡：首屏按需加载 ----------
         goto("#/")
-        dict_n = pg.evaluate("() => Object.keys(TW.DICT || {}).length")
-        check("词典卡数量 >= 2000", dict_n >= 2000, True)
+        boot_dict = pg.evaluate("() => !!(window.TW.data && TW.data.dictReady())")
+        check("首屏不加载词典卡（按需加载）", boot_dict, False)
         dr_id = pg.evaluate("() => (TW.WORDS.find(w => w.word === 'drastic') || {}).id")
         check("drastic 在词库中", bool(dr_id), True)
 
-        # ---------- 单词详情页 ----------
-        goto("#/word?id=" + str(dr_id))
+        # ---------- 单词详情页（打开时触发按需加载）----------
+        pg.goto(BASE + "#/word?id=" + str(dr_id), wait_until="domcontentloaded")
+        try:
+            pg.wait_for_selector(".dc-word", timeout=20000)
+        except Exception:
+            pass
+        pg.wait_for_timeout(400)
+        check("词典卡已按需加载", pg.evaluate("() => TW.data.dictReady()"), True)
+        check("扩展词条已按需加载", pg.evaluate("() => TW.data.extReady()"), True)
+        dict_n = pg.evaluate("() => Object.keys(TW.DICT || {}).length")
+        check("词典卡数量 >= 2000", dict_n >= 2000, True)
         pg.screenshot(path=str(SHOTS / "19-word-detail.png"))
         detail_word = pg.evaluate("() => (TW.$('.dc-word') || {}).textContent")
         check("详情页显示单词", (detail_word or "").strip(), "drastic")
@@ -232,6 +241,34 @@ def main():
         # 底部导航是否显示、横向是否溢出
         overflow = pg.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
         check("移动端无横向溢出", overflow <= 1, True)
+
+        # 移动端：单词详情页
+        pg.goto(BASE + "#/word?id=" + str(dr_id), wait_until="domcontentloaded")
+        try:
+            pg.wait_for_selector(".dc-word", timeout=20000)
+        except Exception:
+            pass
+        pg.wait_for_timeout(700)
+        pg.screenshot(path=str(SHOTS / "21-mobile-word.png"), full_page=True)
+        dc_ovf = pg.evaluate("() => document.documentElement.scrollWidth - window.innerWidth")
+        check("移动端详情页无横向溢出", dc_ovf <= 1, True)
+
+        # ---------- 移动端资源：manifest / 图标 ----------
+        pg.set_viewport_size({"width": 1440, "height": 900})
+        goto("#/")
+        man = pg.evaluate("""async () => {
+          const r = await fetch('manifest.json');
+          if (!r.ok) return 'http-' + r.status;
+          const j = await r.json();
+          return (j.icons || []).length ? 'ok' : 'no-icons';
+        }""")
+        check("manifest.json 可加载且含图标", man, "ok")
+        icon_ok = pg.evaluate("""async () => {
+          const urls = ['assets/img/icon-192.png','assets/img/icon-512.png','assets/img/icon-180.png'];
+          const rs = await Promise.all(urls.map(u => fetch(u).then(r => r.ok)));
+          return rs.every(Boolean);
+        }""")
+        check("PWA 图标均可访问", icon_ok, True)
 
         # ---------- 控制台错误 ----------
         check("控制台错误数 = 0", len(errors), 0)

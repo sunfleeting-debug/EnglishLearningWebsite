@@ -104,9 +104,8 @@
       var head = '<div class="word-phonetic">' + (TW.store.settings.showPhonetic && w.us ? '/' + TW.esc(w.us) + '/' : '') +
         '  <button class="btn ghost sm" data-act="speak">' + TW.icon('volume', 15) + ' 发音</button>' +
         '  <button class="btn ghost sm" data-act="fav">' + TW.icon('star', 15) + ' ' + ((TW.store.get(w.id) || {}).fav ? '已收藏' : '收藏') + '</button>' +
-        (TW.data.card(w.word) ? '  <a class="btn ghost sm" href="#/word?id=' + w.id + '">' + TW.icon('lightbulb', 15) + ' 详解</a>' : '') +
+        '  <a class="btn ghost sm" href="#/word?id=' + w.id + '">' + TW.icon('lightbulb', 15) + ' 详解</a>' +
         '</div>';
-
       var means = '<div class="mean-box">' + meaningsHtml(w) + '</div>';
 
       if (cfg.mode === 'type') {
@@ -235,7 +234,7 @@
         '<div class="mean-box" style="margin-top:.5rem">' + meaningsHtml(w) + '</div>' +
         (ok ? '<div class="tag ok" style="margin-top:.6rem">' + TW.icon('check', 13) + ' 正确</div>'
             : '<div class="tag err" style="margin-top:.6rem">' + TW.icon('x', 13) + ' 答错了，正确答案如上</div>') +
-        (TW.data.card(w.word) ? '<div style="margin-top:.6rem"><a class="btn ghost sm" href="#/word?id=' + w.id + '">' + TW.icon('lightbulb', 15) + ' 查看词典详解</a></div>' : '') +
+        '<div style="margin-top:.6rem"><a class="btn ghost sm" href="#/word?id=' + w.id + '">' + TW.icon('lightbulb', 15) + ' 查看词典详解</a></div>' +
       '</div>';
     }
 

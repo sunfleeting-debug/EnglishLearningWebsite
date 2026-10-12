@@ -4,7 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>六级单词速记 · 打字背单词</title>
-  <meta name="description" content="基于六级词汇周计划音频整理的单词本，支持看词打字、听音写词、看中文拼写、翻卡记忆等练习模式。" />
+  <meta name="description" content="基于六级词汇周计划音频整理的单词本，支持看词打字、听音写词、看中文拼写、翻卡记忆等练习模式，含一词一卡的词典详解。" />
+  <!-- 移动端：主题色 / 添加到主屏幕 -->
+  <meta name="theme-color" content="#2f6df6" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="六级单词速记" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="assets/img/icon-180.png" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234b8bff'/><text x='50' y='70' font-size='58' font-family='monospace' font-weight='700' fill='white' text-anchor='middle'>A</text></svg>" />
   <link rel="stylesheet" href="assets/css/style.css" />
 </head>
@@ -15,11 +23,10 @@
   </div>
   <div id="toast-host"></div>
 
-  <!-- 数据（构建产出，作为全局变量直接加载，无需服务器即可用） -->
+  <!-- 数据（构建产出，作为全局变量直接加载，无需服务器即可用）
+       注意：dict.js / dict-ext.js 体积大，改为打开单词详情页时按需注入，首屏不加载 -->
   <script src="data/books.js"></script>
   <script src="data/words.js"></script>
-  <script src="data/dict.js"></script>
-  <script src="data/dict-ext.js"></script>
 
   <!-- 应用脚本（按依赖顺序加载） -->
   <script src="assets/js/util.js"></script>

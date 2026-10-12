@@ -1,0 +1,17 @@
+{
+  "name": "六级单词速记 · 打字背单词",
+  "short_name": "六级单词速记",
+  "description": "基于六级词汇周计划音频整理的单词本，支持看词打字、听音写词、看中文拼写、翻卡记忆等练习模式，含一词一卡的词典详解。",
+  "lang": "zh-CN",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef1f5",
+  "theme_color": "#2f6df6",
+  "icons": [
+    { "src": "assets/img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "assets/img/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "assets/img/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

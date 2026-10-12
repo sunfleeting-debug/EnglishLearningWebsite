@@ -4,6 +4,9 @@
 
 # ---------- 构建缓存与临时目录 ----------
 tools/.cache/
+tools/__pycache__/
+__pycache__/
+*.pyc
 node_modules/
 _ref_typewords/
 _target_repo/
