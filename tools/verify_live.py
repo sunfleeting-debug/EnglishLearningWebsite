@@ -91,6 +91,23 @@ def main():
         pg.wait_for_timeout(2000)
         check("线上发音走在线真人音频", len(audio_reqs) > 0, True)
 
+        # 真题阅读（网页版做题，含 42 张渲染页图）
+        pg.set_viewport_size({"width": 1440, "height": 900})
+        pg.goto(URL + "#/reading", wait_until="load", timeout=60000)
+        pg.wait_for_timeout(1200)
+        check("线上阅读页渲染", pg.locator(".rd-tab").count(), 3)
+        check("线上阅读页原文页图（6 页）", pg.locator(".rd-img").count(), 6)
+        pg.goto(URL + "#/reading?tab=practice&test=mt1&mode=card", wait_until="load", timeout=60000)
+        pg.wait_for_timeout(1200)
+        check("线上阅读答题卡题量 = 30", pg.locator(".ans-q").count(), 30)
+        # 页面图必须真的能取到（离线渲染的图没推上去就会在这里暴露）
+        img_ok = pg.evaluate("""async () => {
+          const r = await fetch('assets/reading/practice/p01.webp');
+          return r.ok && (r.headers.get('content-type') || '').indexOf('image') >= 0;
+        }""")
+        check("线上阅读页图可加载", img_ok, True)
+        pg.screenshot(path=str(SHOTS / "27-live-reading.png"))
+
         # 移动端
         pg.set_viewport_size({"width": 390, "height": 844})
         pg.goto(URL, wait_until="load", timeout=60000)
