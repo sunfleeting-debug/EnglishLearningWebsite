@@ -11,7 +11,8 @@
     { key: 'review', label: '生词本', path: '/review', icon: 'star', badge: 'review' },
     { key: 'audio', label: '音频跟读', path: '/audio', icon: 'headphone' },
     { key: 'stats', label: '学习统计', path: '/stats', icon: 'chart' },
-    { key: 'resources', label: '阅读资料', path: '/resources', icon: 'file' },
+    { key: 'reading', label: '真题阅读', path: '/reading', icon: 'file' },
+    { key: 'resources', label: '学习资料', path: '/resources', icon: 'download' },
     { key: 'settings', label: '设置', path: '/settings', icon: 'settings' }
   ];
 
@@ -42,7 +43,7 @@
       home: TW.views.home, books: TW.views.books, word: TW.views.word,
       practice: TW.views.practice,
       review: TW.views.review, audio: TW.views.audio, stats: TW.views.stats,
-      resources: TW.views.resources, settings: TW.views.settings
+      reading: TW.views.reading, resources: TW.views.resources, settings: TW.views.settings
     };
     return { name: name, view: map[name] || TW.views.home };
   }

@@ -71,6 +71,8 @@ def main():
             ("09-audio", "#/audio"),
             ("10-stats", "#/stats"),
             ("11-resources", "#/resources"),
+            ("11b-reading", "#/reading"),
+            ("11c-reading-card", "#/reading?tab=practice&test=mt1&mode=card"),
             ("12-settings", "#/settings"),
         ]
         for name, route in pages:
@@ -308,6 +310,21 @@ def main():
           return rs.every(Boolean);
         }""")
         check("PWA 图标均可访问", icon_ok, True)
+
+        # ---------- 真题阅读（#/reading，网页版做题）----------
+        goto("#/reading")
+        check("阅读页材料 tab = 3", pg.locator(".rd-tab").count(), 3)
+        check("阅读页默认显示原文页图（6 页）", pg.locator(".rd-img").count(), 6)
+        check("阅读数据含 2 套 Model Test",
+              pg.evaluate("() => TW.READING.practice.tests.length"), 2)
+        goto("#/reading?tab=practice&test=mt1&mode=card")
+        check("阅读答题卡题量 = 30", pg.locator(".ans-q").count(), 30)
+        # 页面图应能加载（图片保真阅读是这一页的核心）
+        img_ok = pg.evaluate("""async () => {
+          const r = await fetch('assets/reading/practice/p01.webp');
+          return r.ok && (r.headers.get('content-type') || '').indexOf('image') >= 0;
+        }""")
+        check("阅读页图可正常加载", img_ok, True)
 
         # ---------- 控制台错误 ----------
         check("控制台错误数 = 0", len(errors), 0)
