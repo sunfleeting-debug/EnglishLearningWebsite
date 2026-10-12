@@ -522,6 +522,8 @@ kbd {
 }
 .toast.ok { background: var(--ok); color: #fff; }
 .toast.err { background: var(--err); color: #fff; }
+/* 提醒类（如发音不可用）：固定橙色，浅色/深色主题下都是白字可读 */
+.toast.warn { background: #d97706; color: #fff; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* 统计 */
@@ -653,5 +655,9 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 
 @media (max-width: 860px) {
   .dc-word { font-size: 1.6rem; }
+  /* 「发音方式」三段选择器较宽，窄屏改为竖排，避免挤压左侧说明 */
+  .set-row-col { flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+  .set-row-col .seg { flex-wrap: wrap; }
+  .seg button { padding: 0.3rem 0.6rem; font-size: 12.5px; }
 }
 .wref.ext { border-bottom-style: dotted; }

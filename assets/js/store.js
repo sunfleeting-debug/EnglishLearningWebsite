@@ -12,6 +12,7 @@
     autoPronounce: true,   // 出题时自动发音
     showPhonetic: true,    // 显示音标
     accent: 'us',          // 发音口音 us | uk
+    speakMode: 'auto',     // 发音通道 auto 在线音频优先(失败回退系统语音) | audio 只用在线音频 | tts 只用系统语音
     keySound: true,        // 键盘音效
     autoNext: true         // 答对后自动进入下一词
   };

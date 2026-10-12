@@ -38,10 +38,16 @@
           '<div class="card-title" style="margin-bottom:.3rem">发音与音效</div>' +
           switchRow('autoPronounce', '出题时自动发音', '看词 / 听音模式下自动朗读') +
           switchRow('keySound', '键盘与提示音效', '打字、答对、答错时的轻提示音') +
-          '<div class="set-row"><div><div class="set-label">发音口音</div><div class="set-hint">依赖浏览器语音合成</div></div>' +
+          '<div class="set-row"><div><div class="set-label">发音口音</div><div class="set-hint">美音 / 英音</div></div>' +
             '<div class="seg" id="set-accent">' +
               '<button data-val="us" class="' + (s.accent === 'us' ? 'active' : '') + '">美音</button>' +
               '<button data-val="uk" class="' + (s.accent === 'uk' ? 'active' : '') + '">英音</button>' +
+            '</div></div>' +
+          '<div class="set-row set-row-col"><div><div class="set-label">发音方式</div><div class="set-hint">自动＝在线真人音频优先，失败时退回系统语音</div></div>' +
+            '<div class="seg" id="set-speakmode">' +
+              '<button data-val="auto" class="' + (s.speakMode === 'auto' ? 'active' : '') + '">自动</button>' +
+              '<button data-val="audio" class="' + (s.speakMode === 'audio' ? 'active' : '') + '">在线音频</button>' +
+              '<button data-val="tts" class="' + (s.speakMode === 'tts' ? 'active' : '') + '">系统语音</button>' +
             '</div></div>' +
           '<div class="set-row"><div><div class="set-label">试听</div><div class="set-hint">用当前口音读一个单词</div></div>' +
             '<button class="btn sm" id="set-test">' + TW.icon('volume', 15) + ' 试听 "memory"</button></div>' +
@@ -96,6 +102,7 @@
     }
     bindSeg('#set-order', 'order');
     bindSeg('#set-accent', 'accent');
+    bindSeg('#set-speakmode', 'speakMode');
     bindSeg('#set-theme', 'theme');
 
     TW.$('#set-size', host).addEventListener('change', function (e) {
