@@ -32,7 +32,8 @@ def main():
     SHOTS.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as pw:
         kw = {
-            # 本机系统代理（127.0.0.1:7897）可能已失效，直连公网
+            # 站点在 *.github.io（Fastly CDN）上可直连，跳过系统代理更快更稳。
+            # 注意：github.com 本身在本机需要走代理，但这里只访问 Pages 站点，不涉及。
             "args": ["--no-proxy-server"],
         }
         if EXE.exists():
@@ -75,6 +76,15 @@ def main():
             sl.click()
             pg.wait_for_timeout(900)
             check("线上近义词跳转", "#/word" in pg.evaluate("() => location.hash"), True)
+
+        # 发音：默认「自动」模式应发出在线真人音频请求（有道 dictvoice）
+        pg.goto(URL, wait_until="networkidle", timeout=60000)
+        pg.wait_for_timeout(500)
+        audio_reqs = []
+        pg.on("request", lambda r: audio_reqs.append(r.url) if "dictvoice" in r.url else None)
+        pg.evaluate("() => TW.speech.speak('memory', 'us')")
+        pg.wait_for_timeout(2000)
+        check("线上发音走在线真人音频", len(audio_reqs) > 0, True)
 
         # 移动端
         pg.set_viewport_size({"width": 390, "height": 844})
