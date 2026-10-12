@@ -127,7 +127,11 @@ def main():
             check("tts 模式不发起音频请求", not reqs3, reqs3[:2])
             ctx3.close()
 
-            browser.close()
+            try:
+                browser.close()
+            except Exception:
+                # 收尾关闭偶发 driver 断连（沙箱/信号导致），不影响已完成的断言结果，忽略即可
+                pass
     finally:
         srv.terminate()
 

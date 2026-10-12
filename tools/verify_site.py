@@ -233,13 +233,27 @@ def main():
                 check("含反义词的词显示「反义词」板块", "反义词" in ant_titles, True)
                 pg.screenshot(path=str(SHOTS / "20-word-antonym.png"))
 
-        # 从词库列表进入详情页
+        # 词库行右侧操作图标齐全（发音 / 详解 / 收藏 / 掌握）——图标缺失会让用户找不到入口
         goto("#/books?book=week1")
-        first_detail = pg.locator(".wl-row a[href^='#/word']").first
-        if first_detail.count() > 0:
-            first_detail.click()
-            pg.wait_for_timeout(600)
-            check("列表「详解」入口可进入详情页", "#/word" in pg.evaluate("() => location.hash"), True)
+        side_btns = pg.evaluate("() => document.querySelectorAll('#bk-list .wl-row:first-child .wl-side > *').length")
+        check("行右侧有 4 个操作图标（发音/详解/收藏/掌握）", side_btns, 4)
+
+        # 从词库列表进入详情页：单词文本 / 行空白都应可点进详情，右侧喇叭只发音不跳转
+        goto("#/books?book=week1")
+        pg.locator("#bk-list .wl-row .wl-link").first.click()
+        pg.wait_for_timeout(700)
+        check("点击单词文本可进入详情页", "#/word" in pg.evaluate("() => location.hash"), True)
+
+        goto("#/books?book=week1")
+        pg.locator("#bk-list .wl-row .wl-trans").first.click()
+        pg.wait_for_timeout(700)
+        check("点击整行（释义区）也可进入详情页", "#/word" in pg.evaluate("() => location.hash"), True)
+
+        goto("#/books?book=week1")
+        hash_before = pg.evaluate("() => location.hash")
+        pg.locator("#bk-list .star-btn[data-act='speak']").first.click()
+        pg.wait_for_timeout(700)
+        check("点右侧发音按钮不跳转（仍留在词库页）", pg.evaluate("() => location.hash"), hash_before)
 
         # ---------- 移动端视口 ----------
         pg.set_viewport_size({"width": 390, "height": 844})

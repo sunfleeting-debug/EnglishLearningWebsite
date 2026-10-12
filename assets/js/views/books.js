@@ -49,7 +49,7 @@
 
       TW.$('#books-head', host).innerHTML =
         '<div class="page-head"><div><h2 class="page-title">词库</h2>' +
-        '<div class="page-desc">共 ' + TW.data.words.length + ' 个单词，来自字幕文件；点击单词可听发音，右侧可收藏 / 标记掌握</div></div>' +
+        '<div class="page-desc">共 ' + TW.data.words.length + ' 个单词，来自字幕文件；点击任意单词查看词典详解，右侧可发音 / 收藏 / 标记掌握</div></div>' +
         '<div class="row">' +
           '<input class="field" id="bk-search" placeholder="搜索单词或释义…" value="' + TW.esc(params.q) + '" />' +
           '<button class="btn primary" id="bk-practice">' + TW.icon('play', 16) + ' 练这一组</button>' +
@@ -91,8 +91,9 @@
         '<div class="card"><div class="wordlist" id="bk-list">' + rows + '</div></div>' +
         TW.ui.pager(params.page, pages, list.length);
 
-      TW.ui.bindWordList(TW.$('#bk-list', host), function (w) {
-        TW.speech.speak(w.word, TW.store.settings.accent);
+      // 点击整行 / 单词 → 进入词典详解页；发音改走行右侧的喇叭按钮
+      TW.ui.bindWordList(TW.$('#bk-list', host), {
+        onOpen: function (w) { TW.app.go('/word?id=' + w.id); }
       });
 
       TW.$$('[data-pg]', host).forEach(function (b) {

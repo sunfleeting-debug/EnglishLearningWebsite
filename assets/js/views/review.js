@@ -60,8 +60,9 @@
 
       var listEl = TW.$('#rv-list', host);
       if (listEl) {
-        TW.ui.bindWordList(listEl, function (w) {
-          TW.speech.speak(w.word, TW.store.settings.accent);
+        // 与词库页保持一致：点行进词典详解，发音走行右侧的喇叭按钮
+        TW.ui.bindWordList(listEl, {
+          onOpen: function (w) { TW.app.go('/word?id=' + w.id); }
         });
       }
 

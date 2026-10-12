@@ -15,47 +15,61 @@
     // 注意：词典卡改为「按需加载」，列表渲染时还没有 dict 数据，所以这里不再判断有无卡片，一律给入口
     var detailBtn = opts.noCard ? '' :
       '<a class="star-btn" href="#/word?id=' + w.id + '" title="词典详解">' + TW.icon('lightbulb') + '</a>';
+    // 发音按钮：整行点击改为「进词典详解」后，发音收进右侧图标，不再靠点单词触发
+    var speakBtn = opts.noStar ? '' :
+      '<button class="star-btn" data-act="speak" data-id="' + w.id + '" title="发音">' + TW.icon('volume') + '</button>';
     return '<div class="wl-row" data-id="' + w.id + '">' +
       (opts.showNum ? '<span class="wl-num">' + (opts.num != null ? opts.num : w.idx + 1) + '</span>' : '') +
       '<div class="wl-main">' +
-        '<div class="wl-word">' + TW.esc(w.word) +
+        // 单词本身也是链接：可右键「在新标签打开」，鼠标悬停能看到链接
+        '<div class="wl-word"><a class="wl-link" href="#/word?id=' + w.id + '" title="查看词典详解">' + TW.esc(w.word) + '</a>' +
           (opts.showPhonetic !== false && w.us ? '<span class="wl-phon">/' + TW.esc(w.us) + '/</span>' : '') +
           (p.master ? '<span class="tag ok">已掌握</span>' : '') +
           (p.w > 0 && !p.master ? '<span class="tag err">错 ' + p.w + '</span>' : '') +
         '</div>' +
         '<div class="wl-trans" title="' + TW.esc(w.trans.join(' | ')) + '">' + TW.esc(brief || '（无释义）') + '</div>' +
       '</div>' +
-      (opts.noStar ? '' : '<div class="wl-side">' + detailBtn + stars + '</div>') +
+      (opts.noStar ? '' : '<div class="wl-side">' + speakBtn + detailBtn + stars + '</div>') +
     '</div>';
   };
 
-  /** 绑定列表里的发音 / 收藏 / 掌握交互（事件委托） */
-  ui.bindWordList = function (root, onSpeak) {
+  /** 绑定列表交互（事件委托）
+   *  点击行（非按钮）→ opts.onOpen(w)，用于进入词典详解页；未提供 onOpen 时退回 opts.onSpeak(w)。
+   *  右侧图标按钮：发音 / 收藏 / 掌握。
+   *  兼容旧签名：第二个参数直接传函数等价于 { onSpeak: fn }。
+   */
+  ui.bindWordList = function (root, arg) {
+    var opts = (typeof arg === 'function') ? { onSpeak: arg } : (arg || {});
     root.addEventListener('click', function (e) {
       var btn = e.target.closest('[data-act]');
       if (btn) {
         e.stopPropagation();
         var id = +btn.dataset.id;
-        if (btn.dataset.act === 'fav') {
+        var act = btn.dataset.act;
+        if (act === 'fav') {
           var on = TW.store.toggleFav(id);
           btn.classList.toggle('on', on);
           TW.toast(on ? '已收藏' : '已取消收藏');
-        } else if (btn.dataset.act === 'master') {
+        } else if (act === 'master') {
           var m = TW.store.toggleMaster(id);
           btn.classList.toggle('on', m);
           TW.toast(m ? '已标记掌握' : '已取消掌握');
+        } else if (act === 'speak') {
+          var sw = TW.data.byId(id);
+          if (sw) {
+            if (opts.onSpeak) opts.onSpeak(sw);
+            else TW.speech.speak(sw.word, TW.store.settings.accent);
+          }
         }
         return;
       }
       var row = e.target.closest('.wl-row');
-      if (row) {
-        if (e.target.closest('a')) return;   // 详解链接交给浏览器跳转
-        var w = TW.data.byId(+row.dataset.id);
-        if (w) {
-          if (onSpeak) onSpeak(w);
-          else TW.speech.speak(w.word, TW.store.settings.accent);
-        }
-      }
+      if (!row) return;
+      if (e.target.closest('a')) return;   // 行内链接（单词本身）交给浏览器跳转
+      var w = TW.data.byId(+row.dataset.id);
+      if (!w) return;
+      if (opts.onOpen) opts.onOpen(w);
+      else if (opts.onSpeak) opts.onSpeak(w);
     });
   };
 
