@@ -191,6 +191,26 @@ def main():
             check("云端有复习队列条目 apple", srv["srs"], True)
             check("云端有当日练习量", srv["day"], {"done": 2, "right": 1})
 
+            # ============ 3.5) 同步响应不得打断练习页 ============
+            # 旧 bug：每次同步响应都 applyRemote → emit('remote') → 整页 render()，
+            # 练习页被重建 ⇒ 打了一半的单词突然消失、页面闪一下（sunfleeting 实测反馈）。
+            # 修复后 remote 只重渲染读数型视图（首页/复习/生词本），交互中视图不动。
+            log("\n--- 3.5) 同步响应回来不重渲染练习页 ---")
+            goto(pgA, "#/practice?book=week1&mode=type")
+            pgA.fill("#p-input", "abc")
+            pgA.evaluate("() => { window.__twNode = document.querySelector('#p-input'); }")
+            pgA.evaluate("""() => {
+              const w = TW.WORDS.find(x => { const p = TW.store.get(x.id); return !p || !p.seen; });
+              if (w) TW.store.markRight(w.id);       // 造一条脏数据
+            }""")
+            chk2 = pgA.evaluate("() => TW.sync.flush(true)")
+            check("3.5 手动同步成功", chk2, True)
+            same = pgA.evaluate("""() => {
+              const el = document.querySelector('#p-input');
+              return el && el === window.__twNode && el.value === 'abc';
+            }""")
+            check("同步响应回来输入框节点与内容原样（未整页重渲染）", same, True)
+
             # ============ 4) 合并规则：计数取 max（幂等）============
             log("\n--- 4) 合并规则（计数取 max，不回退）---")
             merge = pgA.evaluate("""async (wid) => {

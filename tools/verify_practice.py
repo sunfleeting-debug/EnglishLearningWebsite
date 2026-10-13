@@ -279,6 +279,8 @@ def main():
             check("答对后进入反馈（出现「继续」按钮）", act_count(pg, "next"), 1)
             check("反馈阶段输入框已被移除", pg.locator("#p-input").count(), 0)
             check("反馈阶段焦点回到 body（键盘交给文档级监听）", active_tag(pg), "BODY")
+            pg.wait_for_timeout(1300)   # 旧版 autoNext 会在 750ms 自动跳 —— 已按需求移除
+            check("答对反馈不自动跳下一个（等用户按 Enter）", act_count(pg, "next"), 1)
             press("Enter")
             check("反馈阶段 Enter 能继续到下一词", pg.locator("#p-input").count(), 1)
             check("继续后确实换了词", stage_word(pg) != w_typed, True)
@@ -662,6 +664,8 @@ def main():
             check("照着打对后进入反馈（出现继续按钮）", act_count(pg, "next"), 1)
             check("反馈提示「已照答案重打」",
                   "已照答案重打" in pg.evaluate("() => document.body.innerText"), True)
+            pg.wait_for_timeout(1300)
+            check("重打成功的反馈也不自动跳（等用户按 Enter）", act_count(pg, "next"), 1)
             check("本题记的是答错（w+1，不算答对）",
                   pg.evaluate("""(id) => {
                     const p = TW.store.get(id);

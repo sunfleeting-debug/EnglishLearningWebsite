@@ -727,9 +727,6 @@
         TW.speech.sound.correct();
         saveResume();
         showFeedback(w, true, '已照答案重打 ✓');
-        if (TW.store.settings.autoNext) {
-          setTimeout(function () { if (alive() && st.phase === 'feedback') next(); }, 750);
-        }
       }
 
       function grade(ok) {
@@ -753,7 +750,9 @@
         }
         saveResume();   // 反馈阶段快照指向下一题（见 saveResume 注释）
         showFeedback(w, ok);
-        if (ok && TW.store.settings.autoNext) setTimeout(function () { if (alive() && st.phase === 'feedback') next(); }, 750);
+        /* 🔴 不自动跳下一词（sunfleeting：反馈页没按 Enter 却自己跳了，不行）。
+           旧版这里有个 autoNext 设置：答对后 750ms 自动 next() —— 反馈页一闪而过、
+           想看释义/做笔记都来不及。现在一律等用户 Enter 或点「继续」。 */
       }
 
       /** 反馈页（判分后 / 重打成功后共用）：清掉输入区，渲染 答案+释义+工具条+继续 */

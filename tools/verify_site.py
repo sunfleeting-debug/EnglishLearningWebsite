@@ -176,10 +176,11 @@ def main():
         feedback = pg.evaluate("() => document.body.innerText")
         check("答对后出现「正确」提示", "正确" in feedback, True)
         pg.screenshot(path=str(SHOTS / "14-practice-correct.png"))
-        # 等自动跳转（autoNext 延迟 750ms）走完再读进度
-        pg.wait_for_timeout(1300)
+        # 反馈页不再自动跳下一词（autoNext 已移除）——显式按 Enter 继续，再读进度
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(700)
         pos_txt = pg.evaluate("() => TW.$('#p-pos').textContent")
-        check("进度已推进到第 2 词", "第 2 " in pos_txt, True)
+        check("按 Enter 后进度推进到第 2 词", "第 2 " in pos_txt, True)
 
         # ---------- 练习：答错先给一次重做机会，再错才判错 ----------
         goto("#/practice?book=week1&mode=recall&size=10")

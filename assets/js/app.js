@@ -164,10 +164,13 @@
     // 生词本 / 复习 / 首页需要实时刷新
     if (current.name === 'review' || current.name === 'home' || current.name === 'srs') render();
   });
-  // 云端数据合并回来后，界面跟着刷新一次
+  // 云端数据合并回来后界面跟着刷新 —— 但🔴**只在「读数型」视图**整页重渲染：
+  // 练习/详解这类交互中视图被 render() 重建会丢输入、闪屏（sunfleeting：打着字单词
+  // 突然消失——正是答题后 3.5s 防抖同步的响应回来触发了整页 render）。
+  // 练习页的进度本来就走 markRight/markWrong 实时落库 + 会话续接快照，无需重渲染。
   TW.store.on('remote', function () {
     renderNav(current.name);
-    render();
+    if (current.name === 'review' || current.name === 'home' || current.name === 'srs') render();
   });
 
   function boot() {
