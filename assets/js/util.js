@@ -95,7 +95,11 @@
     search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
     list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
     lightbulb: '<path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>',
-    shuffle: '<path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>'
+    shuffle: '<path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/>',
+    user: '<circle cx="12" cy="8" r="3.6"/><path d="M4.8 20.4a7.2 7.2 0 0 1 14.4 0"/>',
+    shield: '<path d="M12 3 5 6v5.4c0 4.3 2.9 7.7 7 9.1 4.1-1.4 7-4.8 7-9.1V6z"/><path d="m9.2 12.2 2 2 3.6-3.8"/>',
+    cloud: '<path d="M7 19a4 4 0 0 1-.7-7.94A5.5 5.5 0 0 1 17.4 9.4 3.8 3.8 0 0 1 17 19z"/>',
+    logout: '<path d="M14.5 4H18a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3.5"/><path d="M10 12h10"/><path d="m13.2 8.2 4 3.8-4 3.8"/>'
   };
 
   TW.icon = function (name, size) {

@@ -14,8 +14,18 @@
     { key: 'stats', label: '学习统计', path: '/stats', icon: 'chart' },
     { key: 'reading', label: '真题阅读', path: '/reading', icon: 'file' },
     { key: 'resources', label: '学习资料', path: '/resources', icon: 'download' },
+    { key: 'account', label: '账号', path: '/account', icon: 'user' },
     { key: 'settings', label: '设置', path: '/settings', icon: 'settings' }
   ];
+
+  /** 管理看板只对管理员显示（真正的权限判定在后端） */
+  function navList() {
+    var list = NAV.slice();
+    if (TW.api && TW.api.isAdmin()) {
+      list.splice(list.length - 1, 0, { key: 'admin', label: '管理看板', path: '/admin', icon: 'shield' });
+    }
+    return list;
+  }
 
   /* ---------------- 路由 ---------------- */
   function parseHash() {
@@ -44,7 +54,8 @@
       home: TW.views.home, books: TW.views.books, word: TW.views.word,
       practice: TW.views.practice, srs: TW.views.srs,
       review: TW.views.review, audio: TW.views.audio, stats: TW.views.stats,
-      reading: TW.views.reading, resources: TW.views.resources, settings: TW.views.settings
+      reading: TW.views.reading, resources: TW.views.resources, settings: TW.views.settings,
+      account: TW.views.account, admin: TW.views.admin
     };
     return { name: name, view: map[name] || TW.views.home };
   }
@@ -53,7 +64,7 @@
     var c = TW.store.counts();
     var due = TW.store.srs.dueCount();
     var host = document.getElementById('sidebar');
-    var items = NAV.map(function (n) {
+    var items = navList().map(function (n) {
       var badge = '';
       if (n.badge === 'review') {
         var num = c.wrong + c.fav;
@@ -66,7 +77,15 @@
         '<span class="nav-label">' + n.label + '</span>' + badge + '</button>';
     }).join('');
 
-    // 移动端只显示前 5 个高频入口
+    // 底部：账号入口（带同步状态点）+ 主题切换
+    var u = (TW.api && TW.api.token()) ? TW.api.user() : null;
+    var snap = TW.sync ? TW.sync.snapshot() : { status: 'off' };
+    var footUser = '<button class="foot-user" data-path="/account" title="账号与同步">' +
+      TW.icon('user', 14) +
+      '<span class="fu-text">' + TW.esc(u ? u.email : '登录 / 注册') + '</span>' +
+      '<i class="sync-dot ' + snap.status + '" title="' + TW.esc(snap.status) + '"></i>' +
+      '</button>';
+
     host.innerHTML =
       '<div class="brand">' +
         '<div class="brand-logo">A</div>' +
@@ -75,13 +94,15 @@
       '</div>' +
       '<nav class="nav">' + items + '</nav>' +
       '<div class="sidebar-foot">' +
-        '<span class="small muted">本地存储 · 无需登录</span>' +
+        footUser +
         '<button class="icon-btn" id="theme-btn" title="切换主题">' + TW.icon(TW.store.settings.theme === 'dark' ? 'sun' : 'moon') + '</button>' +
       '</div>';
 
     TW.$$('.nav-item', host).forEach(function (b) {
       b.addEventListener('click', function () { go(b.dataset.path); });
     });
+    var fu = TW.$('.foot-user', host);
+    if (fu) fu.addEventListener('click', function () { go(fu.dataset.path); });
     var tb = TW.$('#theme-btn', host);
     if (tb) tb.addEventListener('click', toggleTheme);
   }
@@ -129,6 +150,11 @@
     // 生词本 / 复习 / 首页需要实时刷新
     if (current.name === 'review' || current.name === 'home' || current.name === 'srs') render();
   });
+  // 云端数据合并回来后，界面跟着刷新一次
+  TW.store.on('remote', function () {
+    renderNav(current.name);
+    render();
+  });
 
   function boot() {
     TW.store.load();
@@ -136,7 +162,10 @@
     applyTheme();
     TW.speech.sound.enabled = TW.store.settings.keySound;
     if (!location.hash) location.hash = '/';
+    if (TW.sync) TW.sync.onChange(function () { renderNav(current.name); });
     render();
+    // 同步层放在最后初始化：此时 store 已 load/migrate，视图已就绪
+    if (TW.sync) TW.sync.init();
   }
 
   TW.app = { go: go, render: render, boot: boot, current: function () { return current; } };

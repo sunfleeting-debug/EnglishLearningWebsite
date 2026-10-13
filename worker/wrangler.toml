@@ -1,0 +1,22 @@
+# 六级单词速记 · 后端（Cloudflare Workers + D1）
+# 部署：见 README.md
+name = "cet-words-api"
+main = "index.js"
+compatibility_date = "2025-01-01"
+workers_dev = true
+
+# D1 数据库绑定。先执行 `npx wrangler d1 create cet-words`，
+# 把输出里的 database_id 粘到下面。
+[[d1_databases]]
+binding = "DB"
+database_name = "cet-words"
+database_id = "在这里填入 database_id"
+
+[vars]
+# 管理员邮箱（逗号分隔）。这些邮箱注册/登录后就能看到「管理看板」。
+# 注意：变量改了要重新 deploy 才生效。
+ADMIN_EMAILS = "you@example.com"
+
+# 允许跨域的前端来源，逗号分隔；* 表示不限制。
+# 上线后建议改成具体来源，例如："https://sunfleeting-debug.github.io"
+ALLOWED_ORIGINS = "*"

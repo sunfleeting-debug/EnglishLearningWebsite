@@ -32,6 +32,17 @@
     srsInit: false         // 是否已把历史错词导入复习队列
   };
 
+  /* ---------- 云同步的「脏标记」 ----------
+     store 只负责记「哪些 id 变过」，不关心怎么发。TW.sync 在防抖后按键取出当前值发给后端，
+     因此不必把整份 progress 反复上传。 */
+  var dirty = newDirty();
+  function newDirty() {
+    return { progress: {}, daily: {}, srs: {}, delProgress: {}, delSrs: {}, clear: {} };
+  }
+  function touchProgress(id) { dirty.progress[id] = 1; }
+  function touchDaily(day) { dirty.daily[day] = 1; }
+  function touchSrs(key) { dirty.srs[key] = 1; }
+
   /* ---------- 存取 ---------- */
   function load() {
     try {
@@ -194,8 +205,10 @@
     if (r) {
       if (src && !r.s) r.s = src;
       if (brief && !r.m) r.m = brief;
+      touchSrs(k);
       return r;
     }
+    touchSrs(k);
     return (state.srs[k] = {
       w: word, s: src || '', m: brief || '',
       b: 0, d: today(), ts: Date.now(), ok: 0, bad: 0, lapses: 0
@@ -231,6 +244,7 @@
       r.bad++; r.lapses++;
     }
     r.ts = Date.now();
+    touchSrs(k);
     save(); emit('progress');
   }
 
@@ -271,8 +285,105 @@
     return { total: total, due: due, learning: learning, mastered: mastered };
   }
 
-  function srsRemove(word) { delete state.srs[srsKey(word)]; save(); emit('progress'); }
-  function srsReset() { state.srs = {}; state.srsInit = true; save(); emit('progress'); }
+  function srsRemove(word) {
+    var k = srsKey(word);
+    delete state.srs[k];
+    dirty.delSrs[k] = 1;
+    delete dirty.srs[k];
+    save(); emit('progress');
+  }
+  function srsReset() {
+    state.srs = {}; state.srsInit = true;
+    dirty = newDirty();
+    dirty.clear.srs = 1;
+    save(); emit('progress');
+  }
+
+  /* ================= 云同步支撑 ================= */
+
+  /** 取出并清空脏标记（发送失败时用 restore 放回） */
+  function takeDirty() {
+    var d = dirty;
+    dirty = newDirty();
+    return d;
+  }
+
+  /** 发送失败：把没发出去的标记合并回来 */
+  function restoreDirty(d) {
+    if (!d) return;
+    ['progress', 'daily', 'srs', 'delProgress', 'delSrs', 'clear'].forEach(function (k) {
+      Object.keys(d[k] || {}).forEach(function (id) { dirty[k][id] = 1; });
+    });
+  }
+
+  /** 脏标记是否为空 */
+  function dirtyEmpty(d) {
+    d = d || dirty;
+    return !Object.keys(d.progress).length && !Object.keys(d.daily).length &&
+      !Object.keys(d.srs).length && !Object.keys(d.delProgress).length &&
+      !Object.keys(d.delSrs).length && !Object.keys(d.clear).length;
+  }
+
+  /** 把脏标记翻译成发给后端的增量包（只发当前值，删掉的只在 deleted 里报 id） */
+  function buildDelta(d) {
+    d = d || dirty;
+    var out = { progress: {}, daily: {}, srs: {}, deleted: { progress: [], srs: [] }, clear: [] };
+    Object.keys(d.progress).forEach(function (id) {
+      if (state.progress[id]) out.progress[id] = state.progress[id];
+    });
+    Object.keys(d.daily).forEach(function (day) {
+      if (state.daily[day]) out.daily[day] = state.daily[day];
+    });
+    Object.keys(d.srs).forEach(function (k) {
+      if (state.srs[k]) out.srs[k] = state.srs[k];
+    });
+    out.deleted.progress = Object.keys(d.delProgress);
+    out.deleted.srs = Object.keys(d.delSrs);
+    out.clear = Object.keys(d.clear);
+    return out;
+  }
+
+  /** 整份本地数据（用于「首次登录 / 手动立即同步 / 页面重载后」兜底一次性上送） */
+  function buildAll() {
+    return {
+      progress: state.progress, daily: state.daily, srs: state.srs,
+      deleted: { progress: [], srs: [] }, clear: []
+    };
+  }
+
+  /**
+   * 用服务端返回的权威数据覆盖本地。
+   *  - 服务端有 ⇒ 采用服务端（服务端已按合并规则算过）。
+   *  - 服务端没有、本地有、且本地没有待上传改动 ⇒ 其他设备删过，本地也删。
+   *  - 本地还有未上传的改动（在当前 dirty 里）⇒ 先保留，等下一轮同步再合。
+   */
+  function applyRemote(remote) {
+    if (!remote) return;
+    var active = dirty;
+
+    function isActiveProgress(id) { return !!(active.progress[id] || active.delProgress[id]); }
+
+    function mergeMap(local, incoming, isActive) {
+      var out = {};
+      Object.keys(incoming || {}).forEach(function (k) {
+        if (isActive(k)) { if (local[k]) out[k] = local[k]; return; }
+        out[k] = incoming[k];
+      });
+      Object.keys(local).forEach(function (k) {
+        if (out[k] !== undefined) return;
+        if (isActive(k) && local[k]) out[k] = local[k];
+      });
+      return out;
+    }
+
+    state.progress = mergeMap(state.progress, remote.progress, isActiveProgress);
+    state.daily = mergeMap(state.daily, remote.daily, function (day) { return !!active.daily[day]; });
+    state.srs = mergeMap(state.srs, remote.srs, function (k) { return !!(active.srs[k] || active.delSrs[k]); });
+
+    state.srsInit = true;   // 云端已有权威数据，别再按本地历史进度重复入队
+    save();
+    emit('remote');
+  }
 
   TW.store = {
     state: state,
@@ -283,6 +394,15 @@
     resetWord: resetWord, resetAll: resetAll,
     setSetting: setSetting, counts: counts, srcStats: srcStats, today: today,
     addDays: addDays, diffDays: diffDays,
+    applyRemote: applyRemote,
+    dirty: {
+      peek: function () { return dirty; },
+      take: takeDirty,
+      restore: restoreDirty,
+      empty: dirtyEmpty,
+      build: buildDelta,
+      buildAll: buildAll
+    },
     srs: {
       INTERVALS: INTERVALS,
       enroll: enroll,

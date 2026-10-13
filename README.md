@@ -74,6 +74,15 @@
 - 学习数据存于浏览器 localStorage，支持导出 / 导入 JSON 备份（含复习队列）
 - 发音走「在线真人音频优先 + 系统语音兜底」双通道，可在设置页切换（见下方「关于发音」）
 
+**账号与云同步（可选，默认关闭）**
+- **不登录也能用**：站点本身是纯静态的，全部功能照常工作，数据存本机
+- 在「账号」页填一次后端地址即可启用：邮箱 + 密码注册 / 登录，换设备登录后**自动合并**两边进度
+- 同步内容：每个词的错/对/已学/收藏/已掌握、每日练习量、复习队列档位
+- **只传增量**：本地有脏标记，默认 3.5 秒防抖后只上传变动部分；登录、切页、关页面（beacon）会强制补一次全量
+- 导航栏底部显示同步状态点（灰=离线 / 蓝=同步中 / 红=失败）
+- 管理员进了 `ADMIN_EMAILS` 名单后能看到**管理看板**：用户列表、逐人下钻（错词/已掌握/收藏/复习队列）、
+  近 14 天练习曲线、CSV 导出、重置他人密码
+
 **移动端**
 - 自适应布局：窄屏改为底部导航栏 + 单列卡片，已断言「无横向溢出」（390×844 实测）
 - PWA：`manifest.json` + 图标（192 / 512 / maskable / apple-touch），可「添加到主屏幕」全屏打开
@@ -112,6 +121,56 @@ git push origin main    # 推完等 1~2 分钟即可
   Branch 选 `main`、目录 `/ (root)`；或用 API：
   `gh api --method POST repos/<owner>/<repo>/pages -f "source[branch]=main" -f "source[path]=/"`
 
+## 后端与云同步（可选）
+
+站点本身不需要后端。**只有想让进度跨设备保存时**，才需要额外部署一个 Cloudflare Worker。
+
+选它的原因：免费额度足够（D1 5GB / 每天 10 万次请求）、不用管服务器、和 GitHub Pages 的静态站天然分开。
+
+```bash
+cd worker
+npm i -g wrangler            # 或 npx wrangler
+wrangler login
+
+wrangler d1 create cet-words-db          # 建库，把输出的 database_id 填进 wrangler.toml
+wrangler d1 execute cet-words-db --file=schema.sql --remote   # 建表
+
+# 管理员邮箱（逗号分隔；在名单里的人登录后才看得到「管理看板」）
+# 以及允许访问的前端来源（逗号分隔，防止别人拿你的接口地址乱调）
+# 都写在 wrangler.toml 的 [vars] 里
+
+wrangler deploy              # 拿到 https://cet-words-api.<你的账号>.workers.dev
+```
+
+部署好之后：
+
+1. 打开站点的「**账号**」页 → 在「后端地址」里填上面的 `https://...workers.dev` → 保存并测试
+   （地址存在 localStorage 的 `typingcet.apiBase`，也可由 `assets/js/config.js` 预置成默认地址）
+2. 用邮箱 + 密码注册 / 登录；登录后本地进度会**整包上传并与云端合并**，之后只传增量
+
+> 不填地址 = 纯离线模式，所有功能照常，数据只在本机。
+
+### 同步的合并规则
+
+服务端以「谁更多 / 谁更新」为准，不做简单覆盖：
+
+| 字段 | 规则 |
+| --- | --- |
+| `w`（错）/`r`（对）/`seen`（已学） | 取 **max** |
+| `fav`（收藏）/`master`（已掌握） | 取 **时间戳更新**的那条 |
+| `daily.done` / `daily.right` | 取 **max** |
+| 复习队列 `srs` | 整条按 **ts** 取新（间隔与到期日必须自洽，不能逐字段合并） |
+
+删除走显式名单（`deleted`），清空走 `clear`，所以「本机删掉某个词」不会被下一次全量上传复活。
+
+### 隐私与安全
+
+- **只存邮箱（小写）和 PBKDF2-SHA256 加盐哈希**（10 万轮），不存明文密码；登录令牌是 32 字节随机数、30 天过期
+- 同步的内容只有：单词 id、词面快照、对错计数、收藏/掌握标记、复习档位、每日练习量 —— 没有其它个人信息
+- **没有邮箱验证、也没有找回密码**（刻意不做，避免引入邮件服务）；管理员可在看板里给任何人重置密码
+- 不登录不会产生任何云端数据；登录后数据归该账户，管理员只能查看统计与重置密码
+- `ALLOWED_ORIGINS` 建议填上你的 Pages 地址，避免接口被别的站点盗用
+
 ## 目录结构
 
 ```
@@ -124,12 +183,15 @@ git push origin main    # 推完等 1~2 分钟即可
 │   ├── img/                # PWA 图标（192 / 512 / maskable / apple-touch）
 │   └── js/
 │       ├── util.js         # 工具函数、SVG 图标、Toast
-│       ├── store.js        # 学习状态（localStorage 持久化）
+│       ├── store.js        # 学习状态（localStorage 持久化 + 脏标记）
+config.js       # 后端地址（留空即纯离线）
+api.js          # 后端接口客户端（Bearer token）
+sync.js         # 增量同步调度（防抖 / 强制全量 / 页面隐藏 beacon）
 │       ├── speech.js       # 发音双通道（在线音频 / 系统语音）+ WebAudio 音效
 │       ├── data.js         # 词库访问层
 │       ├── components.js   # 共享 UI 片段（含单词链接 / 例句分词）
 │       ├── app.js          # 侧边导航 + hash 路由
-│       └── views/          # 各页面（首页/词库/详情/练习/复习/生词本/音频/统计/阅读/资料/设置）
+│       └── views/          # 各页面（首页/词库/详情/练习/复习/生词本/音频/统计/阅读/资料/设置/账号/管理）
 ├── data/
 │   ├── words.json/js       # 2714 个词条（含音标、释义、音频时间轴）
 │   ├── dict.json/js        # 词典卡（搭配/派生/辨析/近义/反义/例句/词源）
@@ -139,6 +201,10 @@ git push origin main    # 推完等 1~2 分钟即可
 ├── THIRD-PARTY.md          # 第三方数据来源与许可
 ├── audio/                  # 压缩后的课程音频 + 原始字幕
 ├── resources/              # 六级阅读 PDF
+├── worker/                 # 后端（Cloudflare Workers + D1）
+│   ├── index.js            # 注册/登录/同步/管理接口
+│   ├── schema.sql          # D1 建表
+│   └── wrangler.toml       # 部署配置（ADMIN_EMAILS / ALLOWED_ORIGINS）
 └── tools/                  # 数据构建与核验脚本（见下）
 ```
 
@@ -221,6 +287,20 @@ bash tools/verify.sh          # 起服务 + 跑 Playwright，共 96 项断言 + 
 python tools/verify_speech.py
 ```
 
+后端与同步端到端核验（47 项断言，用 **Python 标准库写的假后端**跑真实浏览器流程，
+不需要真的 Cloudflare 账号）：
+
+```bash
+python tools/verify_backend.py
+```
+
+覆盖：不登录也能用 · 注册并被识别为管理员 · 答题后自动同步 · 合并取 max 不回退 ·
+换设备登录恢复进度 · 管理看板下钻（且不被后台同步重渲染关掉）· 非管理员 403 ·
+管理员重置密码 · 退出登录后本机数据仍在 · 控制台 0 错误。
+
+> `tools/mock_api.py` 是 Worker 接口与合并规则的**逐条等价实现**（纯 stdlib），
+> 改 `worker/index.js` 时两边要同步改，否则本地绿、线上错。
+
 线上验收（真开一次已部署的站点）：
 
 ```bash
@@ -240,7 +320,8 @@ NODE_OPTIONS= python -u tools/verify_live.py
 - 12 本常用词典的词表取自开源项目 [qwerty-learner](https://github.com/RealKai42/qwerty-learner)（GPL-3.0）；
   **第三方数据来源与许可逐项列在 [`THIRD-PARTY.md`](THIRD-PARTY.md)**
 - 复习调度为自研实现：固定间隔 1/2/4/7/15/30/60 天，答对升档、答错归零（不是 FSRS）
-- 学习记录只存在本机浏览器，换设备或清理浏览器数据会丢失（可先导出备份）
+- 不登录时学习记录只存在本机浏览器，换设备或清理浏览器数据会丢失（可先导出备份，或登录做云同步）
+- 云同步是**可选**的：不配后端地址就完全不联网上传任何学习数据
 
 ### 关于发音（没声音怎么排查）
 发音有两条通道，可在「设置 → 发音与音效 → 发音方式」切换：

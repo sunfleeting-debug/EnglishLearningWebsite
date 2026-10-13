@@ -893,3 +893,98 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
   .sr-brief { max-width: 18ch; }
 }
 
+/* ==========================================================================
+   账号 / 云同步 / 管理看板
+   ========================================================================== */
+
+.hide { display: none !important; }
+.mono { font-family: var(--mono); font-size: 12.5px; color: var(--text-2); word-break: break-all; }
+
+/* ---------- 侧边栏底部的账号入口 ---------- */
+.foot-user {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  padding: 0.3rem 0.35rem;
+  border-radius: 9px;
+  font-size: 12px;
+  transition: background var(--anim), color var(--anim);
+}
+.foot-user:hover { background: var(--bg-soft); color: var(--text); }
+.foot-user svg { width: 14px; height: 14px; flex: none; }
+.foot-user .fu-text {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; text-align: left;
+}
+
+/* 同步状态小圆点 */
+.sync-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex: none; background: var(--text-3); opacity: 0.7;
+}
+.sync-dot.idle { background: var(--ok); opacity: 1; }
+.sync-dot.syncing { background: var(--accent); opacity: 1; animation: syncPulse 1s ease-in-out infinite; }
+.sync-dot.error { background: var(--err); opacity: 1; }
+@keyframes syncPulse { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* 账号页里的状态胶囊 */
+.sync-pill {
+  font-size: 12px; padding: 0.16rem 0.6rem; border-radius: 20px;
+  background: var(--bg-soft); color: var(--text-2); border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.sync-pill.idle { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.sync-pill.syncing { background: var(--accent-2); color: var(--accent); border-color: transparent; }
+.sync-pill.error { background: var(--err-soft); color: var(--err); border-color: transparent; }
+
+/* ---------- 登录 / 注册表单 ---------- */
+.auth-form { display: flex; flex-direction: column; gap: 0.35rem; }
+.auth-lb { font-size: 12.5px; color: var(--text-3); margin-top: 0.5rem; }
+.auth-form .field { width: 100%; }
+.auth-err { color: var(--err); font-size: 13px; min-height: 1.2em; margin: 0.45rem 0 0.15rem; }
+
+/* ---------- 管理看板 ---------- */
+.adm-table-wrap { overflow-x: auto; padding: 0.2rem 0.2rem 0; }
+.adm-table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 720px; }
+.adm-table th {
+  text-align: left; font-weight: 600; font-size: 12px; color: var(--text-3);
+  padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.adm-table td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.adm-table tr:last-child td { border-bottom: none; }
+.adm-table tbody tr:hover { background: var(--card-2); }
+.adm-table tr.on { background: var(--accent-soft); }
+.adm-table .num { text-align: right; font-family: var(--mono); white-space: nowrap; }
+.adm-table .num.ok { color: var(--ok); }
+.adm-table .num.err { color: var(--err); }
+.adm-mail { font-weight: 600; word-break: break-all; }
+.adm-ops { white-space: nowrap; display: flex; gap: 0.3rem; }
+
+.adm-detail { margin-top: 0.2rem; }
+.adm-words { display: flex; flex-direction: column; }
+.adm-word {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  padding: 0.42rem 0.55rem; border-radius: 8px;
+  color: inherit; border-bottom: 1px solid var(--line-soft);
+  transition: background var(--anim);
+}
+.adm-word:last-child { border-bottom: none; }
+.adm-word:hover { background: var(--bg-soft); }
+.adm-word b { font-family: var(--mono); font-size: 14.5px; color: var(--text); flex: none; }
+.adm-word .adm-brief {
+  flex: 1; min-width: 0; color: var(--text-3); font-size: 12.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.adm-word .tag { flex: none; }
+
+@media (max-width: 860px) {
+  .adm-ops { flex-direction: column; }
+  .adm-word .adm-brief { max-width: 12ch; }
+}
+
+
