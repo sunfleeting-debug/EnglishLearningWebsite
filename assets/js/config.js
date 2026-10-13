@@ -9,5 +9,5 @@
    这个值也可以在页面上改：「账号」→「后端地址」，改完存在浏览器里，
    优先级高于本文件（localStorage 键 typingcet.apiBase）。 */
 window.TW_CONFIG = {
-  apiBase: ''
+  apiBase: 'https://cet-words-api.sunfleeting.workers.dev'
 };

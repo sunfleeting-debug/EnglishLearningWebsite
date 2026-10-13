@@ -5,18 +5,22 @@ main = "index.js"
 compatibility_date = "2025-01-01"
 workers_dev = true
 
-# D1 数据库绑定。先执行 `npx wrangler d1 create cet-words`，
-# 把输出里的 database_id 粘到下面。
+# D1 数据库绑定（换账号重部署时：npx wrangler d1 create cet-words，把输出的 database_id 换到下面）。
+# 建表：npx wrangler d1 execute cet-words --file=schema.sql --remote
 [[d1_databases]]
+# 🔴 binding 必须是 DB：worker/index.js 里用的是 env.DB。
+# `wrangler d1 create` 提示的 binding = "cet_words" 是它自己起的默认名，别照抄。
 binding = "DB"
 database_name = "cet-words"
-database_id = "在这里填入 database_id"
+database_id = "915c6388-28d2-4e6f-a394-71982baafe86"
 
 [vars]
 # 管理员邮箱（逗号分隔）。这些邮箱注册/登录后就能看到「管理看板」。
 # 注意：变量改了要重新 deploy 才生效。
-ADMIN_EMAILS = "you@example.com"
+# ⚠️ 这里是明文配置，仓库又是 public ⇒ 管理员邮箱会公开（本人邮箱本来也在 git 提交记录里）。
+# 想藏起来就改用密钥：npx wrangler secret put ADMIN_EMAILS（secret 会覆盖同名 vars）。
+ADMIN_EMAILS = "2119100068@qq.com"
 
 # 允许跨域的前端来源，逗号分隔；* 表示不限制。
-# 上线后建议改成具体来源，例如："https://sunfleeting-debug.github.io"
-ALLOWED_ORIGINS = "*"
+# 这里收紧成实际的 Pages 地址，避免接口被别的站点拿去用。
+ALLOWED_ORIGINS = "https://sunfleeting-debug.github.io"

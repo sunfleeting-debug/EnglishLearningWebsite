@@ -11,6 +11,10 @@ node_modules/
 _ref_typewords/
 _target_repo/
 
+# ---------- Cloudflare Workers 本地状态与密钥 ----------
+worker/.wrangler/
+worker/.dev.vars
+
 # ---------- 智能体本地记忆（不入库） ----------
 .workbuddy/
 

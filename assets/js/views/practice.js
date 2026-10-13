@@ -57,10 +57,40 @@
 
     /* ---------- 组装本轮词表 ---------- */
 
+    /** 这个词还没学过？（进度里没有任何答题记录） */
+    function isNew(w) {
+      var p = TW.store.get(w.id);
+      return !p || !p.seen;
+    }
+
+    /** 当前练习范围里还剩多少没学的词（完成页用它决定要不要给「学下一组」） */
+    function remainingNewCount() {
+      var list = cfg.book === 'all' ? TW.data.words : TW.data.byBook(cfg.book);
+      list = TW.data.filterByStatus(list, cfg.status, TW.store);
+      var n = 0;
+      for (var i = 0; i < list.length; i++) { if (isNew(list[i])) n++; }
+      return n;
+    }
+
+    /* 组装本轮词表。
+       🔴 **从还没学的词开始**：学完一组接着学下一组，而不是每次都从第 1 个词重来
+       （旧实现永远只练前 size 个词，学完 20 个再进来还是这 20 个）。
+         · 顺序模式：从第一个未学的词切起，取 size 个；不足则从头回绕补足
+         · 随机模式：先在未学的词里随机抽，不足再用已学的补
+       若筛选结果本身就是学过的词（错词本 / 收藏 / 已掌握），未学池为空
+       ⇒ 自动退化成原来的顺序 / 随机取法，行为不变。 */
     function poolSession() {
       var list = cfg.book === 'all' ? TW.data.words.slice() : TW.data.byBook(cfg.book).slice();
       list = TW.data.filterByStatus(list, cfg.status, TW.store);
-      var session = (cfg.order === 'random' ? TW.shuffle(list) : list.slice());
+      var session;
+      if (cfg.order === 'random') {
+        session = TW.shuffle(list.filter(isNew))
+          .concat(TW.shuffle(list.filter(function (w) { return !isNew(w); })));
+      } else {
+        var cut = 0;
+        while (cut < list.length && !isNew(list[cut])) cut++;
+        session = list.slice(cut).concat(list.slice(0, cut));
+      }
       if (cfg.size > 0) session = session.slice(0, cfg.size);
       return session;
     }
@@ -151,11 +181,17 @@
     function begin(session) {
       if (!alive()) return;
 
-      var st = {
-        i: 0, correct: 0, wrong: 0, phase: 'answering', // answering | feedback | done
-        revealed: false, lastOk: false, hintShown: false,
-        tries: 0   // 本题已答错次数：第一次错只提示重做，不改判、不揭答案
-      };
+      /* st 用「重新赋值」而不是「逐字段归零」：所有回调都通过闭包读 st 这个变量，
+         所以「再来一轮」只要 resetRound() 就能整组重来，且不重新切词表。 */
+      var st = null;
+      function resetRound() {
+        st = {
+          i: 0, correct: 0, wrong: 0, phase: 'answering', // answering | feedback | done
+          revealed: false, lastOk: false, hintShown: false,
+          tries: 0   // 本题已答错次数：第一次错只提示重做，不改判、不揭答案
+        };
+      }
+      resetRound();
 
       if (!session.length) {
         emptyPage('这一组没有可练习的单词，换个筛选条件试试。');
@@ -200,12 +236,7 @@
         return '<button data-mode="' + m.id + '" class="' + (cfg.mode === m.id ? 'active' : '') + '" title="' + m.desc + '">' + m.name + '</button>';
       }).join('');
       TW.$$('#p-mode button', host).forEach(function (b) {
-        b.addEventListener('click', function () {
-          var u = '/practice?' + srcQuery() +
-            '&mode=' + b.dataset.mode + '&order=' + cfg.order +
-            (cfg.src === 'collection' ? '' : (cfg.status !== 'all' ? '&status=' + cfg.status : ''));
-          TW.app.go(u);
-        });
+        b.addEventListener('click', function () { switchMode(b.dataset.mode); });
       });
 
       /* ---------- 顶部进度 ---------- */
@@ -274,10 +305,15 @@
             ? '<div class="practice-actions">' +
                 // 翻面后与其它模式对齐，给出词典详解入口
                 '<a class="btn ghost" href="#/word?id=' + encodeURIComponent(w.id) + '">' + TW.icon('lightbulb', 16) + ' 详解</a>' +
-                '<button class="btn" data-act="unknown">' + TW.icon('x', 16) + ' 不认识</button>' +
-                '<button class="btn primary" data-act="known">' + TW.icon('check', 16) + ' 认识</button>' +
+                '<button class="btn" data-act="unknown">' + TW.icon('x', 16) + ' 不认识 <kbd>Backspace</kbd></button>' +
+                '<button class="btn primary" data-act="known">' + TW.icon('check', 16) + ' 认识 <kbd>Enter</kbd></button>' +
               '</div>'
-            : '<div class="practice-actions"><button class="btn primary" data-act="reveal">翻面</button></div>') +
+            : '<div class="practice-actions"><button class="btn primary" data-act="reveal">翻面 <kbd>空格</kbd></button></div>') +
+          // 键盘提示：整个练习页都能不用鼠标（sunfleeting 要求）
+          '<div class="hint-keys">' +
+            '<kbd>空格</kbd> 翻面 · <kbd>Enter</kbd> 认识 · <kbd>Backspace</kbd> 不认识 · ' +
+            '<kbd>S</kbd> 发音 · <kbd>Esc</kbd> 跳过 · <kbd>1</kbd>~<kbd>4</kbd> 换模式' +
+          '</div>' +
           '</div>';
       }
 
@@ -340,25 +376,82 @@
       }
 
       /* ---------- 交互逻辑 ---------- */
+      /** 切到另一种练习模式（顶部按钮与键盘 1~4 都走这里） */
+      function switchMode(id) {
+        if (!id || id === cfg.mode) return;
+        TW.app.go('/practice?' + srcQuery() + '&mode=' + id + '&order=' + cfg.order +
+          (cfg.src === 'collection' ? '' : (cfg.status !== 'all' ? '&status=' + cfg.status : '')));
+      }
+
+      /** 输入框内的键盘：Enter 提交 / 反馈后继续，Esc 跳过 */
       function onKey(e) {
-        if (e.key === 'Enter' && !e.isComposing) {
+        if (e.isComposing) return;
+        if (e.key === 'Enter') {
           e.preventDefault();
+          e.__twHandled = true;   // 见 globalKey 里的说明：同一个按键别被处理两次
           if (st.phase === 'answering') check();
           else next();
         } else if (e.key === 'Escape') {
           e.preventDefault();
+          e.__twHandled = true;
           skip();
-        } else if (e.key === ' ' && cfg.mode === 'flash') {
-          e.preventDefault();
-          if (!st.revealed) { st.revealed = true; drawStage(); }
         }
       }
 
       document.addEventListener('keydown', globalKey);
+      /* 键盘全覆盖：尽量不用鼠标（sunfleeting 要求）
+         · 打字类：Enter 提交；反馈阶段输入框已被移除、焦点回到 body ⇒ 由这里接管
+           「Enter 继续」（旧实现只管 flash，反馈页按 Enter 其实没反应）
+         · 翻卡：空格 / Enter 翻面 → Enter（或 →）认识 · Backspace（或 ←）不认识
+         · 通用：S 发音 · Esc 跳过 · 1~4 换模式 · 完成页 Enter = 主按钮
+         输入框内的按键交给 onKey（它要读 input.value），这里直接让路。 */
       function globalKey(e) {
-        if (cfg.mode !== 'flash' || !alive()) return;
-        if (/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
-        if (e.key === ' ') { e.preventDefault(); if (!st.revealed) { st.revealed = true; drawStage(); } }
+        if (!alive() || e.isComposing) return;
+        /* 🔴 同一个按键可能已经被输入框上的 onKey 处理过了：比如提交后判错，
+           grade() 会把输入框从 DOM 里移除，此时 document.activeElement 已经变成 BODY，
+           事件继续冒泡到这里就会「看着像反馈阶段按 Enter」，于是又推进一次 ——
+           症状是「一次 Enter 既判分又翻页」，第 2 次答错直接跳过、看不到正确答案。
+           onKey 里给事件打了标记，这里认标记直接放行。 */
+        if (e.__twHandled) return;
+        var tag = (document.activeElement && document.activeElement.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;   // 正在打字
+        if (tag === 'BUTTON' || tag === 'A') return;         // 焦点在按钮/链接上，走原生行为
+
+        if (e.key === 'Escape') { e.preventDefault(); skip(); return; }
+
+        if (st.phase === 'done') {
+          // 完成页：Enter = 主按钮（有下一组就学下一组，否则再来一轮）
+          if (e.key === 'Enter') {
+            var b = TW.$('#p-next-group', host) || TW.$('[data-act="again"]', host);
+            if (b) { e.preventDefault(); b.click(); }
+          }
+          return;
+        }
+
+        if (/^[1-4]$/.test(e.key)) { switchMode(MODES[parseInt(e.key, 10) - 1].id); return; }
+        if (e.key === 's' || e.key === 'S') {
+          e.preventDefault();
+          TW.speech.speak(session[st.i].word, TW.store.settings.accent);
+          return;
+        }
+
+        if (cfg.mode !== 'flash') {
+          if (e.key === 'Enter' && st.phase === 'feedback') { e.preventDefault(); next(); }
+          return;
+        }
+        // 翻卡
+        if (e.key === ' ' || (e.key === 'Enter' && !st.revealed)) {
+          e.preventDefault();
+          if (!st.revealed) { st.revealed = true; drawStage(); }
+          return;
+        }
+        if (st.phase === 'feedback') {
+          if (e.key === 'Enter') { e.preventDefault(); next(); }
+          return;
+        }
+        if (!st.revealed) return;
+        if (e.key === 'Enter' || e.key === 'ArrowRight') { e.preventDefault(); grade(true); }
+        else if (e.key === 'Backspace' || e.key === 'ArrowLeft') { e.preventDefault(); grade(false); }
       }
       // 交给下一次 render 拆掉；本实例的文档级监听不会永远堆积
       prevGlobal = function () { document.removeEventListener('keydown', globalKey); };
@@ -459,7 +552,8 @@
       }
 
       function skip() {
-        if (st.phase === 'done') return;
+        // 只在「答题中」才算跳过：反馈/完成阶段按 Esc 不该再记一次错
+        if (st.phase !== 'answering') return;
         var w = session[st.i];
         st.wrong++; TW.store.markWrong(w.id);
         TW.store.srs.onResult(w.word, false, w.book, TW.data.brief(w));
@@ -487,6 +581,10 @@
         var stageEl = TW.$('#p-stage', host);
         if (!stageEl) return;
         var dueLeft = TW.store.srs.dueCount();
+        // 词书练习（非复习队列 / 生词本）且这本还有没学的词 → 给一个「学习下一组」入口。
+        // 下一组的取词逻辑就是 poolSession 的「从第一个未学词切起」，所以重复同一个 URL 即可。
+        var remain = cfg.src === '' ? remainingNewCount() : 0;
+        var hasNext = cfg.src === '' && remain > 0;
         stageEl.innerHTML =
           '<div class="stage">' +
             '<div style="font-size:3rem">🎉</div>' +
@@ -499,9 +597,16 @@
             '</div>' +
             (cfg.src === 'srs'
               ? '<div class="muted small" style="margin-top:.6rem">复习队列还剩 ' + dueLeft + ' 个到期词</div>'
-              : '') +
+              : (hasNext
+                  ? '<div class="muted small" style="margin-top:.6rem">这本词书还有 ' + remain + ' 个词没学</div>'
+                  : (cfg.src === '' ? '<div class="muted small" style="margin-top:.6rem">这本词书已经全部学完啦 🎉</div>' : ''))) +
             '<div class="practice-actions">' +
-              '<button class="btn primary" data-act="again">' + TW.icon('refresh', 16) + ' 再来一轮</button>' +
+              (hasNext
+                ? '<button class="btn primary" id="p-next-group" data-act="nextgroup">' + TW.icon('arrowRight', 16) +
+                    ' 学习下一组 <kbd>Enter</kbd></button>'
+                : '') +
+              '<button class="btn' + (hasNext ? '' : ' primary') + '" data-act="again">' +
+                TW.icon('refresh', 16) + ' 再来一轮' + (hasNext ? '' : ' <kbd>Enter</kbd>') + '</button>' +
               (REC
                 ? (cfg.src === 'srs' && dueLeft
                     ? '<button class="btn" data-act="wrong">' + TW.icon('refresh', 16) + ' 继续复习（' + dueLeft + '）</button>'
@@ -512,7 +617,10 @@
             '</div>' +
           '</div>';
         TW.$$('[data-act]', host).forEach(function (b) {
-          if (b.dataset.act === 'again') b.onclick = function () {
+          // 再来一轮 = 同一批词重练一遍（不重新切词表），与「学习下一组」区分开
+          if (b.dataset.act === 'again') b.onclick = replay;
+          // 学习下一组 = 重新进入同一 URL，poolSession 会从第一个未学的词开始取
+          if (b.dataset.act === 'nextgroup') b.onclick = function () {
             TW.app.go('/practice?' + srcQuery() + '&mode=' + cfg.mode + '&order=' + cfg.order);
           };
           if (b.dataset.act === 'wrong') b.onclick = function () {
@@ -521,6 +629,14 @@
           };
           if (b.dataset.act === 'books') b.onclick = function () { TW.app.go(backTo()); };
         });
+      }
+
+      /** 同一批词再练一遍（不重新切词表；与完成页的「学习下一组」互补） */
+      function replay() {
+        if (!alive()) return;
+        resetRound();
+        drawProgress();
+        drawStage();
       }
 
       /* ---------- 启动 ---------- */

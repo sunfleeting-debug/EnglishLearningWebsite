@@ -46,18 +46,22 @@ function fail(message, status) {
 function corsHeaders(env, req) {
   const allow = String(env.ALLOWED_ORIGINS == null ? '*' : env.ALLOWED_ORIGINS).trim();
   const origin = req.headers.get('Origin') || '';
-  let value = '*';
-  if (allow && allow !== '*') {
-    const list = allow.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
-    value = list.indexOf(origin) >= 0 ? origin : (list[0] || '*');
-  }
-  return {
-    'Access-Control-Allow-Origin': value,
+  const h = {
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type,Authorization',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin'
   };
+  if (!allow || allow === '*') {
+    h['Access-Control-Allow-Origin'] = '*';
+  } else {
+    /* 配了白名单就只回显命中项，**没命中干脆不给 CORS 头**（浏览器侧自然会拦）。
+       不要在没命中时回显 list[0]：那等于对外宣称「我允许的是 github.io」，
+       虽然浏览器不会放行，但语义是错的，也容易误导后来的人。 */
+    const list = allow.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    if (list.indexOf(origin) >= 0) h['Access-Control-Allow-Origin'] = origin;
+  }
+  return h;
 }
 
 async function readJson(req) {

@@ -233,6 +233,13 @@ button { cursor: pointer; }
 .btn.danger:hover { background: var(--err-soft); border-color: var(--err); }
 .btn.sm { padding: 0.3rem 0.6rem; font-size: 12.5px; border-radius: 8px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 按钮里的快捷键提示：primary 蓝底上要跟着变白，不能沿用 kbd 的灰底灰字 */
+.btn.primary kbd {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.42);
+  color: #fff;
+}
+.btn:not(.primary) kbd { color: var(--text-3); }
 
 .tag {
   display: inline-flex;
