@@ -1211,3 +1211,10 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
   transition: color 0.18s, background 0.18s;
 }
 .ly-detail:hover { color: var(--accent); background: var(--accent-2); }
+
+/* 首页搜索：词典索引命中 / 在线词典兜底 */
+.hs-src.online { color: var(--warn); border-color: var(--warn-soft); }
+.hs-on-body { padding: 0.2rem 0.7rem 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.hs-on-def { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+.hs-on-def i { font-style: italic; color: var(--text-3); margin-right: 0.4rem; font-family: var(--mono); font-size: 12px; }
+.hs-brief.muted { color: var(--text-3); }

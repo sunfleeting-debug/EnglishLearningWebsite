@@ -139,10 +139,46 @@ def main():
         else:
             check("dict-ext 兜底（跳过：首页词表已覆盖全部键）", True, True)
 
+        # 词典词面索引兜底：未加载词典里的词（deceptive 在 gre/toefl，本地从未加载过）
+        pg.fill("#hs-input", "deceptive")
+        pg.wait_for_timeout(2500)                 # 首次要拉 deck-index.js（约 400KB）
+        res4 = pg.evaluate("() => Array.from(document.querySelectorAll('.hs-item')).map(b => b.dataset.w)")
+        check("未加载词典里的词也能搜到（deceptive）", "deceptive" in res4, True, extra=str(res4))
+        check("结果标注所属词典", "词典" in pg.evaluate(
+            "() => (document.querySelector('.hs-item .hs-brief')||{textContent:''}).textContent"), True)
+        pg.click(".hs-item")
+        pg.wait_for_timeout(2200)                 # 详解页要 loadBook 那本词典
+        h4 = pg.evaluate("() => decodeURIComponent(location.hash)")
+        check("点击进入词典词条详解", ("id=gre:deceptive" in h4) or ("id=toefl:deceptive" in h4), True,
+              extra=h4)
+        check("词典词条详解渲染出释义", pg.locator(".dc-means").count() > 0, True)
+
+        goto_fresh("#/")                             # deceptive 段点进详解页了，先回首页
+
+        # 在线词典兜底正例：本地（周计划+12 词典+dict-ext）全没有的词 → 有道 suggest
+        # JSONP 拿中文简释（依赖外网；有道接口很稳，硬断言）
+        pg.fill("#hs-input", "flabbergasted")
+        got_online = False
+        for _ in range(16):
+            pg.wait_for_timeout(500)
+            if pg.evaluate("() => !!document.querySelector('.hs-src.online')"):
+                got_online = True
+                break
+        check("在线词典兜底：本地没有的词（flabbergasted）给出在线结果", got_online, True)
+        check("在线结果带释义（中文简释）", len(pg.evaluate(
+            "() => (document.querySelector('.hs-on-def') || {textContent: ''}).textContent.trim()")) > 0, True)
+
         pg.fill("#hs-input", "zzqqxx")
-        pg.wait_for_timeout(700)
-        check("乱码显示「词库里没有」", pg.evaluate(
-            "() => { const e = document.querySelector('.hs-empty'); return e ? e.textContent.indexOf('zzqqxx') >= 0 : false; }"), True)
+        # 乱码会走完整兜底链：词面索引 → dict-ext → 在线词典（有网络延迟，失败/404 最终返回 null）
+        # ⇒ 只要求最终给出明确提示，不限时点
+        got_final = False
+        for _ in range(20):
+            t = pg.evaluate("() => document.body.innerText")
+            if "词库里没有" in t or "在线" in t:
+                got_final = True
+                break
+            pg.wait_for_timeout(500)
+        check("乱码最终给出明确提示（词库里没有 / 在线结果）", got_final, True)
 
         pg.fill("#hs-input", "eventually")
         pg.wait_for_timeout(650)
@@ -431,7 +467,7 @@ def main():
         # 静态服务完整性：大文件必须原样下发。
         # 背景：serve.py 曾在 keep-alive 下把上一次 Range 请求的长度残留给下一个普通请求，
         # 导致 dict.js 响应 200 但内容被截断（详情页因此空白）。这里做字节级兜底核验。
-        for _f in ("data/dict.js", "data/dict-ext.js", "data/words.js", "data/dicts/cet6.js"):
+        for _f in ("data/dict.js", "data/dict-ext.js", "data/deck-index.js", "data/words.js", "data/dicts/cet6.js"):
             _local = (ROOT / _f).stat().st_size
             _served = len(pg.request.get(BASE + _f).body())
             check("原样下发 " + _f, _served == _local, True,

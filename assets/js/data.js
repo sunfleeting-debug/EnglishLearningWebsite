@@ -239,6 +239,131 @@
     return DICT[String(word).toLowerCase()] || null;
   }
 
+  /* ---------- 词典词面索引（data/deck-index.js，按需加载）----------
+     词典词条本身按本加载（每本 100~450KB），不可能为了搜一个词加载 12 本。
+     索引只存「词面 → 哪本词典」（约 400KB），搜到后点结果进详解，详解页会
+     loadBook 那一本拿全释义（word.js 对 id=deck:word 有现成处理）。 */
+  var DECK_INDEX = null;
+  var deckIndexLoading = null;
+
+  /** 按需加载词面索引 */
+  function loadDeckIndex(cb) {
+    if (DECK_INDEX) { if (cb) cb(); return; }
+    if (deckIndexLoading) { if (cb) deckIndexLoading.push(cb); return; }
+    deckIndexLoading = cb ? [cb] : [];
+    injectOnce('data/deck-index.js', function () {
+      DECK_INDEX = TW.DECK_INDEX || {};
+      var q = deckIndexLoading; deckIndexLoading = null;
+      q.forEach(function (f) { if (f) f(); });
+    }, function () {
+      var q = deckIndexLoading; deckIndexLoading = null;
+      q.forEach(function (f) { if (f) f(); });
+    });
+  }
+
+  /** 在词面索引里搜（前缀命中优先）。返回 [{word, deck}]，word 是纯词面（无释义）。 */
+  function searchDeckIndex(q, cap) {
+    if (!DECK_INDEX) return [];
+    q = String(q || '').trim().toLowerCase();
+    if (!q) return [];
+    cap = cap || 8;
+    var pre = [], mid = [];
+    Object.keys(DECK_INDEX).forEach(function (id) {
+      var list = DECK_INDEX[id];
+      for (var i = 0; i < list.length; i++) {
+        var hit = list[i].indexOf(q);
+        if (hit === 0) pre.push({ word: list[i], deck: id });
+        else if (hit > 0) mid.push({ word: list[i], deck: id });
+      }
+    });
+    return pre.concat(mid).slice(0, cap);
+  }
+
+  /* ---------- 在线词典兜底（真·本地词库没有的词）----------
+     有道 dict.youdao.com/suggest 接口，**JSONP**（script 注入，绕开 CORS）：
+       · 返回中文简释（背单词场景比 dictionaryapi.dev 的英文释义实用）
+       · 国内直连可达（站点发音本来就在用 dict.youdao.com 的音频）
+       · dictionaryapi.dev 实测当前网络直连/代理都不通（curl 000），弃用
+     结果缓存到 localStorage 避免重复请求。 */
+  var ONLINE_MAX = 300;
+  var jsonpSeq = 0;
+
+  function onlineCacheRead() {
+    try { return JSON.parse(localStorage.getItem('tw.onlineDict') || '{}'); }
+    catch (e) { return {}; }
+  }
+
+  function onlineCacheWrite(cache) {
+    try {
+      var keys = Object.keys(cache);
+      if (keys.length > ONLINE_MAX) {          // 超限就丢最旧的
+        keys.sort(function (a, b) { return (cache[a].t || 0) - (cache[b].t || 0); });
+        keys.slice(0, keys.length - ONLINE_MAX).forEach(function (k) { delete cache[k]; });
+      }
+      localStorage.setItem('tw.onlineDict', JSON.stringify(cache));
+    } catch (e) { /* 隐私模式写不进就算了，只是不缓存 */ }
+  }
+
+  function onlineLookup(term, cb) {
+    var key = String(term || '').toLowerCase().replace(/[^a-z'\-]/g, '');
+    if (!key) { cb(null); return; }
+    var cache = onlineCacheRead();
+    if (cache[key]) { cb(cache[key].r); return; }
+
+    var cbName = '__twDicCb' + (++jsonpSeq);
+    var script = document.createElement('script');
+    var timer = setTimeout(function () { cleanup(); cb(null); }, 6000);   // 别转圈半分钟
+
+    function cleanup() {
+      clearTimeout(timer);
+      try { delete window[cbName]; } catch (e) { window[cbName] = undefined; }
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[cbName] = function (data) {
+      cleanup();
+      var entries = data && data.data && data.data.entries;
+      var defs = [];
+      var word = key;
+      if (entries && entries.length) {
+        if (entries[0] && entries[0].entry) word = entries[0].entry;
+        for (var i = 0; i < entries.length && i < 3; i++) {
+          if (entries[i] && entries[i].explain) defs.push(entries[i].explain);
+        }
+      }
+      if (!defs.length) { cb(null); return; }
+      var res = { word: word, ph: '', ms: [{ pos: '', defs: defs }] };
+      cache[key] = { t: Date.now(), r: res };
+      onlineCacheWrite(cache);
+      cb(res);
+    };
+
+    script.onerror = function () { cleanup(); cb(null); };
+    script.src = 'https://dict.youdao.com/suggest?num=3&ver=3&doctype=json&cache=false&le=en' +
+      '&callback=' + cbName + '&q=' + encodeURIComponent(key);
+    document.head.appendChild(script);
+  }
+
+  /** 首页搜索的兜底链（searchAll 已加载词 miss 后调用）：
+      ① 词典词面索引（未加载的 12 本词典）→ ② dict-ext 全量键值（带词形还原）
+      → ③ 在线词典。三层都没有 cb(null)。 */
+  function lookupChain(q, cb) {
+    loadDeckIndex(function () {
+      var hits = searchDeckIndex(q, 8);
+      if (hits.length) { cb({ type: 'deck', hits: hits }); return; }
+      loadDictExt(function () {
+        var cands = baseForms(q);
+        for (var i = 0; i < cands.length; i++) {
+          var e = extWord(cands[i]);
+          if (e) { cb({ type: 'ext', word: cands[i], e: e }); return; }
+        }
+        onlineLookup(q, function (res) {
+          cb(res ? { type: 'online', res: res } : null);
+        });
+      });
+    });
+  }
+
   /* ---------- 按需加载大文件：词典卡 ---------- */
 
   /** 加载 data/dict.js（词典卡） */
@@ -316,6 +441,10 @@
     parseTrans: parseTrans,
     search: search,
     searchAll: searchAll,
+    loadDeckIndex: loadDeckIndex,
+    searchDeckIndex: searchDeckIndex,
+    lookupChain: lookupChain,
+    onlineLookup: onlineLookup,
     searchIn: searchIn,
     progressItems: progressItems,
     filterByStatus: filterByStatus,

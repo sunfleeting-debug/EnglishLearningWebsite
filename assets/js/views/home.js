@@ -146,16 +146,50 @@
       });
     }
 
-    function hsExtHit(q) {
-      var cands = TW.data.baseForms(q);          // 词形还原：studies → study
-      for (var i = 0; i < cands.length; i++) {
-        var e = TW.data.ext(cands[i]);
-        if (e) {
-          hsShow([{ word: cands[i], raw: cands[i], us: e.u || '', trans: e.t || [], deck: true }], q);
-          return;
-        }
-      }
-      hsShow([], q);
+    /* 兜底链结果①：未加载词典里的词（词面索引）——点击进详解，详解页会自动加载那本词典 */
+    function hsShowDeckHits(hits) {
+      resBox.innerHTML = hits.map(function (h) {
+        var meta = TW.data.deckMeta(h.deck);
+        return '<button class="hs-item" data-w="' + TW.esc(h.word) + '" data-deck="' + TW.esc(h.deck) + '">' +
+          '<span class="hs-word">' + TW.esc(h.word) + '</span>' +
+          '<span class="hs-brief muted">在词典「' + TW.esc(meta ? meta.name : h.deck) + '」中 · 点击看释义</span>' +
+          '<span class="hs-src">词典</span>' +
+        '</button>';
+      }).join('');
+      resBox.hidden = false;
+      TW.$$('.hs-item', resBox).forEach(function (el) {
+        el.addEventListener('click', function () {
+          hsHide();
+          input.blur();
+          TW.app.go('/word?id=' + encodeURIComponent(el.dataset.deck + ':' + el.dataset.w));
+        });
+      });
+    }
+
+    /* 兜底链结果：本地词库完全没有 → 在线词典（英文释义，点条目发音） */
+    function hsShowOnline(res, q) {
+      if (!res) { hsShow([], q); return; }
+      var lines = [];
+      (res.ms || []).forEach(function (m) {
+        m.defs.forEach(function (d) {
+          lines.push('<div class="hs-on-def">' +
+            (m.pos ? '<i>' + TW.esc(m.pos) + '</i>' : '') + TW.esc(d) + '</div>');
+        });
+      });
+      resBox.innerHTML =
+        '<div class="hs-online">' +
+          '<button class="hs-item" data-w="' + TW.esc(res.word) + '" title="点击发音">' +
+            '<span class="hs-word">' + TW.esc(res.word) + '</span>' +
+            (res.ph ? '<span class="hs-phon">' + TW.esc(res.ph) + '</span>' : '') +
+            '<span class="hs-src online">在线词典</span>' +
+          '</button>' +
+          (lines.length ? '<div class="hs-on-body">' + lines.join('') + '</div>' : '') +
+        '</div>';
+      resBox.hidden = false;
+      var item = TW.$('.hs-item', resBox);
+      if (item) item.addEventListener('click', function () {
+        TW.speech.speak(res.word, TW.store.settings.accent);
+      });
     }
 
     function hsRun(q) {
@@ -163,14 +197,16 @@
       if (!q) { hsHide(); return; }
       var list = TW.data.searchAll(q, 8);
       if (list.length) { hsShow(list, q); return; }
-      // 联想没有 → 只对「像英文单词的输入」走 dict-ext 精确兜底（中文释义搜不了全量键值）
+      // 只对「像英文单词的输入」走兜底链（中文释义搜不了词面索引/在线词典）
       if (!/^[a-zA-Z][a-zA-Z' -]*$/.test(q)) { hsShow([], q); return; }
-      if (TW.data.extReady()) { hsExtHit(q); return; }
-      resBox.innerHTML = '<div class="hs-empty">正在加载词典…</div>';
+      resBox.innerHTML = '<div class="hs-empty">正在查询…</div>';
       resBox.hidden = false;
-      TW.data.loadDictExt(function () {
-        if (input.value.trim() !== q) return;    // 加载期间用户已改输入
-        hsExtHit(q);
+      TW.data.lookupChain(q, function (res) {
+        if (input.value.trim() !== q) return;    // 查询期间用户已改输入
+        if (!res) { hsShow([], q); return; }
+        if (res.type === 'deck') hsShowDeckHits(res.hits);
+        else if (res.type === 'ext') hsShow([{ word: res.word, raw: res.word, us: res.e.u || '', trans: res.e.t || [], deck: true }], q);
+        else hsShowOnline(res.res, q);
       });
     }
 
