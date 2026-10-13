@@ -13,6 +13,8 @@
      两次 speak ⇒ 第二次 stopAudio 把第一次掐断，听起来像没读）；翻面重画不重复朗读
   D) 工具按钮全键盘可达：S 发音/重听 · F 收藏 · D 详解 · H 看中文提示
      （焦点在输入框时用 Alt+ 同字母，裸字母仍必须能正常输入）
+  E) 「复习错词」从**最近答错的那个**开始（旧实现按词表顺序取，于是很久以前错的词
+     永远排在最前，刚错的那个反而排在第 N 个）
 
 用法（脚本会自己拉起静态服务）：
     NODE_OPTIONS= python -u tools/verify_practice.py
@@ -449,6 +451,29 @@ def main():
             pg.wait_for_timeout(1200)          # 详解要按需加载 dict.js（3.9M）
             check("D = 打开详解页", "#/word" in pg.evaluate("() => location.hash"), True)
             check("详解页确实渲染出来了", pg.locator("#dc-back").count() > 0, True)
+
+            # ================= G) 复习错词：从「最近答错的」开始 =================
+            log("\n--- G) 复习错词从最近答错的那个开始（不是词表顺序的第一个）---")
+            goto("#/")
+            setup(pg)                       # 清进度（sessionSize 在下面单独设）
+            pg.evaluate("() => TW.store.setSetting('sessionSize', %d)" % A_SIZE)
+            goto_fresh("#/practice?book=%s&mode=flash&size=%d" % (BOOK, A_SIZE))
+
+            # 第 1 个和第 5 个词判「不认识」（第 1 个先错、第 5 个后错），其余判「认识」
+            for i in range(A_SIZE):
+                press("Enter")                                   # 翻面
+                press("Backspace" if i in (0, 4) else "Enter")   # 不认识 / 认识
+                press("Enter")                                   # 反馈页继续
+
+            check("一轮跑完进入完成页", pg.locator("[data-act='wrong']").count(), 1)
+            pg.locator("[data-act='wrong']").click()
+            pg.wait_for_timeout(900)
+            check("点「复习错词」后从**最近**答错的词开始（第 5 个，不是第 1 个）",
+                  flash_word(pg), words6[4])
+            press("Enter")    # 翻面
+            press("Enter")    # 认识 → 反馈
+            press("Enter")    # 继续 → 错词组里第 2 个
+            check("错词组第 2 个是更早错的那个（第 1 个）", flash_word(pg), words6[0])
 
             # ================= E) 控制台 =================
             log("\n--- E) 控制台 ---")

@@ -86,9 +86,22 @@
          · 随机模式：先在未学的词里随机抽，不足再用已学的补
        若筛选结果本身就是学过的词（错词本 / 收藏 / 已掌握），未学池为空
        ⇒ 自动退化成原来的顺序 / 随机取法，行为不变。 */
+    /** 错词组按「最近答错的先后」排：**刚错的排最前**（sunfleeting：错了应该就从这个开始，
+        而不是从这一组的第一个 / 词表顺序最靠前的那个开始）。
+        不在「最近答错」列表里的（很早以前错的、或老数据）按原顺序排在后面。 */
+    function sortByRecentWrong(list) {
+      var order = TW.store.recentWrong();
+      return list.slice().sort(function (a, b) {
+        var ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+        // sort 是稳定的 ⇒ 两者都「不在列表里」时保持词表原顺序
+        return (ia < 0 ? order.length : ia) - (ib < 0 ? order.length : ib);
+      });
+    }
+
     function poolSession() {
       var list = cfg.book === 'all' ? TW.data.words.slice() : TW.data.byBook(cfg.book).slice();
       list = TW.data.filterByStatus(list, cfg.status, TW.store);
+      if (cfg.status === 'wrong' && cfg.order !== 'random') list = sortByRecentWrong(list);
       var session;
       if (cfg.order === 'random') {
         session = TW.shuffle(list.filter(isNew))
@@ -122,6 +135,8 @@
           idx: 0, time: 0, us: '', uk: '', trans: r.m ? [r.m] : []
         };
       });
+      // 生词本「待攻克错词」同样按最近答错排序（随机模式本来就要打乱，跳过）
+      if (cfg.status === 'wrong' && cfg.order !== 'random') out = sortByRecentWrong(out);
       if (cfg.order === 'random') out = TW.shuffle(out);
       return cfg.size > 0 ? out.slice(0, cfg.size) : out;
     }

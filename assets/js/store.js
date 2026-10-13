@@ -29,7 +29,8 @@
     daily: {},             // 'YYYY-MM-DD' -> {done, right}
     lastBook: null,
     srs: {},               // wordLower -> {w,s,m,b,d,ts,ok,bad,lapses}
-    srsInit: false         // 是否已把历史错词导入复习队列
+    srsInit: false,        // 是否已把历史错词导入复习队列
+    recentWrong: []        // 最近答错的词 id（最新的在前），只用于错词组排序，见 noteWrong()
   };
 
   /* ---------- 云同步的「脏标记」 ----------
@@ -55,6 +56,7 @@
         state.lastBook = d.lastBook || null;
         state.srs = d.srs || {};
         state.srsInit = !!d.srsInit;
+        state.recentWrong = Array.isArray(d.recentWrong) ? d.recentWrong : [];
       }
     } catch (e) { /* 数据损坏时使用默认值 */ }
   }
@@ -134,10 +136,27 @@
     save(); emit('progress');
   }
 
+  /* ---------- 「最近答错」顺序（纯本地，不参与云同步）----------
+     错词组（完成页「复习错词」/ 生词本「待攻克错词」）以前一律按**词表顺序**取词：
+     于是很久以前错的词永远排在最前，而**刚刚答错的那个**可能排在第 20 个。
+     sunfleeting 的要求是「错了应该就从这个开始」——所以记一份最近答错的顺序，
+     错词组按它排：刚错的排最前，越久越靠后；不在这个列表里的（老数据）按原顺序排在后面。
+     🔴 它只影响**排序**，不是业务数据，所以故意不进同步协议：换台设备退回词表顺序也无所谓。 */
+  var RECENT_WRONG_MAX = 300;
+
+  function noteWrong(id) {
+    var i = state.recentWrong.indexOf(id);
+    if (i === 0) return;                       // 已经是最新，不用动
+    if (i > 0) state.recentWrong.splice(i, 1);
+    state.recentWrong.unshift(id);
+    if (state.recentWrong.length > RECENT_WRONG_MAX) state.recentWrong.length = RECENT_WRONG_MAX;
+  }
+
   function markWrong(id) {
     var r = rec(id);
     r.w++; r.seen++; r.ts = Date.now();
     snapshot(r, id);
+    noteWrong(id);
     var d = state.daily[today()] || (state.daily[today()] = { done: 0, right: 0 });
     d.done++;
     save(); emit('progress');
@@ -154,11 +173,17 @@
   }
 
   /** 重置某个单词的全部学习记录 */
-  function resetWord(id) { delete state.progress[id]; save(); emit('progress'); }
+  function resetWord(id) {
+    delete state.progress[id];
+    var i = state.recentWrong.indexOf(id);
+    if (i >= 0) state.recentWrong.splice(i, 1);
+    save(); emit('progress');
+  }
 
   /** 清空全部学习数据（保留设置与复习队列） */
   function resetAll() {
-    state.progress = {}; state.daily = {}; save(); emit('progress');
+    state.progress = {}; state.daily = {}; state.recentWrong = [];
+    save(); emit('progress');
   }
 
   /* ---------- 设置 ---------- */
@@ -392,6 +417,7 @@
     get: get, markRight: markRight, markWrong: markWrong,
     toggleFav: toggleFav, toggleMaster: toggleMaster,
     resetWord: resetWord, resetAll: resetAll,
+    recentWrong: function () { return state.recentWrong.slice(); },
     setSetting: setSetting, counts: counts, srcStats: srcStats, today: today,
     addDays: addDays, diffDays: diffDays,
     applyRemote: applyRemote,
