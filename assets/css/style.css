@@ -681,6 +681,17 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 
 .dc-etym { color: var(--text-2); font-size: 13.5px; line-height: 1.7; }
 
+/* 学习笔记：详解页的随记文本域（自动保存、随进度云同步） */
+.dc-note {
+  width: 100%; min-height: 96px; resize: vertical;
+  padding: 0.6rem 0.7rem;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  font: inherit; font-size: 13.5px; line-height: 1.65;
+}
+.dc-note:focus { outline: none; border-color: var(--accent); }
+.dc-note-foot { display: flex; justify-content: flex-end; margin-top: 0.35rem; min-height: 1.1em; }
+
 /* 单词链接 */
 .wref {
   color: var(--accent); text-decoration: none;

@@ -168,13 +168,18 @@ async function currentUser(req, env) {
  *  - 计数类（w/r/seen）取 max：两个设备各自累加过，取大值不会丢数据，且重复推送幂等。
  *  - 布尔类（fav/master）取 ts 较新的那一条：否则「取消收藏」永远同步不出去。
  *  - 词面快照取非空的一方。
+ *  - 笔记（note）取 noteTs 较新的一方：笔记有自己的时间戳，**不参与 ts**——
+ *    ts 只归 fav/master 用，笔记保存不能反过来影响收藏判定。
  */
 function mergeProgress(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-  const aNew = (a.ts || 0) > (b.ts || 0);
+  // 🔴 任何一边可能缺字段（首条插入 cur 为 null、老客户端不带 note），
+  //    输出必须是全字段记录，否则写回 SQL 绑定 undefined 直接报错。
+  a = a || {}; b = b || {};
+  // 平局（两边 ts 相同，典型如首条插入时 b 为空对象）偏向 a = 客户端刚推来的记录
+  const aNew = (a.ts || 0) >= (b.ts || 0);
   const newer = aNew ? a : b;
   const older = aNew ? b : a;
+  const noteFromA = (a.noteTs || 0) >= (b.noteTs || 0);
   return {
     w: Math.max(a.w || 0, b.w || 0),
     r: Math.max(a.r || 0, b.r || 0),
@@ -184,14 +189,15 @@ function mergeProgress(a, b) {
     ts: Math.max(a.ts || 0, b.ts || 0),
     word: newer.word || older.word || '',
     src: newer.src || older.src || '',
-    brief: newer.brief || older.brief || ''
+    brief: newer.brief || older.brief || '',
+    note: (noteFromA ? (a.note || '') : (b.note || '')),
+    noteTs: Math.max(a.noteTs || 0, b.noteTs || 0)
   };
 }
 
 /** 每日练习量取 max（取和会在重复同步时翻倍） */
 function mergeDaily(a, b) {
-  if (!a) return b;
-  if (!b) return a;
+  a = a || {}; b = b || {};
   return { done: Math.max(a.done || 0, b.done || 0), right: Math.max(a.right || 0, b.right || 0) };
 }
 
@@ -212,7 +218,8 @@ async function readAll(env, userId) {
   (p.results || []).forEach(function (r) {
     progress[r.word_id] = {
       w: r.w, r: r.r, seen: r.seen, fav: !!r.fav, master: !!r.master, ts: r.ts,
-      word: r.word || '', src: r.src || '', brief: r.brief || ''
+      word: r.word || '', src: r.src || '', brief: r.brief || '',
+      note: r.note || '', noteTs: r.note_ts || 0
     };
   });
   (d.results || []).forEach(function (r) { daily[r.day] = { done: r.done, right: r.right }; });
@@ -264,7 +271,8 @@ async function applySync(env, userId, body) {
     (cur.results || []).forEach(function (r) {
       merged[r.word_id] = {
         w: r.w, r: r.r, seen: r.seen, fav: !!r.fav, master: !!r.master, ts: r.ts,
-        word: r.word || '', src: r.src || '', brief: r.brief || ''
+        word: r.word || '', src: r.src || '', brief: r.brief || '',
+        note: r.note || '', noteTs: r.note_ts || 0
       };
     });
   }
@@ -278,13 +286,14 @@ async function applySync(env, userId, body) {
     await env.DB.batch(part.map(function (row) {
       const r = row.rec;
       return env.DB.prepare(
-        'INSERT INTO progress (user_id,word_id,w,r,seen,fav,master,ts,word,src,brief) ' +
-        'VALUES (?,?,?,?,?,?,?,?,?,?,?) ' +
+        'INSERT INTO progress (user_id,word_id,w,r,seen,fav,master,ts,word,src,brief,note,note_ts) ' +
+        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ' +
         'ON CONFLICT(user_id,word_id) DO UPDATE SET ' +
         'w=excluded.w, r=excluded.r, seen=excluded.seen, fav=excluded.fav, master=excluded.master, ' +
-        'ts=excluded.ts, word=excluded.word, src=excluded.src, brief=excluded.brief')
+        'ts=excluded.ts, word=excluded.word, src=excluded.src, brief=excluded.brief, ' +
+        'note=excluded.note, note_ts=excluded.note_ts')
         .bind(userId, row.id, r.w || 0, r.r || 0, r.seen || 0, r.fav ? 1 : 0, r.master ? 1 : 0,
-              r.ts || 0, r.word || '', r.src || '', r.brief || '');
+              r.ts || 0, r.word || '', r.src || '', r.brief || '', r.note || '', r.noteTs || 0);
     }));
   }
 

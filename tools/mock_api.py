@@ -41,6 +41,13 @@ class DB:
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA.read_text(encoding="utf-8"))
+        # 旧库文件升级：补 note/note_ts 列（列已存在会报错，忽略）
+        for alt in ("ALTER TABLE progress ADD COLUMN note TEXT",
+                    "ALTER TABLE progress ADD COLUMN note_ts INTEGER"):
+            try:
+                self.conn.execute(alt)
+            except sqlite3.OperationalError:
+                pass
         self.conn.commit()
 
     def q(self, sql, args=()):
@@ -79,11 +86,13 @@ def verify_password(password, stored):
 
 # ------------------------------------------------------------------- 合并规则
 def merge_progress(a, b):
-    if not a:
-        return b
-    if not b:
-        return a
-    newer, older = (a, b) if (a.get("ts") or 0) > (b.get("ts") or 0) else (b, a)
+    # 🔴 任何一边可能缺字段（首条插入时 cur 为 None、老客户端不带 note），
+    #    输出必须永远是全字段记录，否则 INSERT 取键直接 KeyError。
+    a = a or {}
+    b = b or {}
+    # 平局（两边 ts 相同，典型如首条插入时 b 为空对象）偏向 a = 客户端刚推来的记录
+    newer, older = (a, b) if (a.get("ts") or 0) >= (b.get("ts") or 0) else (b, a)
+    note_from_a = (a.get("noteTs") or 0) >= (b.get("noteTs") or 0)
     return {
         "w": max(a.get("w") or 0, b.get("w") or 0),
         "r": max(a.get("r") or 0, b.get("r") or 0),
@@ -94,14 +103,15 @@ def merge_progress(a, b):
         "word": newer.get("word") or older.get("word") or "",
         "src": newer.get("src") or older.get("src") or "",
         "brief": newer.get("brief") or older.get("brief") or "",
+        # 笔记取 note_ts 较新的一方（与 worker/index.js mergeProgress 保持一致）
+        "note": (a.get("note") or "") if note_from_a else (b.get("note") or ""),
+        "noteTs": max(a.get("noteTs") or 0, b.get("noteTs") or 0),
     }
 
 
 def merge_daily(a, b):
-    if not a:
-        return b
-    if not b:
-        return a
+    a = a or {}
+    b = b or {}
     return {"done": max(a.get("done") or 0, b.get("done") or 0),
             "right": max(a.get("right") or 0, b.get("right") or 0)}
 
@@ -146,7 +156,8 @@ class App:
             progress[r["word_id"]] = {"w": r["w"], "r": r["r"], "seen": r["seen"],
                                       "fav": bool(r["fav"]), "master": bool(r["master"]),
                                       "ts": r["ts"], "word": r["word"] or "",
-                                      "src": r["src"] or "", "brief": r["brief"] or ""}
+                                      "src": r["src"] or "", "brief": r["brief"] or "",
+                                      "note": r["note"] or "", "noteTs": r["note_ts"] or 0}
         for r in self.db.q("SELECT * FROM daily WHERE user_id=?", (uid,)):
             daily[r["day"]] = {"done": r["done"], "right": r["right"]}
         for r in self.db.q("SELECT * FROM srs WHERE user_id=?", (uid,)):
@@ -175,15 +186,17 @@ class App:
             cur = None if not cur else {"w": cur["w"], "r": cur["r"], "seen": cur["seen"],
                                         "fav": bool(cur["fav"]), "master": bool(cur["master"]),
                                         "ts": cur["ts"], "word": cur["word"] or "",
-                                        "src": cur["src"] or "", "brief": cur["brief"] or ""}
+                                        "src": cur["src"] or "", "brief": cur["brief"] or "",
+                                        "note": cur["note"] or "", "noteTs": cur["note_ts"] or 0}
             m = merge_progress(rec, cur)
             self.db.run(
-                "INSERT INTO progress (user_id,word_id,w,r,seen,fav,master,ts,word,src,brief) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,word_id) DO UPDATE SET "
+                "INSERT INTO progress (user_id,word_id,w,r,seen,fav,master,ts,word,src,brief,note,note_ts) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,word_id) DO UPDATE SET "
                 "w=excluded.w, r=excluded.r, seen=excluded.seen, fav=excluded.fav, master=excluded.master, "
-                "ts=excluded.ts, word=excluded.word, src=excluded.src, brief=excluded.brief",
+                "ts=excluded.ts, word=excluded.word, src=excluded.src, brief=excluded.brief, "
+                "note=excluded.note, note_ts=excluded.note_ts",
                 (uid, wid, m["w"], m["r"], m["seen"], 1 if m["fav"] else 0, 1 if m["master"] else 0,
-                 m["ts"], m["word"], m["src"], m["brief"]))
+                 m["ts"], m["word"], m["src"], m["brief"], m["note"], m["noteTs"]))
 
         for day, rec in (body.get("daily") or {}).items():
             cur = self.db.one("SELECT * FROM daily WHERE user_id=? AND day=?", (uid, day))

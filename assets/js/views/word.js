@@ -146,6 +146,14 @@
     // 释义（始终有）
     secs += sec('释义', 'file', transHtml(w));
 
+    // 学习笔记（sunfleeting：想记点背单词的心得）。自动保存，随进度云同步。
+    var savedNote = (TW.store.get(w.id) || {}).note || '';
+    secs += sec('学习笔记', 'edit',
+      '<textarea class="dc-note" id="dc-note" rows="4" maxlength="2000" ' +
+        'placeholder="记点心得：怎么记住它、哪里容易混、例句造一个…">' + TW.esc(savedNote) + '</textarea>' +
+      '<div class="dc-note-foot"><span class="muted small" id="dc-note-hint">' +
+        (savedNote ? '已保存' : '自动保存 · 随进度云同步') + '</span></div>');
+
     // 搭配
     if (card.colloc && card.colloc.length) {
       secs += sec('搭配', 'shuffle', '<ul class="dc-list">' + card.colloc.map(function (c) {
@@ -217,6 +225,23 @@
     var backBtn = TW.$('#dc-back', host);
     if (backBtn) backBtn.addEventListener('click', back);
     TW.ui.bindWordActions(host, w.id);
+
+    // 笔记自动保存（600ms 防抖；离开页面/f5 前 save() 的 120ms 落盘足够快）
+    var noteEl = TW.$('#dc-note', host);
+    var noteHint = TW.$('#dc-note-hint', host);
+    var noteTimer = null;
+    if (noteEl) {
+      noteEl.addEventListener('input', function () {
+        clearTimeout(noteTimer);
+        if (noteHint) noteHint.textContent = '输入中…';
+        noteTimer = setTimeout(function () {
+          TW.store.saveNote(w.id, noteEl.value);
+          if (noteHint) noteHint.textContent = '已保存 ' +
+            new Date().toTimeString().slice(0, 5);
+        }, 600);
+      });
+    }
+
     var srsBtn = TW.$('[data-act="srs"]', host);
     if (srsBtn) srsBtn.addEventListener('click', function () {
       if (TW.store.srs.has(w.word)) {

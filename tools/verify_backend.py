@@ -214,6 +214,47 @@ def main():
               await TW.sync.flush(true);
             }""", made[0])
 
+            # ============ 4.5) 防抖同步：答案必须进增量包，且不被服务端旧数据覆盖 ============
+            # 🔴 回归：touchProgress 曾从未被调用——markRight/markWrong 只落本地，
+            # 非强制同步的增量包里 progress 永远是空的；而 srs 有脏标记 ⇒ 每次答题都会
+            # 触发一次「只带 srs」的同步，响应里的服务端旧进度把刚答的题冲掉
+            #（症状：听词默写通关后单词还是「未学」、点「学下一组」又从这一组开始）。
+            log("\n--- 4.5) 防抖同步上传答案 + 学习笔记 ---")
+            bug = pgA.evaluate("""async () => {
+              const ids = TW.WORDS.slice(30, 32).map(w => w.id);
+              TW.store.markRight(ids[0]);
+              TW.store.markWrong(ids[1]);
+              TW.store.saveNote(ids[0], '联想记忆法：这个词的 dad。');
+              const ok = await TW.sync.flush(false);          // 非强制 = 只走脏标记增量
+              const s = await TW.api.request('GET','/api/me/state');
+              return {
+                ok,
+                upR: s.progress[ids[0]] ? s.progress[ids[0]].r : -1,
+                upW: s.progress[ids[1]] ? s.progress[ids[1]].w : -1,
+                note: s.progress[ids[0]] ? s.progress[ids[0]].note : '',
+                localR: (TW.store.get(ids[0]) || {}).r,
+                localNote: (TW.store.get(ids[0]) || {}).note
+              };
+            }""")
+            check("有脏标记时非强制同步确实发送", bug["ok"], True)
+            check("答对次数进增量包上传云端", bug["upR"], 1)
+            check("答错次数进增量包上传云端", bug["upW"], 1)
+            check("学习笔记随进度上传", bug["note"], "联想记忆法：这个词的 dad。")
+            check("同步响应回来本地进度未被冲掉", bug["localR"], 1)
+            check("同步响应回来本地笔记仍在", bug["localNote"], "联想记忆法：这个词的 dad。")
+
+            # 笔记合并：note_ts 旧的不能覆盖新的（与 fav/master 用 ts 不同，笔记看 note_ts）
+            old_note = pgA.evaluate("""async () => {
+              const id = TW.WORDS[30].id;
+              const now = Date.now();
+              await TW.api.sync({progress: {[id]: {w:0,r:0,seen:0,fav:false,master:false,ts:1,
+                                                  note:'旧笔记', noteTs: now - 60000}},
+                                 daily:{}, srs:{}, deleted:{progress:[],srs:[]}, clear:[]});
+              const s = await TW.api.request('GET','/api/me/state');
+              return s.progress[id].note;
+            }""")
+            check("旧笔记不覆盖新笔记（note_ts 取新）", old_note, "联想记忆法：这个词的 dad。")
+
             # ============ 5) 换设备登录 → 进度恢复 ============
             log("\n--- 5) 换设备（全新浏览器）登录恢复 ---")
             ctxB, pgB = new_ctx(API, "[B]")

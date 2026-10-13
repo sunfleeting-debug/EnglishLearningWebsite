@@ -131,8 +131,14 @@
     var r = rec(id);
     r.r++; r.seen++; r.ts = Date.now();
     snapshot(r, id);
+    /* 🔴 必须打脏标记：之前 touchProgress 从未被调用，登录用户的答案永远不进
+       增量同步包，而每次同步响应都会用服务端旧进度覆盖本地（srs 是唯一有脏标记
+       的 ⇒ 每次答题都触发一次「只带 srs 的同步」⇒ 答案几秒内就被冲掉）——
+       症状就是「听词默写搞完了单词还是未学 / 学下一组还是这一组」。 */
+    touchProgress(id);
     var d = state.daily[today()] || (state.daily[today()] = { done: 0, right: 0 });
     d.done++; d.right++;
+    touchDaily(today());
     save(); emit('progress');
   }
 
@@ -156,33 +162,57 @@
     var r = rec(id);
     r.w++; r.seen++; r.ts = Date.now();
     snapshot(r, id);
+    touchProgress(id);   // 🔴 同 markRight：答案必须进增量同步包
     noteWrong(id);
     var d = state.daily[today()] || (state.daily[today()] = { done: 0, right: 0 });
     d.done++;
+    touchDaily(today());
     save(); emit('progress');
   }
 
   function toggleFav(id) {
-    var r = rec(id); r.fav = !r.fav; snapshot(r, id); save(); emit('progress');
+    var r = rec(id); r.fav = !r.fav; r.ts = Date.now(); snapshot(r, id); touchProgress(id); save(); emit('progress');
     return r.fav;
   }
 
   function toggleMaster(id) {
-    var r = rec(id); r.master = !r.master; snapshot(r, id); save(); emit('progress');
+    var r = rec(id); r.master = !r.master; r.ts = Date.now(); snapshot(r, id); touchProgress(id); save(); emit('progress');
     return r.master;
   }
 
-  /** 重置某个单词的全部学习记录 */
+  /* ---------- 学习笔记（每词一条，随进度云同步）----------
+     存在 progress 记录上：note + noteTs（只看 noteTs 新旧合并，**不 bump ts**——
+     ts 参与 fav/master 的「取新」，笔记保存不能影响收藏判定）。
+     服务端合并规则：note 取 noteTs 较新的一方（worker/index.js 与 tools/mock_api.py 各一份）。 */
+  function saveNote(id, text) {
+    var t = String(text || '').slice(0, 2000);
+    var r = rec(id);
+    if ((r.note || '') === t) return;
+    r.note = t; r.noteTs = Date.now();
+    snapshot(r, id);
+    touchProgress(id);
+    save(); emit('progress');
+  }
+
+  /** 重置某个单词的全部学习记录（同步协议里删除必须走 deleted，否则会被云端复活） */
   function resetWord(id) {
     delete state.progress[id];
+    delete dirty.progress[id];
+    dirty.delProgress[id] = 1;
     var i = state.recentWrong.indexOf(id);
     if (i >= 0) state.recentWrong.splice(i, 1);
     save(); emit('progress');
   }
 
-  /** 清空全部学习数据（保留设置与复习队列） */
+  /** 清空全部学习数据（保留设置与复习队列）。
+      🔴 同步协议：清空必须走 clear（worker 按类型删服务端记录），否则下次同步
+      服务端的旧进度会原样拉回来，用户看到「清空了又回来了」。 */
   function resetAll() {
     state.progress = {}; state.daily = {}; state.recentWrong = [];
+    var keepSrs = dirty.srs, keepDelSrs = dirty.delSrs;   // 复习队列保留 ⇒ 它的待传标记也保留
+    dirty = newDirty();
+    dirty.srs = keepSrs; dirty.delSrs = keepDelSrs;
+    dirty.clear.progress = 1; dirty.clear.daily = 1;
     resetHooks.forEach(function (fn) { try { fn(); } catch (e) {} });   // 练习页等据此作废会话续接快照
     save(); emit('progress');
   }
@@ -406,6 +436,17 @@
       return out;
     }
 
+    /* 兼容旧版 worker：响应记录里没有 noteTs 字段时，把本地笔记带回写入对象，
+       避免 worker 未升级的窗口期里「本地写的笔记被一次同步冲掉」。
+       worker 升级后响应自带 note/noteTs，这里自然不再触发。 */
+    Object.keys(remote.progress || {}).forEach(function (k) {
+      var inc = remote.progress[k];
+      if (inc && inc.noteTs === undefined && state.progress[k] &&
+          state.progress[k].noteTs !== undefined) {
+        inc.note = state.progress[k].note || '';
+        inc.noteTs = state.progress[k].noteTs || 0;
+      }
+    });
     state.progress = mergeMap(state.progress, remote.progress, isActiveProgress);
     state.daily = mergeMap(state.daily, remote.daily, function (day) { return !!active.daily[day]; });
     state.srs = mergeMap(state.srs, remote.srs, function (k) { return !!(active.srs[k] || active.delSrs[k]); });
@@ -422,6 +463,7 @@
     get: get, markRight: markRight, markWrong: markWrong,
     toggleFav: toggleFav, toggleMaster: toggleMaster,
     resetWord: resetWord, resetAll: resetAll, onReset: onReset,
+    saveNote: saveNote,
     recentWrong: function () { return state.recentWrong.slice(); },
     setSetting: setSetting, counts: counts, srcStats: srcStats, today: today,
     addDays: addDays, diffDays: diffDays,

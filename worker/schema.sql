@@ -27,7 +27,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
 -- 单词学习进度（每个用户每个词一行） -----------------------------------------
 -- w/r/seen 是「累计计数」，跨设备合并取最大值（不会因为晚同步而回退）；
--- fav/master 取「最后修改那一条」的值（这样才能把取消收藏/取消掌握同步出去）。
+-- fav/master 取「最后修改那一条」的值（这样才能把取消收藏/取消掌握同步出去）；
+-- note/note_ts 是学习笔记，合并取 note_ts 较新的一方（不参与 ts，见 worker/index.js mergeProgress）。
 CREATE TABLE IF NOT EXISTS progress (
   user_id TEXT NOT NULL,
   word_id TEXT NOT NULL,              -- 数字 id（周计划）或 "<词典id>:<单词>"
@@ -40,9 +41,15 @@ CREATE TABLE IF NOT EXISTS progress (
   word    TEXT,                       -- 词面快照（词典懒加载，列表要靠它显示）
   src     TEXT,
   brief   TEXT,
+  note    TEXT,                       -- 学习笔记（详解页随记）
+  note_ts INTEGER,                    -- 笔记最后修改时间（毫秒）
   PRIMARY KEY (user_id, word_id)
 );
 CREATE INDEX IF NOT EXISTS idx_progress_user ON progress(user_id);
+
+-- 旧库升级（已建过表的 D1 实例执行一次；列已存在会报错，忽略即可）：
+--   ALTER TABLE progress ADD COLUMN note TEXT;
+--   ALTER TABLE progress ADD COLUMN note_ts INTEGER;
 
 -- 每日练习量（首页/统计页的柱状图） ------------------------------------------
 CREATE TABLE IF NOT EXISTS daily (
