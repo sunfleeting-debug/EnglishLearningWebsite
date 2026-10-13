@@ -121,7 +121,9 @@ def main():
         pg.fill("#p-input", "yyyyyy")
         pg.keyboard.press("Enter")
         pg.wait_for_timeout(800)
-        check("线上重做仍错才判错", "答错" in pg.evaluate("() => document.body.innerText"), True)
+        # 新流程：第 2 次错判错 + 揭示答案卡，但必须照着答案重打一遍才能继续
+        check("线上重做仍错判错并要求重打（揭示卡出现、无继续按钮）",
+              (pg.locator("#p-reveal").count() == 1 and pg.locator("[data-act='next']").count() == 0), True)
 
         # 常用词典：选择页 + 按需加载一本词典
         pg.goto(URL + "#/books", wait_until="load", timeout=60000)
