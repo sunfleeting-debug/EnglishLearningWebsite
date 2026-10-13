@@ -128,8 +128,8 @@ def main():
         # 常用词典：选择页 + 按需加载一本词典
         pg.goto(URL + "#/books", wait_until="load", timeout=60000)
         pg.wait_for_timeout(900)
-        check("线上词典目录 = 12 本", pg.evaluate("() => TW.DECKS_META.length"), 12)
-        check("线上词典选择页卡片 >= 12", pg.locator(".deck-card").count() >= 12, True)
+        check("线上词典目录 = 14 本", pg.evaluate("() => TW.DECKS_META.length"), 14)
+        check("线上词典选择页卡片 >= 14", pg.locator(".deck-card").count() >= 14, True)
         pg.screenshot(path=str(SHOTS / "30-live-decks.png"))
         pg.goto(URL + "#/books?book=cet6", wait_until="load", timeout=60000)
         pg.wait_for_timeout(1800)

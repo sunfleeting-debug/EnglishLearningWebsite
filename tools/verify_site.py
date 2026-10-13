@@ -256,6 +256,25 @@ def main():
         check("点「看答案」判错并揭示答案 + 要求重打",
               ("再打一遍" in t_g and pg.locator("#p-reveal").count() == 1), True)
 
+        # 「不会」按钮 + 两个快捷键（sunfleeting：不会、看答案都要有键盘快捷键）
+        goto_fresh("#/practice?book=week1&mode=recall&size=10")
+        check("打字模式答题阶段有「不会」按钮", pg.locator("[data-act='no']").count() >= 1, True)
+        pg.keyboard.press("Alt+N")
+        pg.wait_for_timeout(600)
+        t_n = pg.evaluate("() => document.body.innerText")
+        check("Alt+N 触发「不会」（判错 + 揭答案进反馈，可继续）",
+              ("答错" in t_n and pg.locator("[data-act='next']").count() == 1), True)
+        goto_fresh("#/practice?book=week1&mode=recall&size=10")
+        pg.fill("#p-input", "zzzzzz")
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(500)
+        check("重做行「看答案」带 Alt+A 快捷键",
+              "Alt+A" in pg.evaluate("() => (document.querySelector('#p-retry')||{innerText:''}).innerText"), True)
+        pg.keyboard.press("Alt+A")
+        pg.wait_for_timeout(500)
+        check("Alt+A 触发「看答案」（揭示卡 + 要求重打）",
+              pg.locator("#p-reveal").count() == 1, True)
+
         # 重做答对 → 正常计入答对
         goto_fresh("#/practice?book=week1&mode=type&size=10")
         w_retry = pg.evaluate("() => TW.$('#p-word').textContent.trim()")
@@ -310,12 +329,12 @@ def main():
 
         # ========== 常用词典（搬运自 qwerty-learner）==========
         goto("#/books")
-        check("词典目录 = 12 本", pg.evaluate("() => TW.DECKS_META.length"), 12)
-        check("词条总量 = 2714 + 39087",
-              pg.evaluate("() => TW.data.totalWords()"), 2714 + 39087)
+        check("词典目录 = 14 本", pg.evaluate("() => TW.DECKS_META.length"), 14)
+        check("词条总量 = 2714 + 44170",
+              pg.evaluate("() => TW.data.totalWords()"), 2714 + 44170)
         check("词典 id 唯一", pg.evaluate(
             "() => { var s = {}; return TW.DECKS_META.every(function(d){ if (s[d.id]) return false; s[d.id]=1; return d.count > 0; }); }"), True)
-        check("词典选择页卡片 >= 12", pg.locator(".deck-card").count() >= 12, True)
+        check("词典选择页卡片 >= 14", pg.locator(".deck-card").count() >= 14, True)
         check("词典选择页有分组标题", pg.locator(".deck-group-title").count() >= 3, True)
         pg.screenshot(path=str(SHOTS / "27-deck-chooser.png"))
 

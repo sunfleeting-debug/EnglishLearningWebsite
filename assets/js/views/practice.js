@@ -374,6 +374,7 @@
             means +
             '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="在这里打出这个单词…" /></div>' +
             retryLineHtml() +
+            noBtnHtml() +
             '<div class="hint-keys">' + typingKeysHtml() + '</div>' +
             '</div>';
         }
@@ -384,6 +385,7 @@
             means +
             '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="根据释义拼写英文单词…" /></div>' +
             retryLineHtml() +
+            noBtnHtml() +
             '<div class="hint-keys">' + typingKeysHtml() + ' · ' + w.word.length + ' 个字母</div>' +
             '</div>';
         }
@@ -395,6 +397,7 @@
             (st.hintShown ? means : '<button class="btn ghost sm" data-act="hint" title="显示中文释义（快捷键 H）">' + TW.icon('lightbulb', 15) + ' 看中文提示 <kbd>H</kbd></button>') +
             '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="听音拼写…" /></div>' +
             retryLineHtml() +
+            noBtnHtml() +
             '<div class="hint-keys">' + typingKeysHtml() + ' · <kbd>H</kbd> 中文提示</div>' +
             '</div>';
         }
@@ -434,7 +437,17 @@
           所以工具键要写成 Alt+S/F/D（onKey 里处理）。 */
       function typingKeysHtml() {
         return '<kbd>Enter</kbd> 提交 · <kbd>Esc</kbd> 跳过 · ' +
-          '<kbd>Alt</kbd>+<kbd>S</kbd>/<kbd>F</kbd>/<kbd>D</kbd> 发音 · 收藏 · 详解';
+          '<kbd>Alt</kbd>+<kbd>S</kbd>/<kbd>F</kbd>/<kbd>D</kbd> 发音 · 收藏 · 详解 · ' +
+          '<kbd>Alt</kbd>+<kbd>N</kbd> 不会';
+      }
+
+      /** 「不会」按钮（打字类模式答题阶段常驻）：承认不会 = 判错 + 直接看答案进反馈，
+          与翻卡的「不认识」同语义（sunfleeting：把不会加上去，还要带键盘快捷键）。 */
+      function noBtnHtml() {
+        return '<div class="practice-actions" style="margin-top:.5rem">' +
+          '<button class="btn ghost sm" data-act="no" title="不会：判错并直接看答案（快捷键 Alt+N）">' +
+            TW.icon('x', 14) + ' 不会 <kbd>Alt+N</kbd></button>' +
+        '</div>';
       }
 
       function meaningsHtml(w) {
@@ -518,6 +531,7 @@
           if (act === 'reveal') b.onclick = function () { st.revealed = true; drawStage(); };
           else if (act === 'known') b.onclick = function () { grade(true); };
           else if (act === 'unknown') b.onclick = function () { grade(false); };
+          else if (act === 'no') b.onclick = function () { if (st.phase === 'answering') grade(false); };
           else if (act === 'next') b.onclick = next;
         });
       }
@@ -542,6 +556,16 @@
           // 事件继续冒泡到 globalKey 时判断条件已经变了，不打标记就会再执行一次
           e.__twHandled = true;
           if (toolbarAct(TOOL_KEYS[m[1].toLowerCase()])) e.preventDefault();
+          return;
+        }
+        /* Alt+N = 不会（判错直接看答案进反馈）；Alt+A = 看答案（判错 + 揭答案 + 重打）
+           —— sunfleeting：不会和看答案都要有键盘快捷键。只在答题中生效。 */
+        if (e.altKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyN' || e.code === 'KeyA')) {
+          e.__twHandled = true;
+          e.preventDefault();
+          if (st.phase !== 'answering') return;
+          if (e.code === 'KeyN') grade(false);
+          else if (st.tries >= 1) failReveal();   // 看答案只在第一次答错后（重做行出现时）可用
           return;
         }
         if (e.key === 'Enter') {
@@ -590,6 +614,14 @@
            S 发音/重听 · F 收藏 · D 详解 · H 看中文提示 */
         if (!e.altKey && !e.ctrlKey && !e.metaKey && TOOL_KEYS[(e.key || '').toLowerCase()]) {
           if (toolbarAct(TOOL_KEYS[e.key.toLowerCase()])) e.preventDefault();
+          return;
+        }
+        /* Alt+N 不会 / Alt+A 看答案（焦点不在输入框时也响应，比如焦点落在按钮上） */
+        if (e.altKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyN' || e.code === 'KeyA')) {
+          e.preventDefault();
+          if (st.phase !== 'answering') return;
+          if (e.code === 'KeyN') grade(false);
+          else if (st.tries >= 1) failReveal();
           return;
         }
 
@@ -652,9 +684,12 @@
         if (line) {
           line.innerHTML = '<span class="rt-tag">' + TW.icon('x', 13) +
             ' 还不对，再试一次（最后一次）</span>' +
-            '<button class="btn ghost sm" data-act="giveup">看答案</button>';
+            '<button class="btn ghost sm" data-act="no">不会 <kbd>Alt+N</kbd></button>' +
+            '<button class="btn ghost sm" data-act="giveup">看答案 <kbd>Alt+A</kbd></button>';
           var g = TW.$('[data-act="giveup"]', line);
           if (g) g.onclick = giveUp;
+          var nb = TW.$('[data-act="no"]', line);
+          if (nb) nb.onclick = function () { if (st.phase === 'answering') grade(false); };
         }
         if (input) {
           input.value = '';

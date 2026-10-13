@@ -32,7 +32,9 @@ RAW_BASE = 'https://api.github.com/repos/RealKai42/qwerty-learner/contents/publi
 
 # id, 源文件, 显示名, 一句话说明, 分组
 DECKS = [
-    ('gk3500',      'GaoKao_3500.json',               '高考 3500',       '高中 / 高考核心词汇',          '考试核心'),
+    ('chuzhong',    'ChuZhongluan_2_T.json',          '初中词汇',        '初中英语必备词汇',             '中学词汇'),
+    ('gk3500',      'GaoKao_3500.json',               '高考 3500',       '高中 / 高考核心词汇',          '中学词汇'),
+    ('gaozhong',    'GaoZhongluan_2_T.json',          '高中词汇(新课标)', '新课标高中英语必备词汇',        '中学词汇'),
     ('cet4',        'CET4_T.json',                    '大学英语四级',     'CET-4 大纲词汇',              '考试核心'),
     ('cet6',        'CET6_T.json',                    '大学英语六级',     'CET-6 大纲词汇',              '考试核心'),
     ('kaoyan',      'KaoYan_3_T.json',                '考研英语',        '考研英语大纲词汇',             '考试核心'),
