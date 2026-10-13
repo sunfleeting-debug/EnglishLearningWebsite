@@ -1,54 +1,61 @@
 /* ==========================================================================
    六级单词速记 · 样式表
-   设计参考 TypeWords（card 化、等宽单词字体、克制配色）
+   设计参考 Lenval Properties（lenvalproperties.com，见 F:\TEST\前端网页复制学习test
+   的离线克隆）：暖米白底 + 深棕黑、衬线 display 大字、小号大写 label、极简直角细线。
+   🔴 配色数值逐项取自参考站 :root 的 --_global-colors---*，别凭感觉改。
    默认浅色主题，支持 html.dark 暗色
    ========================================================================== */
 
 :root {
-  --bg: #eef1f5;
-  --bg-soft: #f7f8fa;
-  --card: #ffffff;
-  --card-2: #f7f8fa;
-  --line: #e4e6ea;
-  --line-soft: #eef0f3;
-  --text: #2b2d33;
-  --text-2: #5b5f68;
-  --text-3: #9aa0aa;
-  --accent: #2f6df6;
-  --accent-2: #eaf1ff;
-  --accent-soft: rgba(47, 109, 246, 0.12);
-  --ok: #16a34a;
-  --ok-soft: rgba(22, 163, 74, 0.12);
-  --warn: #d97706;
-  --warn-soft: rgba(217, 119, 6, 0.14);
-  --err: #dc2626;
-  --err-soft: rgba(220, 38, 38, 0.12);
-  --fav: #e0577a;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -12px rgba(16, 24, 40, 0.18);
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --radius: 14px;
-  --radius-sm: 10px;
+  --bg: #f9f4ee;               /* 参考站 base-0（米白） */
+  --bg-soft: #f3ece2;
+  --card: #fffdf9;
+  --card-2: #f6f0e7;
+  --line: rgba(33, 26, 25, 0.14);
+  --line-soft: rgba(33, 26, 25, 0.07);
+  --text: #211a19;             /* 参考站 base-1000 */
+  --text-2: #6d645e;
+  --text-3: #a9a099;           /* 参考站 base-500（暖灰） */
+  --accent: #26100d;           /* 参考站 brand-500（深棕黑） */
+  --accent-2: rgba(38, 16, 13, 0.08);
+  --accent-soft: rgba(38, 16, 13, 0.1);
+  --on-accent: #f9f4ee;        /* 深色块上的文字（暗色主题下主按钮反过来） */
+  --accent-hover: #3c211c;     /* 主按钮 hover（深色底要变浅才看得见） */
+  --ok: #1ba64b;               /* 参考站 additional--success */
+  --ok-soft: rgba(27, 166, 75, 0.12);
+  --warn: #b9791f;             /* 参考站 additional--alert 加深（浅底上要可读） */
+  --warn-soft: rgba(185, 121, 31, 0.14);
+  --err: #e23d3d;              /* 参考站 additional--error */
+  --err-soft: rgba(226, 61, 61, 0.1);
+  --fav: #c2607e;
+  --shadow: 0 1px 2px rgba(33, 26, 25, 0.05);
+  --shadow-sm: 0 1px 2px rgba(33, 26, 25, 0.04);
+  --radius: 4px;               /* 参考站近乎直角 */
+  --radius-sm: 3px;
   --sidebar-w: 13rem;
-  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --font: "Helvetica Now Display", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+  --font-display: "Financier Display", Georgia, "Times New Roman", serif;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo,
     Consolas, monospace;
-  --anim: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  --anim: 0.55s cubic-bezier(0.19, 1, 0.22, 1);   /* easeOutExpo，GSAP 站常用的那类收尾 */
 }
 
 html.dark {
-  --bg: #16181c;
-  --bg-soft: #1b1e23;
-  --card: #202329;
-  --card-2: #262a31;
-  --line: #32363d;
-  --line-soft: #2a2e35;
-  --text: #e8eaee;
-  --text-2: #a8aeb9;
-  --text-3: #6f7681;
-  --accent: #6f9dff;
-  --accent-2: rgba(111, 157, 255, 0.14);
-  --accent-soft: rgba(111, 157, 255, 0.16);
+  --bg: #211a19;               /* 参考站 base-1000 当底色 */
+  --bg-soft: #2a221f;
+  --card: #271f1d;
+  --card-2: #2e2623;
+  --line: rgba(249, 244, 238, 0.14);
+  --line-soft: rgba(249, 244, 238, 0.07);
+  --text: #f9f4ee;
+  --text-2: #b9b5af;           /* 参考站 base-500 */
+  --text-3: #7d746e;
+  --accent: #f9f4ee;
+  --accent-2: rgba(249, 244, 238, 0.1);
+  --accent-soft: rgba(249, 244, 238, 0.12);
+  --on-accent: #211a19;
+  --accent-hover: #ffffff;
   --ok: #4ade80;
   --ok-soft: rgba(74, 222, 128, 0.14);
   --warn: #fbbf24;
@@ -56,7 +63,7 @@ html.dark {
   --err: #f87171;
   --err-soft: rgba(248, 113, 113, 0.14);
   --fav: #f472b6;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px -14px rgba(0, 0, 0, 0.7);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
@@ -117,15 +124,14 @@ button { cursor: pointer; }
 .brand-logo {
   width: 34px; height: 34px;
   flex: 0 0 34px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, #4b8bff, #7c5cff);
-  color: #fff;
+  border-radius: 3px;
+  background: var(--accent);
+  color: var(--on-accent);
   display: grid;
   place-items: center;
-  font-weight: 700;
-  font-size: 17px;
-  font-family: var(--mono);
-  box-shadow: 0 6px 16px -6px rgba(75, 139, 255, 0.75);
+  font-weight: 600;
+  font-size: 19px;
+  font-family: var(--font-display);
 }
 .brand-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
 .brand-name { font-weight: 700; font-size: 15px; letter-spacing: 0.2px; white-space: nowrap; }
@@ -161,7 +167,7 @@ button { cursor: pointer; }
   min-width: 20px;
   text-align: center;
 }
-.nav-item.active .nav-badge { background: var(--accent); color: #fff; }
+.nav-item.active .nav-badge { background: var(--accent); color: var(--on-accent); }
 
 .sidebar-foot {
   padding-top: 0.6rem;
@@ -189,7 +195,14 @@ button { cursor: pointer; }
 .wrap-narrow { max-width: 780px; margin: 0 auto; }
 
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.2rem; flex-wrap: wrap; }
-.page-title { font-size: 1.5rem; font-weight: 700; margin: 0; letter-spacing: -0.2px; }
+.page-title {
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  font-weight: 500;
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
 .page-desc { color: var(--text-3); font-size: 13px; margin-top: 0.15rem; }
 
 /* ------------------------------ 通用组件 ------------------------------ */
@@ -223,17 +236,17 @@ button { cursor: pointer; }
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
-  box-shadow: 0 8px 18px -10px var(--accent);
+  color: var(--on-accent);
 }
-.btn.primary:hover { filter: brightness(1.06); }
+/* 深棕黑按钮在浅底上要"变浅一点"才看得见 hover；暗色主题反过来变纯白 */
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn.ghost { background: transparent; border-color: transparent; color: var(--text-2); }
 .btn.ghost:hover { background: var(--bg-soft); color: var(--text); }
 .btn.danger { color: var(--err); border-color: var(--line); }
 .btn.danger:hover { background: var(--err-soft); border-color: var(--err); }
 .btn.sm { padding: 0.3rem 0.6rem; font-size: 12.5px; border-radius: 8px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-/* 按钮里的快捷键提示：primary 蓝底上要跟着变白，不能沿用 kbd 的灰底灰字 */
+/* 按钮里的快捷键提示：primary 深色底上要跟着变浅，不能沿用 kbd 的灰底灰字 */
 .btn.primary kbd {
   background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.42);
@@ -300,10 +313,10 @@ select.field { cursor: pointer; }
 
 /* ------------------------------ 首页 ------------------------------ */
 .hero {
-  background: linear-gradient(135deg, var(--card), var(--card-2));
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 1.6rem 1.7rem;
+  padding: 2.2rem 2rem 2rem;
   margin-bottom: 1.2rem;
   position: relative;
   overflow: hidden;
@@ -312,28 +325,37 @@ select.field { cursor: pointer; }
   content: "Aa";
   position: absolute;
   right: -0.4rem;
-  bottom: -2.6rem;
-  font-family: var(--mono);
-  font-size: 9rem;
-  font-weight: 700;
+  bottom: -3.4rem;
+  font-family: var(--font-display);
+  font-size: 11rem;
+  font-weight: 400;
   color: var(--accent);
-  opacity: 0.06;
+  opacity: 0.05;
   line-height: 1;
   pointer-events: none;
 }
-.hero h1 { margin: 0 0 0.3rem; font-size: 1.6rem; letter-spacing: -0.4px; }
-.hero p { margin: 0 0 1.1rem; color: var(--text-2); font-size: 14px; max-width: 46ch; }
+/* 大标题用衬线 display 字体（参考站 Financier Display 的位置）；中文回落到宋体系，
+   和英文单词的衬线大字是同一套气质 */
+.hero h1 {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: 2.15rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.hero p { margin: 0 0 1.3rem; color: var(--text-2); font-size: 14px; max-width: 46ch; }
 
 .stat-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.95rem 1.05rem; }
-.stat-num { font-size: 1.7rem; font-weight: 700; font-family: var(--mono); letter-spacing: -1px; line-height: 1.1; }
+.stat-num { font-size: 2rem; font-weight: 500; font-family: var(--font-display); letter-spacing: -0.02em; line-height: 1.05; }
 .stat-label { font-size: 12.5px; color: var(--text-3); margin-top: 0.15rem; }
 .stat-num.accent { color: var(--accent); }
 .stat-num.ok { color: var(--ok); }
 .stat-num.err { color: var(--err); }
 .stat-num.fav { color: var(--fav); }
 
-.progress-line { height: 7px; background: var(--bg-soft); border-radius: 8px; overflow: hidden; }
-.progress-line > i { display: block; height: 100%; background: var(--accent); border-radius: 8px; transition: width 0.4s ease; }
+.progress-line { height: 3px; background: var(--line-soft); border-radius: 2px; overflow: hidden; }
+.progress-line > i { display: block; height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.7s cubic-bezier(0.19, 1, 0.22, 1); }
 .progress-line.ok > i { background: var(--ok); }
 
 .book-card {
@@ -350,7 +372,7 @@ select.field { cursor: pointer; }
   overflow: hidden;
 }
 .book-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow); }
-.book-card .bk-name { font-weight: 700; font-size: 15px; }
+.book-card .bk-name { font-weight: 700; font-size: 15.5px; font-family: var(--font-display); letter-spacing: -0.2px; }
 .book-card .bk-desc { font-size: 12px; color: var(--text-3); }
 .book-card .bk-bar { margin-top: auto; }
 .book-card .bk-meta { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-3); margin-bottom: 0.3rem; }
@@ -539,7 +561,7 @@ kbd {
 .toast.ok { background: var(--ok); color: #fff; }
 .toast.err { background: var(--err); color: #fff; }
 /* 提醒类（如发音不可用）：固定橙色，浅色/深色主题下都是白字可读 */
-.toast.warn { background: #d97706; color: #fff; }
+.toast.warn { background: var(--warn); color: #fff; }
 @keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* 统计 */
@@ -845,7 +867,7 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 
 /* ---------- 词典分组 ---------- */
 .deck-group { margin-bottom: 1.6rem; }
-.deck-group-title { margin: 0; font-size: 15px; letter-spacing: -0.2px; }
+.deck-group-title { margin: 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.14em; color: var(--text-3); }
 
 /* 词典卡：比首页 book-card 多一行「浏览 / 练习」 */
 .deck-card { gap: 0.45rem; }
@@ -858,7 +880,7 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 .deck-foot .btn { pointer-events: auto; }
 
 /* ---------- 复习页 ---------- */
-.nav-badge.srs { background: var(--accent); color: #fff; }
+.nav-badge.srs { background: var(--accent); color: var(--on-accent); }
 
 .tag.srs { background: var(--accent-2); color: var(--accent); border-color: transparent; }
 
@@ -1000,3 +1022,49 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 }
 
 
+
+/* ------------------------------ 动效（参考 Lenval Properties） ------------------------------ */
+/* 🔴 初始隐藏态 .rv 只由 motion.js 动态添加：脚本没跑 / 报错时页面照常显示，绝不白屏 */
+.rv { opacity: 0; transform: translateY(16px); }
+.rv.rv-in {
+  opacity: 1; transform: none;
+  transition: opacity 0.55s cubic-bezier(0.19, 1, 0.22, 1),
+              transform 0.7s cubic-bezier(0.19, 1, 0.22, 1);
+  transition-delay: var(--rv-delay, 0ms);
+}
+
+/* 路由切换：旧视图 130ms 快速淡出，新视图进场 reveal（app.js 加 / 摘 .view-out） */
+#view { transition: opacity 0.13s ease-out, transform 0.13s ease-out; }
+#view.view-out { opacity: 0; transform: translateY(-8px); }
+
+/* 磁吸按钮：hover 时朝鼠标方向轻微偏移（只给 hero 的主 CTA 加 data-magnetic） */
+[data-magnetic] { transition: transform 0.2s cubic-bezier(0.19, 1, 0.22, 1); will-change: transform; }
+
+/* 首访幕布开场：品牌字从遮罩里升起 → 整块幕布向上收走。pointer-events:none，
+   就算收走动画被卡住也绝不挡下面的页面（核验脚本的 click 不受影响） */
+.intro {
+  position: fixed; inset: 0; z-index: 999;
+  background: var(--bg);
+  display: grid; place-items: center;
+  transition: transform 0.75s cubic-bezier(0.76, 0, 0.24, 1);
+  pointer-events: none;
+}
+.intro-brand { overflow: hidden; }
+.intro-brand i {
+  display: block;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 6vw, 3.4rem);
+  font-style: normal; font-weight: 500;
+  letter-spacing: -0.02em;
+  transform: translateY(112%);
+}
+.intro-sub {
+  margin-top: 0.7rem;
+  font-size: 10.5px; letter-spacing: 0.22em;
+  color: var(--text-3); text-align: center;
+  opacity: 0; transition: opacity 0.6s ease 0.45s;
+}
+.intro.run .intro-brand i { animation: intro-rise 0.85s cubic-bezier(0.19, 1, 0.22, 1) both; }
+.intro.run .intro-sub { opacity: 1; }
+.intro.done { transform: translateY(-101%); }
+@keyframes intro-rise { from { transform: translateY(112%); } to { transform: translateY(0); } }

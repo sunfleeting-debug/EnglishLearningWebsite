@@ -54,8 +54,8 @@
             ' 加上 ' + TW.data.decks.length + ' 本常用词典。练习记录保存在本机浏览器中。</p>' +
           '<div class="row">' +
             (lastBk
-              ? '<button class="btn primary" id="btn-continue">' + TW.icon('play', 16) + ' 继续「' + TW.esc(lastBk.name) + '」</button>'
-              : '<button class="btn primary" id="btn-start">' + TW.icon('play', 16) + ' 开始学习</button>') +
+              ? '<button class="btn primary" id="btn-continue" data-magnetic>' + TW.icon('play', 16) + ' 继续「' + TW.esc(lastBk.name) + '」</button>'
+              : '<button class="btn primary" id="btn-start" data-magnetic>' + TW.icon('play', 16) + ' 开始学习</button>') +
             '<button class="btn" id="btn-random">' + TW.icon('shuffle', 16) + ' 随机练习</button>' +
             '<button class="btn ghost" id="btn-decks">' + TW.icon('book', 16) + ' 选词典</button>' +
           '</div>' +

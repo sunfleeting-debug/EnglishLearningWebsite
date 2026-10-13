@@ -129,14 +129,28 @@
     // 详情页归属「词库」高亮
     renderNav(r.name === 'word' ? 'books' : r.name);
     var host = document.getElementById('view');
-    host.innerHTML = '';
-    try {
-      r.view.render(host, route.query);
-    } catch (e) {
-      host.innerHTML = '<div class="empty"><div class="em-ico">⚠️</div><div>页面渲染出错</div><pre class="small muted">' + TW.esc(e && e.message) + '</pre></div>';
-      console.error(e);
+
+    /* 路由过渡（参考站用 barba 做整页过渡）：旧内容 130ms 淡出 → 换新 → 进场 reveal。
+       首次渲染 / 动画被关掉时直接换，不多等这一下。 */
+    var doRender = function () {
+      host.classList.remove('view-out');
+      host.innerHTML = '';
+      try {
+        r.view.render(host, route.query);
+      } catch (e) {
+        host.innerHTML = '<div class="empty"><div class="em-ico">⚠️</div><div>页面渲染出错</div><pre class="small muted">' + TW.esc(e && e.message) + '</pre></div>';
+        console.error(e);
+      }
+      window.scrollTo({ top: 0 });
+      if (TW.motion) TW.motion.enter(host);
+    };
+
+    if (host.childElementCount && TW.motion && !TW.motion.isOff()) {
+      host.classList.add('view-out');
+      setTimeout(doRender, 130);
+    } else {
+      doRender();
     }
-    window.scrollTo({ top: 0 });
   }
 
   function go(path) {
@@ -163,6 +177,10 @@
     TW.speech.sound.enabled = TW.store.settings.keySound;
     if (!location.hash) location.hash = '/';
     if (TW.sync) TW.sync.onChange(function () { renderNav(current.name); });
+    if (TW.motion) {             // 幕布开场（只播一次）+ 磁吸按钮
+      TW.motion.preloader();
+      TW.motion.magnetic();
+    }
     render();
     // 同步层放在最后初始化：此时 store 已 load/migrate，视图已就绪
     if (TW.sync) TW.sync.init();
