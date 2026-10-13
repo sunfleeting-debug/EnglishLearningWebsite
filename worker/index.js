@@ -459,6 +459,65 @@ async function handleAdminExport(env, id) {
   });
 }
 
+/* ----------------------------------------------------------- 根地址落地页 */
+
+// 后端只提供 /api/* 接口，直接访问根地址原本会返回 404 JSON，容易被误认为服务挂了。
+// 这里给一个纯静态说明页（自包含、不引外部资源），顺便说明前端站点在哪。
+function landingPage(host) {
+  const site = 'https://sunfleeting-debug.github.io/EnglishLearningWebsite/';
+  const html = '<!doctype html>\n<html lang="zh-CN">\n<head>\n'
+    + '<meta charset="utf-8">\n'
+    + '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
+    + '<title>六级单词速记 · 后端 API</title>\n'
+    + '<style>\n'
+    + ':root{--bg:#f6f7f9;--fg:#1f2328;--mut:#656d76;--card:#fff;--bd:#d8dee4;--ac:#0969da}\n'
+    + 'html.dark{--bg:#0d1117;--fg:#e6edf3;--mut:#8b949e;--card:#161b22;--bd:#30363d;--ac:#58a6ff}\n'
+    + 'body{margin:0;padding:32px 20px;background:var(--bg);color:var(--fg);'
+    + 'font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}\n'
+    + 'main{max-width:720px;margin:0 auto}\n'
+    + '.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:24px 26px}\n'
+    + 'h1{margin:0 0 6px;font-size:22px}\n'
+    + '.ok{color:#1a7f37;margin:0 0 18px;font-weight:600}\n'
+    + 'p{margin:10px 0}\n'
+    + 'a{color:var(--ac)}\n'
+    + 'code{background:rgba(127,127,127,.14);border-radius:5px;padding:1px 6px;font-size:13px}\n'
+    + 'table{width:100%;border-collapse:collapse;margin:12px 0 4px;font-size:14px}\n'
+    + 'td{padding:7px 8px;border-top:1px solid var(--bd);vertical-align:top}\n'
+    + 'td:first-child{white-space:nowrap;color:var(--mut)}\n'
+    + '.mut{color:var(--mut);font-size:13px}\n'
+    + '</style>\n</head>\n<body>\n<main>\n'
+    + '<div class="card">\n'
+    + '<h1>六级单词速记 · 后端 API</h1>\n'
+    + '<p class="ok">服务正常运行中 ✅</p>\n'
+    + '<p>这里<b>只有接口</b>，没有网页界面。请打开前端站点使用：</p>\n'
+    + '<p><a href="' + site + '">' + site + '</a></p>\n'
+    + '<p>所有接口路径都以 <code>/api/</code> 开头，请求与响应均为 JSON。</p>\n'
+    + '<hr style="border:0;border-top:1px solid var(--bd);margin:20px 0">\n'
+    + '<h2 style="font-size:16px;margin:0 0 4px">接口一览</h2>\n'
+    + '<table>\n'
+    + '<tr><td><code>GET /api/health</code></td><td>健康检查，无需登录</td></tr>\n'
+    + '<tr><td><code>POST /api/register</code></td><td>注册</td></tr>\n'
+    + '<tr><td><code>POST /api/login</code></td><td>登录，返回 token</td></tr>\n'
+    + '<tr><td><code>POST /api/logout</code></td><td>登出，作废当前 token</td></tr>\n'
+    + '<tr><td><code>GET /api/me</code></td><td>当前登录用户</td></tr>\n'
+    + '<tr><td><code>GET /api/me/state</code></td><td>拉取全部进度（首次全量）</td></tr>\n'
+    + '<tr><td><code>POST /api/me/sync</code></td><td>增量同步（含删除标记）</td></tr>\n'
+    + '<tr><td><code>/api/admin/*</code></td><td>管理看板，仅管理员</td></tr>\n'
+    + '</table>\n'
+    + '<p class="mut">其他路径返回 404 JSON，属正常现象。</p>\n'
+    + '</div>\n'
+    + '<p class="mut" style="margin-top:14px">Host: <code>' + host + '</code></p>\n'
+    + '</main>\n'
+    + '<script>if(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)'
+    + 'document.documentElement.className="dark";</script>\n'
+    + '</body>\n</html>\n';
+
+  return new Response(html, {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }
+  });
+}
+
 /* --------------------------------------------------------------- 入口 */
 
 export default {
@@ -477,6 +536,9 @@ export default {
     };
 
     try {
+      // 根地址 / /api：给说明页，不落到下面 404 的「接口不存在」
+      if ((path === '/' || path === '/api') && method === 'GET') return withCors(landingPage(url.host));
+
       if (!env.DB) return withCors(fail('后端未绑定 D1 数据库（检查 wrangler.toml 的 d1_databases）', 500));
 
       if (path === '/api/health' && method === 'GET') {

@@ -76,8 +76,13 @@ python tools/verify_backend.py      # 端到端核验（自己拉起 mock）
 
 ## 七、接口一览
 
+> 直接访问根地址 `https://<worker>.workers.dev/` **不是错误**：后端只提供 `/api/*` 接口，
+> 但根地址（以及 `/api`）会返回一个自包含的说明页（HTML，列出接口清单 + 前端站点链接），
+> 免得被人当成「服务挂了」。只有**其他**未知路径才返回 404 JSON。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| GET | `/` `/api` | 说明页（HTML），非接口 |
 | GET | `/api/health` | 健康检查 |
 | POST | `/api/register` | `{email, password, name?}` → `{token, user}` |
 | POST | `/api/login` | `{email, password}` → `{token, user}` |

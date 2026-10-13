@@ -177,13 +177,19 @@ wrangler deploy              # 拿到 https://cet-words-api.<你的账号>.worke
 改完后端代码后，除了跑本地 mock，还可以直接打线上接口确认真的部署好了：
 
 ```bash
-python tools/smoke_api.py        # 36 项断言：健康检查 / 注册登录 / 同步合并 / 删除清空 / CORS / 权限 / 错误路径
+python tools/smoke_api.py        # 44 项断言：根地址落地页 / 健康检查 / 注册登录 / 同步合并 / 删除清空 / CORS / 权限 / 错误路径
 ```
 
-> ⚠️ 两个环境坑（脚本里都处理了，但排查时要知道）：
-> ① 本机到 `*.workers.dev` **必须走系统代理**（直连超时），而 `api.cloudflare.com` 相反要直连；
-> ② Cloudflare 会对 `Python-urllib` 这类 UA 直接回 `403 error code: 1010`，脚本因此伪装了浏览器 UA。
-> ③ 链路会间歇性断（同一请求 200/000 交替），脚本对传输错误做了重试 —— 别把 `status=0` 当成后端故障。
+> 后端根地址 <https://cet-words-api.sunfleeting.workers.dev> 是一个**说明页**（列出所有 `/api/*` 接口
+> 并链回前端站点），不是报错 —— 访问它看到 HTML 属于正常。
+
+> ⚠️ 几个环境坑（脚本里都处理了，但排查时要知道）：
+> ① 本机到 `*.workers.dev` **必须走代理**（直连超时），而 `api.cloudflare.com` 相反要直连；
+> ② Cloudflare 会对 `Python-urllib` 这类 UA 直接回 `403 error code: 1010`，脚本因此伪装了浏览器 UA；
+> ③ 链路会间歇性断（同一请求 200/000 交替），脚本对传输错误做了重试 —— 别把 `status=0` 当成后端故障；
+> ④ **「系统代理」不一定能用**：环境里的 `HTTPS_PROXY`（`127.0.0.1:58575`）会对 `workers.dev` 回
+>    `Tunnel connection failed: 502`，症状是**所有**请求 status=0、看着像后端挂了。
+>    换一个本地代理端口即可：`SMOKE_PROXY=http://127.0.0.1:7897 python tools/smoke_api.py`。
 
 ### 同步的合并规则
 

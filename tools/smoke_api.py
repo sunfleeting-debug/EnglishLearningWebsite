@@ -5,7 +5,7 @@
   · verify_backend.py —— 用本地 mock 后端跑完整浏览器流程（不碰线上，可天天跑）
   · smoke_api.py      —— 直接给线上 Worker 发 HTTP，确认「真的部署好了、数据真的落了库」
 
-覆盖：健康检查 · 注册/登录 · 进度同步 · 合并取 max（幂等不回退）·
+覆盖：根地址落地页 · 健康检查 · 注册/登录 · 进度同步 · 合并取 max（幂等不回退）·
       删除与清空 · 会话持久 · 非管理员 403 · CORS 白名单 · 错误路径
 
 用法：
@@ -55,9 +55,17 @@ def default_base():
 
 
 # 🔴 代理策略：本机环境下 `*.workers.dev` **只有走代理才通**（直连 curl 返回 000/超时），
-# 而 api.cloudflare.com 反而要 --noproxy 直连。这里默认沿用系统代理，
-# 需要强制直连时设 SMOKE_DIRECT=1。
-if os.environ.get("SMOKE_DIRECT"):
+# 而 api.cloudflare.com 反而要 --noproxy 直连。
+# ⚠️ 但「系统代理」不一定是能用的那个：环境里的 HTTPS_PROXY（127.0.0.1:58575）会对
+#    workers.dev 回 `Tunnel connection failed: 502`，而另一个本地代理端口（7897）能通。
+#    症状是所有请求 status=0 / SSLEOF，看起来像后端挂了，其实是代理选错了。
+# 优先级：SMOKE_PROXY（显式指定）> SMOKE_DIRECT=1（直连）> 系统代理。
+if os.environ.get("SMOKE_PROXY"):
+    _p = os.environ["SMOKE_PROXY"]
+    OPENER = urllib.request.build_opener(
+        urllib.request.ProxyHandler({"https": _p, "http": _p}))
+    log("[i] SMOKE_PROXY=%s（显式代理）" % _p)
+elif os.environ.get("SMOKE_DIRECT"):
     OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     log("[i] SMOKE_DIRECT=1：已强制绕过代理直连")
 else:
@@ -108,6 +116,24 @@ def req(base, method, path, body=None, token=None, origin=None, tries=4):
     return status, js, hd
 
 
+def raw(base, method, path, origin=None, tries=4):
+    """拿**原始文本**（落地页是 HTML：走 req() 会被 json.loads 打回 status=0 然后一路重试）。"""
+    r = urllib.request.Request(base + path, method=method)
+    r.add_header("User-Agent", UA)
+    r.add_header("Accept", "text/html,application/json;q=0.9,*/*;q=0.8")
+    if origin:
+        r.add_header("Origin", origin)
+    for i in range(tries):
+        try:
+            with OPENER.open(r, timeout=20) as resp:
+                return resp.status, resp.read().decode("utf-8", "replace"), resp.headers
+        except urllib.error.HTTPError as e:
+            return e.code, e.read().decode("utf-8", "replace"), e.headers
+        except Exception:
+            time.sleep(0.8 * (i + 1))
+    return 0, "", {}
+
+
 def main():
     base = (sys.argv[1] if len(sys.argv) > 1 else os.environ.get("API_BASE") or default_base()).rstrip("/")
     if not base:
@@ -117,6 +143,21 @@ def main():
 
     email = "smoke+%d@example.com" % int(time.time())
     pwd = "smoke-pass-123"
+
+    # ---------- 0) 根地址落地页 ----------
+    # 直接访问 https://xxx.workers.dev/ 只该看到说明页，不该看到 {"error":"接口不存在：/"}
+    log("--- 0) 根地址落地页 ---")
+    st, html, hd = raw(base, "GET", "/")
+    check("GET / = 200（不再是 404）", st, 200)
+    check("根地址返回 HTML", "text/html" in (hd.get("Content-Type") or ""), True,
+          extra=hd.get("Content-Type"))
+    check("根地址不再返回 JSON 报错", html.lstrip().startswith("{\"error"), False)
+    check("落地页写明服务名", "六级单词速记" in html, True)
+    check("落地页给出健康检查路径", "/api/health" in html, True)
+    check("落地页指回前端站点", "sunfleeting-debug.github.io" in html, True)
+    st, html2, hd2 = raw(base, "GET", "/api")
+    check("GET /api 同样给说明页（尾部斜杠已归一）", st, 200)
+    check("/api 也是 HTML", "text/html" in (hd2.get("Content-Type") or ""), True)
 
     # ---------- 1) 健康检查 ----------
     log("--- 1) 健康检查与 CORS ---")
