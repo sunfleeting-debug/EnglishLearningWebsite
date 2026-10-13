@@ -37,7 +37,7 @@
 
         '<div class="card card-pad" style="margin-bottom:1rem">' +
           '<div class="card-title" style="margin-bottom:.3rem">发音与音效</div>' +
-          switchRow('autoPronounce', '出题时自动发音', '看词 / 听音模式下自动朗读') +
+          switchRow('autoPronounce', '进入新词时自动发音', '四个练习模式都会读完再出下一题；听音写词模式始终朗读') +
           switchRow('keySound', '键盘与提示音效', '打字、答对、答错时的轻提示音') +
           '<div class="set-row"><div><div class="set-label">发音口音</div><div class="set-hint">美音 / 英音</div></div>' +
             '<div class="seg" id="set-accent">' +

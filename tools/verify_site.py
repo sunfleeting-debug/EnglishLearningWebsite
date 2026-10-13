@@ -177,20 +177,22 @@ def main():
         check("重做答对后判为「正确」",
               "正确" in pg.evaluate("() => document.body.innerText"), True)
 
-        # ---------- 练习：翻卡模式翻面后应有词典详解入口 ----------
+        # ---------- 练习：翻卡模式应有词典详解入口（工具条，翻不翻面都常驻）----------
         goto_fresh("#/practice?book=week1&mode=flash&size=10")
         pg.wait_for_timeout(600)
-        # 先确认真的渲染成了翻卡页：否则下面的 count==0 断言在「空白页」上也会假通过
+        # 先确认真的渲染成了翻卡页：否则下面的断言在「空白页」上也会假通过
         # （旧实例的 autoNext 定时器曾把新页面覆盖掉，就是这一条抓出来的）
         check("翻卡页渲染出卡片（未被上一会话覆盖）", pg.locator("#p-card").count(), 1)
-        check("翻卡未翻面时不显示详解入口",
-              pg.locator(".practice-actions a[href^='#/word']").count(), 0)
+        # 详解入口从「翻面后的动作区」移到了常驻工具条（sunfleeting：发音/收藏/详解都要能按键盘，
+        # 于是做成四个模式通用的工具条），所以未翻面时也应该有
+        check("翻卡未翻面时就有「详解」入口",
+              pg.locator(".practice-tools a[href^='#/word']").count() > 0, True)
         pg.click("[data-act='reveal']")
         pg.wait_for_timeout(500)
-        check("翻卡翻面后出现「详解」入口",
-              pg.locator(".practice-actions a[href^='#/word']").count() > 0, True)
+        check("翻面后「详解」入口仍在",
+              pg.locator(".practice-tools a[href^='#/word']").count() > 0, True)
         pg.screenshot(path=str(SHOTS / "26-practice-flash-detail.png"))
-        pg.locator(".practice-actions a[href^='#/word']").first.click()
+        pg.locator(".practice-tools a[href^='#/word']").first.click()
         pg.wait_for_timeout(800)
         check("翻卡「详解」可进入详情页", "#/word" in pg.evaluate("() => location.hash"), True)
 

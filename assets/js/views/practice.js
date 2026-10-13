@@ -19,6 +19,13 @@
   /** 生词本分组名称（"练习这组"时显示在顶部） */
   var TAB_NAME = { wrong: '待攻克错词', fav: '我的收藏', master: '已掌握' };
 
+  /* 🔴 工具动作（发音 / 收藏 / 详解 / 看中文提示）：
+     按钮点击与键盘快捷键**走同一条路径**（都是 toolbarAct），避免两套行为不一致。
+     快捷键：不在输入框里时是裸字母 s/f/d/h；正在打字时用 Alt + 同字母
+     （裸字母在输入框里必须还是字母，不能抢键）。 */
+  var TOOL_ACTS = ['speak', 'fav', 'detail', 'hint'];
+  var TOOL_KEYS = { s: 'speak', f: 'fav', d: 'detail', h: 'hint' };
+
   /** 生成可接受的答案集合（兼容 analog(ue) 这类带括号的写法） */
   function answers(word) {
     var set = [word];
@@ -188,7 +195,8 @@
         st = {
           i: 0, correct: 0, wrong: 0, phase: 'answering', // answering | feedback | done
           revealed: false, lastOk: false, hintShown: false,
-          tries: 0   // 本题已答错次数：第一次错只提示重做，不改判、不揭答案
+          tries: 0,    // 本题已答错次数：第一次错只提示重做，不改判、不揭答案
+          spoke: false // 本词是否已自动发音（drawStage 在「看提示/翻面」时会重画，不标记会读两遍）
         };
       }
       resetRound();
@@ -254,11 +262,21 @@
       /* ---------- 主区域 ---------- */
       var input = null;
 
+      /** 工具条：发音 / 收藏 / 详解。四个模式都显示，且都标了快捷键（kbd 里的字就是按键） */
+      function toolBarHtml(w) {
+        var faved = !!(TW.store.get(w.id) || {}).fav;
+        return '<button class="btn ghost sm" data-act="speak" title="发音（快捷键 S）">' +
+            TW.icon('volume', 15) + ' 发音 <kbd>S</kbd></button>' +
+          '<button class="btn ghost sm" data-act="fav" title="收藏 / 取消收藏（快捷键 F）">' +
+            TW.icon('star', 15) + ' ' + (faved ? '已收藏' : '收藏') + ' <kbd>F</kbd></button>' +
+          '<a class="btn ghost sm" data-act="detail" href="#/word?id=' + encodeURIComponent(w.id) + '" title="词典详解（快捷键 D）">' +
+            TW.icon('lightbulb', 15) + ' 详解 <kbd>D</kbd></a>';
+      }
+
       function stageHtml(w) {
-        var head = '<div class="word-phonetic">' + (TW.store.settings.showPhonetic && w.us ? '/' + TW.esc(w.us) + '/' : '') +
-          '  <button class="btn ghost sm" data-act="speak">' + TW.icon('volume', 15) + ' 发音</button>' +
-          '  <button class="btn ghost sm" data-act="fav">' + TW.icon('star', 15) + ' ' + ((TW.store.get(w.id) || {}).fav ? '已收藏' : '收藏') + '</button>' +
-          '  <a class="btn ghost sm" href="#/word?id=' + encodeURIComponent(w.id) + '">' + TW.icon('lightbulb', 15) + ' 详解</a>' +
+        var head = '<div class="practice-tools">' +
+          (TW.store.settings.showPhonetic && w.us ? '<span class="phon">/' + TW.esc(w.us) + '/</span>' : '') +
+          toolBarHtml(w) +
           '</div>';
         var means = '<div class="mean-box">' + meaningsHtml(w) + '</div>';
 
@@ -268,7 +286,7 @@
             means +
             '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="在这里打出这个单词…" /></div>' +
             retryLineHtml() +
-            '<div class="hint-keys"><kbd>Enter</kbd> 提交 · <kbd>Esc</kbd> 跳过</div>' +
+            '<div class="hint-keys">' + typingKeysHtml() + '</div>' +
             '</div>';
         }
         if (cfg.mode === 'recall') {
@@ -278,22 +296,24 @@
             means +
             '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="根据释义拼写英文单词…" /></div>' +
             retryLineHtml() +
-            '<div class="hint-keys"><kbd>Enter</kbd> 提交 · <kbd>Esc</kbd> 跳过 · ' + w.word.length + ' 个字母</div>' +
+            '<div class="hint-keys">' + typingKeysHtml() + ' · ' + w.word.length + ' 个字母</div>' +
             '</div>';
         }
         if (cfg.mode === 'listen') {
           return '<div class="stage">' +
-            '<button class="btn primary" data-act="speak" style="font-size:15px">' + TW.icon('volume', 18) + ' 重听</button>' +
+            '<button class="btn primary" data-act="speak" style="font-size:15px" title="再听一遍（快捷键 S）">' + TW.icon('volume', 18) + ' 重听 <kbd>S</kbd></button>' +
             '<div class="word-display" id="p-word" style="font-size:1.6rem;color:var(--text-3)">' +
               (TW.store.settings.showPhonetic && w.us ? '/' + TW.esc(w.us) + '/' : '听发音写单词') + '</div>' +
-            (st.hintShown ? means : '<button class="btn ghost sm" data-act="hint">' + TW.icon('lightbulb', 15) + ' 看中文提示</button>') +
+            (st.hintShown ? means : '<button class="btn ghost sm" data-act="hint" title="显示中文释义（快捷键 H）">' + TW.icon('lightbulb', 15) + ' 看中文提示 <kbd>H</kbd></button>') +
             '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="听音拼写…" /></div>' +
             retryLineHtml() +
-            '<div class="hint-keys"><kbd>Enter</kbd> 提交 · <kbd>Esc</kbd> 跳过</div>' +
+            '<div class="hint-keys">' + typingKeysHtml() + ' · <kbd>H</kbd> 中文提示</div>' +
             '</div>';
         }
         // flash
         return '<div class="stage">' +
+          // 翻卡也给工具条：看词时想听发音 / 收藏 / 进详解，不该非切模式不可
+          '<div class="practice-tools">' + toolBarHtml(w) + '</div>' +
           '<div class="flashcard' + (st.revealed ? ' revealed' : '') + '" id="p-card">' +
             '<div class="word-phonetic">' + (TW.store.settings.showPhonetic && w.us ? '/' + TW.esc(w.us) + '/' : '') + '</div>' +
             '<div class="word-display" style="font-size:clamp(1.8rem,5vw,2.8rem)">' + TW.esc(w.word) + '</div>' +
@@ -303,8 +323,7 @@
           '</div>' +
           (st.revealed
             ? '<div class="practice-actions">' +
-                // 翻面后与其它模式对齐，给出词典详解入口
-                '<a class="btn ghost" href="#/word?id=' + encodeURIComponent(w.id) + '">' + TW.icon('lightbulb', 16) + ' 详解</a>' +
+                // 详解已经在上面工具条里了，这里只留判定按钮
                 '<button class="btn" data-act="unknown">' + TW.icon('x', 16) + ' 不认识 <kbd>Backspace</kbd></button>' +
                 '<button class="btn primary" data-act="known">' + TW.icon('check', 16) + ' 认识 <kbd>Enter</kbd></button>' +
               '</div>'
@@ -312,7 +331,8 @@
           // 键盘提示：整个练习页都能不用鼠标（sunfleeting 要求）
           '<div class="hint-keys">' +
             '<kbd>空格</kbd> 翻面 · <kbd>Enter</kbd> 认识 · <kbd>Backspace</kbd> 不认识 · ' +
-            '<kbd>S</kbd> 发音 · <kbd>Esc</kbd> 跳过 · <kbd>1</kbd>~<kbd>4</kbd> 换模式' +
+            '<kbd>S</kbd> 发音 · <kbd>F</kbd> 收藏 · <kbd>D</kbd> 详解 · ' +
+            '<kbd>Esc</kbd> 跳过 · <kbd>1</kbd>~<kbd>4</kbd> 换模式' +
           '</div>' +
           '</div>';
       }
@@ -320,6 +340,13 @@
       /** 「再试一次」提示位：位于输入框下方，内容由 retry() 填充 */
       function retryLineHtml() {
         return '<div class="retry-line" id="p-retry"></div>';
+      }
+
+      /** 打字类模式的键盘提示。焦点在输入框里时裸字母是字母本身，
+          所以工具键要写成 Alt+S/F/D（onKey 里处理）。 */
+      function typingKeysHtml() {
+        return '<kbd>Enter</kbd> 提交 · <kbd>Esc</kbd> 跳过 · ' +
+          '<kbd>Alt</kbd>+<kbd>S</kbd>/<kbd>F</kbd>/<kbd>D</kbd> 发音 · 收藏 · 详解';
       }
 
       function meaningsHtml(w) {
@@ -340,7 +367,7 @@
         if (!wrap) return;
         wrap.innerHTML = stageHtml(w);
         TW.ui.bindWordList(wrap, function () {});  // 占位，避免误触发
-        bindStageActions(w);
+        bindActs(wrap, w);
         input = TW.$('#p-input', host);
         if (input) {
           input.addEventListener('input', function () {
@@ -349,29 +376,61 @@
           input.addEventListener('keydown', onKey);
           input.focus();
         }
-        // 自动发音
-        if (TW.store.settings.autoPronounce && (cfg.mode === 'listen' || cfg.mode === 'type')) {
-          setTimeout(function () { if (alive()) TW.speech.speak(w.word, TW.store.settings.accent); }, 120);
-        }
-        if (cfg.mode === 'listen') {
-          setTimeout(function () { if (alive()) TW.speech.speak(w.word, TW.store.settings.accent); }, 200);
+        /* 进入新词自动发音 —— 四个模式统一走这里（sunfleeting 要求「答完一个、到下一个，
+           自动读下一个单词」）。旧实现只在「看词打字 / 听音写词」里发音，而且 listen 分支
+           额外又调用了一次 ⇒ 同一时刻两次 speak，第二次的 stopAudio() 把第一次掐断，
+           听起来就是「读到一半重来」甚至没声。
+           · 听音模式即使关掉 autoPronounce 也必须读（发音就是题面）
+           · 🔴 用 st.spoke 去重：drawStage() 在「看中文提示」「翻面」时也会重画，不去重会读两遍 */
+        if (!st.spoke && (cfg.mode === 'listen' || TW.store.settings.autoPronounce)) {
+          st.spoke = true;
+          setTimeout(function () { if (alive()) TW.speech.speak(w.word, TW.store.settings.accent); }, 150);
         }
       }
 
-      function bindStageActions(w) {
-        TW.$$('[data-act]', host).forEach(function (b) {
-          if (!host.contains(b)) return;
+      /** 工具动作：按钮点击与键盘快捷键**同一条路径**（发音 / 收藏 / 详解 / 看中文提示）
+          返回 true 表示这个动作在当前模式下可用 —— 键盘处理据此决定要不要 preventDefault，
+          避免「按键被吞掉但什么也没发生」。 */
+      function toolbarAct(name) {
+        if (!alive()) return false;
+        var w = session[st.i];
+        if (!w) return false;
+        if (name === 'speak') { TW.speech.speak(w.word, TW.store.settings.accent); return true; }
+        if (name === 'fav') {
+          var on = TW.store.toggleFav(w.id);
+          // 文案要跟着状态走：工具栏 / 反馈区里可能各有一个收藏按钮，一起刷新
+          TW.$$('[data-act="fav"]', host).forEach(function (b) {
+            b.innerHTML = TW.icon('star', 15) + ' ' + (on ? '已收藏' : '收藏') + ' <kbd>F</kbd>';
+          });
+          TW.toast(on ? '已收藏' : '已取消收藏');
+          return true;
+        }
+        if (name === 'detail') { TW.app.go('/word?id=' + encodeURIComponent(w.id)); return true; }
+        // 「看中文提示」只有听音写词模式有（其它模式本来就把释义摆出来了）
+        if (name === 'hint') {
+          if (!TW.$('[data-act="hint"]', host)) return false;
+          st.hintShown = true;
+          drawStage();
+          return true;
+        }
+        return false;
+      }
+
+      /** 绑定一个区域内的所有 data-act 按钮（工具键 + 流程键都在这里） */
+      function bindActs(root, w) {
+        TW.$$('[data-act]', root).forEach(function (b) {
           var act = b.dataset.act;
-          if (act === 'speak') b.onclick = function () { TW.speech.speak(w.word, TW.store.settings.accent); };
-          else if (act === 'fav') b.onclick = function () {
-            var on = TW.store.toggleFav(w.id);
-            b.innerHTML = TW.icon('star', 15) + ' ' + (on ? '已收藏' : '收藏');
-            TW.toast(on ? '已收藏' : '已取消收藏');
-          };
-          else if (act === 'hint') b.onclick = function () { st.hintShown = true; drawStage(); };
-          else if (act === 'reveal') b.onclick = function () { st.revealed = true; drawStage(); };
+          if (TOOL_ACTS.indexOf(act) >= 0) {
+            b.onclick = function (e) {
+              if (act === 'detail') e.preventDefault();   // 用 app.go 走路由，别让 <a> 自己跳
+              toolbarAct(act);
+            };
+            return;
+          }
+          if (act === 'reveal') b.onclick = function () { st.revealed = true; drawStage(); };
           else if (act === 'known') b.onclick = function () { grade(true); };
           else if (act === 'unknown') b.onclick = function () { grade(false); };
+          else if (act === 'next') b.onclick = next;
         });
       }
 
@@ -386,6 +445,17 @@
       /** 输入框内的键盘：Enter 提交 / 反馈后继续，Esc 跳过 */
       function onKey(e) {
         if (e.isComposing) return;
+        /* 工具键：焦点在输入框里时裸字母必须还是字母，所以这里只认 Alt+字母。
+           用 e.code（KeyS/KeyF/KeyD/KeyH）而不是 e.key：Alt 组合键下 e.key 在部分
+           布局/输入法下会变成别的字符，e.code 稳定是物理键位。 */
+        var m = /^Key([SFDH])$/.exec(e.code || '');
+        if (e.altKey && !e.ctrlKey && !e.metaKey && m) {
+          // 先打标记再执行：『详解』会把视图换掉（输入框消失、焦点回到 body），
+          // 事件继续冒泡到 globalKey 时判断条件已经变了，不打标记就会再执行一次
+          e.__twHandled = true;
+          if (toolbarAct(TOOL_KEYS[m[1].toLowerCase()])) e.preventDefault();
+          return;
+        }
         if (e.key === 'Enter') {
           e.preventDefault();
           e.__twHandled = true;   // 见 globalKey 里的说明：同一个按键别被处理两次
@@ -428,12 +498,14 @@
           return;
         }
 
-        if (/^[1-4]$/.test(e.key)) { switchMode(MODES[parseInt(e.key, 10) - 1].id); return; }
-        if (e.key === 's' || e.key === 'S') {
-          e.preventDefault();
-          TW.speech.speak(session[st.i].word, TW.store.settings.accent);
+        /* 工具键（焦点不在输入框时用裸字母；在输入框里时走 onKey 的 Alt+ 组合）：
+           S 发音/重听 · F 收藏 · D 详解 · H 看中文提示 */
+        if (!e.altKey && !e.ctrlKey && !e.metaKey && TOOL_KEYS[(e.key || '').toLowerCase()]) {
+          if (toolbarAct(TOOL_KEYS[e.key.toLowerCase()])) e.preventDefault();
           return;
         }
+
+        if (/^[1-4]$/.test(e.key)) { switchMode(MODES[parseInt(e.key, 10) - 1].id); return; }
 
         if (cfg.mode !== 'flash') {
           if (e.key === 'Enter' && st.phase === 'feedback') { e.preventDefault(); next(); }
@@ -462,7 +534,8 @@
           '<div class="mean-box" style="margin-top:.5rem">' + meaningsHtml(w) + '</div>' +
           (ok ? '<div class="tag ok" style="margin-top:.6rem">' + TW.icon('check', 13) + ' 正确</div>'
               : '<div class="tag err" style="margin-top:.6rem">' + TW.icon('x', 13) + ' 答错了，正确答案如上</div>') +
-          '<div style="margin-top:.6rem"><a class="btn ghost sm" href="#/word?id=' + encodeURIComponent(w.id) + '">' + TW.icon('lightbulb', 15) + ' 查看详解</a></div>' +
+          // 反馈页也给完整工具条：答完正想收藏 / 跟读一下最方便，不用退回上一屏
+          '<div class="practice-tools" style="margin-top:.7rem">' + toolBarHtml(w) + '</div>' +
         '</div>';
       }
 
@@ -531,21 +604,11 @@
         if (rl) rl.remove();
         var actionsHost = TW.$('.stage', host);
         if (actionsHost) {
-          if (cfg.mode === 'flash') {
-            // 翻卡模式下 grade 只在已翻面时触发，直接显示结果
-            actionsHost.innerHTML = visibleAnswerHtml(w, ok) +
-              '<div class="practice-actions" style="margin-top:1rem">' +
-              '<button class="btn primary" data-act="next">继续 ' + TW.icon('arrowRight', 16) + ' <kbd>Enter</kbd></button></div>';
-          } else {
-            actionsHost.innerHTML = visibleAnswerHtml(w, ok) +
-              '<div class="practice-actions" style="margin-top:1rem">' +
-              '<button class="btn" data-act="speak2">' + TW.icon('volume', 16) + ' 听发音</button>' +
-              '<button class="btn primary" data-act="next">继续 ' + TW.icon('arrowRight', 16) + ' <kbd>Enter</kbd></button></div>';
-          }
-          TW.$$('[data-act]', actionsHost).forEach(function (b) {
-            if (b.dataset.act === 'next') b.onclick = next;
-            if (b.dataset.act === 'speak2') b.onclick = function () { TW.speech.speak(w.word, TW.store.settings.accent); };
-          });
+          // 四个模式的反馈页长得一样：正确/错误 + 工具条（发音·收藏·详解）+ 继续
+          actionsHost.innerHTML = visibleAnswerHtml(w, ok) +
+            '<div class="practice-actions" style="margin-top:1rem">' +
+            '<button class="btn primary" data-act="next">继续 ' + TW.icon('arrowRight', 16) + ' <kbd>Enter</kbd></button></div>';
+          bindActs(actionsHost, w);
         }
         drawProgress();
         if (ok && TW.store.settings.autoNext) setTimeout(function () { if (alive() && st.phase === 'feedback') next(); }, 750);
@@ -568,6 +631,7 @@
         st.revealed = false;
         st.hintShown = false;
         st.tries = 0;
+        st.spoke = false;   // 新词：允许自动发音（见 drawStage）
         drawProgress();
         drawStage();
       }

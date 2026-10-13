@@ -9,6 +9,10 @@
      · 1~4 切换练习模式；完成页 Enter = 主按钮
   B) 学完一组给「学习下一组」，且**下次进入练习从第一个还没学的词开始**
      （旧实现永远只练前 size 个词，学完 20 个再进来还是这 20 个）
+  C) 进入新词**四个模式都自动朗读**（旧实现只有看词/听音两个模式，且听音分支重复调用
+     两次 speak ⇒ 第二次 stopAudio 把第一次掐断，听起来像没读）；翻面重画不重复朗读
+  D) 工具按钮全键盘可达：S 发音/重听 · F 收藏 · D 详解 · H 看中文提示
+     （焦点在输入框时用 Alt+ 同字母，裸字母仍必须能正常输入）
 
 用法（脚本会自己拉起静态服务）：
     NODE_OPTIONS= python -u tools/verify_practice.py
@@ -343,16 +347,119 @@ def main():
             check("全部学完后「再来一轮」仍是主按钮",
                   pg.locator("[data-act='again'].primary").count(), 1)
 
+            # ================= F) 自动读下一个词 + 工具键 =================
+            log("\n--- F) 进入新词自动发音（四个模式都有）+ 工具键 S/F/D/H ---")
+            goto("#/")
+            setup(pg)
+            # 这一节要考「自动发音」，把它打开（setup 里为了时序可控关掉了）
+            pg.evaluate("() => TW.store.setSetting('autoPronounce', true)")
+
+            def spy_speak(page):
+                """把发音换成记录器。drawStage 里的 setTimeout 到点才取 TW.speech.speak，
+                   所以替换属性就能拦住（headless 里也避免真去播音频）。"""
+                page.evaluate("""() => {
+                  window.__twSpoke = [];
+                  TW.speech.speak = function (t) { window.__twSpoke.push(t); };
+                }""")
+
+            def spoke(page):
+                return page.evaluate("() => (window.__twSpoke || []).slice()")
+
+            words6 = book_words(pg, BOOK)
+
+            def clean_enter(mode):
+                """每个模式前都清一次进度：会话是「从第一个还没学的词切起」，
+                   Esc 跳过会记错，不清的话下一个模式的起点会往后漂（第 2、3、4 个词…）。"""
+                goto("#/")
+                setup(pg)
+                pg.evaluate("() => TW.store.setSetting('autoPronounce', true)")
+                goto_fresh("#/practice?book=%s&mode=%s&size=%d" % (BOOK, mode, A_SIZE))
+
+            for mode in ("type", "recall", "listen", "flash"):
+                clean_enter(mode)
+                spy_speak(pg)
+                # Esc（答题中）= 跳过 → 进入第 2 个词；四种模式都支持
+                press("Escape")
+                pg.wait_for_timeout(450)          # 自动发音有 150ms 延迟
+                got = spoke(pg)
+                check("[%s] 跳到第 2 个词时自动读了它" % mode,
+                      got[-1] if got else None, words6[1])
+
+            # 同一题重画（看中文提示 / 翻面）不该把同一个词读两遍
+            clean_enter("flash")
+            spy_speak(pg)
+            press("Escape")
+            pg.wait_for_timeout(300)
+            n1 = len(spoke(pg))
+            press("Space")                        # 翻面 → drawStage 重画
+            pg.wait_for_timeout(300)
+            check("翻面重画不会重复朗读同一个词", len(spoke(pg)), n1)
+
+            # ---- 工具键（焦点不在输入框：裸字母）----
+            clean_enter("flash")
+            spy_speak(pg)
+            # clean_enter 保证了会话从第 1 个词（= a_ids[0]）开始，收藏键作用的正是它
+            fid = a_ids[0]
+            check("会话确实从第 1 个词开始（下面的收藏断言依赖它）",
+                  pg.evaluate("() => document.querySelector('#p-card .word-display').textContent.trim()"),
+                  words6[0])
+            pg.evaluate("(id) => { const p = TW.store.get(id); if (p) p.fav = false; }", fid)
+            press("f")
+            check("F = 收藏（写入进度）",
+                  pg.evaluate("(id) => !!(TW.store.get(id) || {}).fav", fid), True)
+            check("F 收藏后按钮文案变「已收藏」",
+                  pg.evaluate("""() => {
+                    const b = document.querySelector('[data-act="fav"]');
+                    return b ? b.innerText.indexOf('已收藏') >= 0 : 'MISSING';
+                  }"""), True)
+            press("f")
+            check("再按 F = 取消收藏",
+                  pg.evaluate("(id) => !!(TW.store.get(id) || {}).fav", fid), False)
+
+            before = len(spoke(pg))
+            press("s")
+            pg.wait_for_timeout(250)
+            check("S = 发音（调用了 speak）", len(spoke(pg)) > before, True)
+
+            check("工具按钮上都标了快捷键",
+                  pg.evaluate("""() => {
+                    const t = document.querySelector('#p-stage').innerText;
+                    return t.includes('发音') && t.includes('收藏') && t.includes('详解');
+                  }"""), True)
+
+            # ---- 打字时：裸字母还是字母，工具键走 Alt+ ----
+            goto_fresh("#/practice?book=%s&mode=type&size=%d" % (BOOK, A_SIZE))
+            spy_speak(pg)
+            check("打字模式焦点在输入框", active_tag(pg), "INPUT")
+            pg.click("#p-input")
+            pg.type("#p-input", "sfd")
+            check("输入框里裸字母正常输入（没被工具键抢走）",
+                  pg.evaluate("() => document.querySelector('#p-input').value"), "sfd")
+            pg.fill("#p-input", "")
+            before = len(spoke(pg))
+            pg.keyboard.press("Alt+s")
+            pg.wait_for_timeout(250)
+            check("打字时 Alt+S = 发音", len(spoke(pg)) > before, True)
+            check("Alt+S 没往输入框里塞字符",
+                  pg.evaluate("() => (document.querySelector('#p-input')||{}).value || ''"), "")
+
+            # ---- D = 详解（跳到词典页）----
+            goto_fresh("#/practice?book=%s&mode=flash&size=%d" % (BOOK, A_SIZE))
+            press("d")
+            pg.wait_for_timeout(1200)          # 详解要按需加载 dict.js（3.9M）
+            check("D = 打开详解页", "#/word" in pg.evaluate("() => location.hash"), True)
+            check("详解页确实渲染出来了", pg.locator("#dc-back").count() > 0, True)
+
             # ================= E) 控制台 =================
             log("\n--- E) 控制台 ---")
             real = [e for e in errors]
             check("控制台错误数 = 0", len(real), 0,
                   extra=("；".join(real[:3]) if real else ""))
 
-            try:
-                browser.close()
-            except Exception:
-                pass
+            # 🔴 不要调 browser.close()：Playwright 的 close() 偶尔会永久挂住
+            #（实测卡在这里 5 分钟没输出、也不报错），断言已经跑完了却拿不到退出码。
+            # 下面的 finally 收掉静态服务，再由 os._exit 直接结束进程，
+            # chromium 子进程随父进程管道断开自行退出（verify_site.py 一直是这么做的）。
     finally:
         for p in procs:
             try:

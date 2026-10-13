@@ -324,10 +324,8 @@ def main():
             if noise:
                 log("  （已忽略 %d 条网络/404 噪声，属故意触发的 4xx）" % noise)
 
-            try:
-                browser.close()
-            except Exception:
-                pass
+            # 🔴 不调 browser.close()（Playwright 的 close() 偶发永久挂住，断言跑完了却拿不到
+            # 退出码）；交给下面的 finally + os._exit。同 verify_site.py / verify_practice.py。
     finally:
         for p in procs:
             try:

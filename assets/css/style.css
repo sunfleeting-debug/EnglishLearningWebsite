@@ -426,6 +426,11 @@ select.field { cursor: pointer; }
 .mean-line.hide { filter: blur(7px); user-select: none; }
 
 .practice-actions { display: flex; gap: 0.5rem; align-items: center; justify-content: center; flex-wrap: wrap; }
+/* 练习页工具条（音标 + 发音 / 收藏 / 详解）：窄屏必须能换行，别把页面撑出横向滚动条。
+   专用类而不是复用 .word-phonetic —— 后者还被翻卡卡片里那行纯音标用着。 */
+.practice-tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0.35rem 0.45rem; margin: 0.1rem 0 0.15rem; }
+.practice-tools .phon { font-family: var(--mono); color: var(--text-3); font-size: 15px; letter-spacing: 0.3px; }
+.practice-tools .btn { white-space: nowrap; }
 .hint-keys { color: var(--text-3); font-size: 12.5px; }
 kbd {
   font-family: var(--mono);
