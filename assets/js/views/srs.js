@@ -29,6 +29,7 @@
 
     /* ---------- 空闲态 ---------- */
     if (!stats.total) {
+      var learnedN0 = TW.data.progressItems('learned').length;
       host.innerHTML = '<div class="wrap">' + TW.ui.pageHead('复习', '艾宾浩斯遗忘曲线复习队列') +
         '<div class="card card-pad">' + TW.ui.empty('复习队列还是空的') +
           '<div class="muted small" style="text-align:center;max-width:560px;margin:0 auto 1rem">' +
@@ -39,7 +40,17 @@
             '<button class="btn primary" id="sr-go-practice">' + TW.icon('play', 16) + ' 去练习</button>' +
             '<button class="btn" id="sr-import">' + TW.icon('download', 16) + ' 导入生词本里的错词</button>' +
           '</div>' +
-        '</div></div>';
+        '</div>' +
+        (learnedN0
+          ? '<div class="card card-pad" style="margin-top:1.2rem">' +
+              '<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:.6rem">' +
+                '<div><div class="card-title">自由复习</div>' +
+                  '<div class="small muted">从学过的词里随机抽一组，答错过的词权重翻倍</div></div>' +
+                '<button class="btn primary" id="sr-free-learned0">' + TW.icon('play', 16) +
+                  ' 复习已学的词（' + learnedN0 + '）</button>' +
+              '</div></div>'
+          : '') +
+        '</div>';
       bindEmpty(host);
       return;
     }
@@ -77,6 +88,28 @@
       return '<button data-mode="' + m.id + '" class="' + (mode === m.id ? 'active' : '') + '">' + m.name + '</button>';
     }).join('');
 
+    /* 自由复习：已学过的词（练过就算），错过的词双倍权重多练（sunfleeting 要求） */
+    var learnedN = TW.data.progressItems('learned').length;
+    var wrongN = 0;
+    Object.keys(TW.store.state.progress).forEach(function (id) {
+      var r = TW.store.state.progress[id];
+      if (r && r.w > 0) wrongN++;
+    });
+    var freeCard = '<div class="card card-pad" style="margin-bottom:1.2rem">' +
+      '<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:.6rem">' +
+        '<div>' +
+          '<div class="card-title">自由复习</div>' +
+          '<div class="small muted">从学过的词里随机抽一组' +
+            (wrongN ? '，<b>答错过的词权重翻倍</b>，错的天然多练' : '') + '</div>' +
+        '</div>' +
+        '<div class="row" style="gap:.5rem">' +
+          (learnedN
+            ? '<button class="btn primary" id="sr-free-learned">' + TW.icon('play', 16) +
+                ' 复习已学的词（' + learnedN + '）</button>'
+            : '<span class="small muted">还没有学过的词，先去练习吧</span>') +
+        '</div>' +
+      '</div></div>';
+
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead('复习', '答错的词自动入队，按 ' + intervals.join(' / ') + ' 天的间隔滚动复习') +
 
@@ -101,6 +134,8 @@
           '</div>' +
         '</div>' +
       '</div>' +
+
+      freeCard +
 
       '<div class="card card-pad" style="margin-bottom:1.2rem">' +
         '<div class="card-title" style="margin-bottom:.6rem">未来 8 天排期</div>' +
@@ -132,6 +167,10 @@
     if (start) start.addEventListener('click', function () {
       TW.app.go('/practice?src=srs&mode=' + mode);
     });
+    var freeBtn = TW.$('#sr-free-learned', host);
+    if (freeBtn) freeBtn.addEventListener('click', function () {
+      TW.app.go('/practice?src=collection&status=learned&mode=' + mode);
+    });
     var tog = TW.$('#sr-toggle', host);
     if (tog) tog.addEventListener('click', function () {
       TW.app.go('/srs?mode=' + mode + (showAll ? '' : '&all=1'));
@@ -153,6 +192,8 @@
   function bindEmpty(host) {
     var p = TW.$('#sr-go-practice', host);
     if (p) p.addEventListener('click', function () { TW.app.go('/practice'); });
+    var f0 = TW.$('#sr-free-learned0', host);
+    if (f0) f0.addEventListener('click', function () { TW.app.go('/practice?src=collection&status=learned'); });
     var im = TW.$('#sr-import', host);
     if (im) im.addEventListener('click', function () {
       var n = 0;

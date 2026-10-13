@@ -17,7 +17,7 @@
   ];
 
   /** 生词本分组名称（"练习这组"时显示在顶部） */
-  var TAB_NAME = { wrong: '待攻克错词', fav: '我的收藏', master: '已掌握' };
+  var TAB_NAME = { wrong: '待攻克错词', fav: '我的收藏', master: '已掌握', learned: '已学的词' };
 
   /* 🔴 工具动作（发音 / 收藏 / 详解 / 看中文提示）：
      按钮点击与键盘快捷键**走同一条路径**（都是 toolbarAct），避免两套行为不一致。
@@ -146,7 +146,9 @@
       if (src === 'srs') {
         return TW.store.srs.dueList().map(function (r) { return { w: r.w, s: r.s, m: r.m }; });
       }
-      var tab = (cfg.status === 'all' || cfg.status === 'new') ? 'wrong' : cfg.status;
+      /* status=learned（复习页「自由复习已学的词」）映射到 progressItems 的 touched 池 */
+      var tab = (cfg.status === 'all' || cfg.status === 'new') ? 'wrong'
+              : cfg.status === 'learned' ? 'touched' : cfg.status;
       return TW.data.progressItems(tab).map(function (it) {
         return { w: it.word, s: it.book || '', m: TW.data.brief(it), id: it.id };
       });
@@ -163,7 +165,17 @@
       });
       // 生词本「待攻克错词」同样按最近答错排序（随机模式本来就要打乱，跳过）
       if (cfg.status === 'wrong' && cfg.order !== 'random') out = sortByRecentWrong(out);
+      /* 「已学的词」自由复习：错过的词（w>0）进池两次 = 双倍权重 ⇒ 错误的要多练
+         （sunfleeting 要求）。之后整体打乱再切 size，错词自然出现得更频繁。 */
+      if (cfg.status === 'learned') {
+        var heavy = [];
+        out.forEach(function (w) {
+          if ((TW.store.get(w.id) || {}).w > 0) heavy.push(w);
+        });
+        out = out.concat(heavy);
+      }
       if (cfg.order === 'random') out = TW.shuffle(out);
+      else out = sortByRecentWrong(out);   // 顺序模式也按「最近答错优先」，刚错的先见
       return cfg.size > 0 ? out.slice(0, cfg.size) : out;
     }
 
@@ -643,9 +655,13 @@
         st.lastOk = ok;
         var brief = TW.data.brief(w);
         if (ok) {
+          var wasMaster = (TW.store.get(w.id) || {}).master;
           st.correct++; TW.store.markRight(w.id);
           TW.store.srs.onResult(w.word, true, w.book, brief);
           TW.speech.sound.correct();
+          if (!wasMaster && (TW.store.get(w.id) || {}).master) {
+            TW.toast('连对 3 次，已自动标记「已掌握」🎉');
+          }
         } else {
           st.wrong++; TW.store.markWrong(w.id);
           TW.store.srs.onResult(w.word, false, w.book, brief);

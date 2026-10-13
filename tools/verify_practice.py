@@ -15,6 +15,10 @@
      （焦点在输入框时用 Alt+ 同字母，裸字母仍必须能正常输入）
   E) 「复习错词」从**最近答错的那个**开始（旧实现按词表顺序取，于是很久以前错的词
      永远排在最前，刚错的那个反而排在第 N 个）
+  I) 自动掌握 + 自由复习已学的词：
+     · 连对 3 次自动标记「已掌握」（答错断连对，要重新连对；设置可关）
+     · 复习页「自由复习」入口 → status=learned 池 = 所有已学(seen>0)的词
+     · 错过的词（w>0）进池两次 = 双倍权重，且最近答错的排最前（错误的要多练）
 
 用法（脚本会自己拉起静态服务）：
     NODE_OPTIONS= python -u tools/verify_practice.py
@@ -501,6 +505,98 @@ def main():
             goto("#/practice?book=%s&mode=flash&size=%d" % (BOOK, A_SIZE))
             pg.wait_for_timeout(300)
             check("清空进度后重新从第 1 个词开始", flash_word(pg), h_words[0])
+
+            # ================= I) 自动掌握 + 自由复习已学的词 =================
+            log("\n--- I) 连对 3 次自动标记「已掌握」+ 自由复习（错词加权多练）---")
+            goto("#/")
+            setup(pg)
+
+            # I-1 连对 3 次 → 自动掌握（markRight 返回值 = 本次是否刚触发）
+            i_ids = a_ids
+            res = pg.evaluate("""(id) => {
+              const a = TW.store.markRight(id);
+              const b = TW.store.markRight(id);
+              const c = TW.store.markRight(id);
+              return {a: a, b: b, c: c, master: (TW.store.get(id) || {}).master};
+            }""", i_ids[6])
+            check("连对第 1、2 次不触发自动掌握", [res["a"], res["b"]], [False, False])
+            check("连对第 3 次触发自动掌握（返回 autoM）", res["c"], True)
+            check("第 3 次连对后 master=true", res["master"], True)
+
+            # I-2 答错断连对：错 1 次后要**重新**连对满 3 次才掌握
+            res = pg.evaluate("""(id) => {
+              TW.store.markRight(id); TW.store.markRight(id);   // streak=2
+              TW.store.markWrong(id);                            // 答错 → streak 清零
+              const s0 = (TW.store.get(id) || {}).streak || 0;
+              TW.store.markRight(id); TW.store.markRight(id);    // 重新连对 2 次
+              const mid = (TW.store.get(id) || {}).master;
+              TW.store.markRight(id);                            // 第 3 次 → 掌握
+              return {s0: s0, mid: mid, master: (TW.store.get(id) || {}).master};
+            }""", i_ids[7])
+            check("答错后连对计数归零", res["s0"], 0)
+            check("重新连对 2 次还未掌握", res["mid"], False)
+            check("重新连对满 3 次才掌握", res["master"], True)
+
+            # I-3 设置里关掉 autoMaster 就不自动掌握
+            pg.evaluate("(id) => { const p = TW.store.get(id); if (p) { p.master = false; p.streak = 0; } }",
+                        i_ids[8])
+            pg.evaluate("() => TW.store.setSetting('autoMaster', false)")
+            res = pg.evaluate("""(id) => {
+              TW.store.markRight(id); TW.store.markRight(id); TW.store.markRight(id);
+              return (TW.store.get(id) || {}).master;
+            }""", i_ids[8])
+            check("关闭 autoMaster 后连对 3 次也不自动掌握", res, False)
+            pg.evaluate("() => TW.store.setSetting('autoMaster', true)")
+
+            # I-4 造「已学的词」池：6 个词 seen（前 4 个 w>0 = 错过），先清掉 I-1~3 的痕迹
+            pg.evaluate("""(ids) => {
+              [6, 7, 8].forEach(k => delete TW.store.state.progress[ids[k]]);
+              ids.slice(0, 6).forEach((id, i) => {
+                TW.store.state.progress[id] =
+                  {w: i < 4 ? 1 : 0, r: 1, seen: 1, fav: false, master: false, ts: Date.now()};
+              });
+              TW.store.state.recentWrong = [ids[0], ids[1], ids[2], ids[3]];  // ids[0] 最近错的
+              TW.store.save();
+            }""", i_ids)
+            check("progressItems('learned') = 已学(seen>0)的词数",
+                  pg.evaluate("(ids) => TW.data.progressItems('learned').length",
+                              i_ids[:6]), 6)
+
+            # I-5 复习页「自由复习」入口 → status=learned
+            # （无到期任务时渲染空闲态 = #sr-free-learned0；有任务 = #sr-free-learned，两个都要能点）
+            goto_fresh("#/srs")
+            check("复习页出现「复习已学的词」入口",
+                  pg.locator("#sr-free-learned, #sr-free-learned0").count(), 1)
+            check("入口显示已学词数（6）",
+                  pg.evaluate("""() => {
+                    const b = document.querySelector('#sr-free-learned') ||
+                              document.querySelector('#sr-free-learned0');
+                    return b ? b.innerText : '';
+                  }""").find("6") >= 0, True)
+            pg.click("#sr-free-learned, #sr-free-learned0")
+            pg.wait_for_timeout(900)
+            check("点击后进入 status=learned 的练习",
+                  "status=learned" in pg.evaluate("() => location.hash"), True)
+
+            # I-6 池构成：错过的 4 个词双倍权重（各 2 次）+ 干净的 2 个词（各 1 次）= 10 条；
+            #     顺序模式下最近答错的排最前。翻卡走完 10 个词，逐个记录统计出现次数。
+            goto_fresh("#/practice?src=collection&status=learned&mode=flash&size=10")
+            i_words = a_words
+            order_seen = []
+            for _ in range(10):
+                order_seen.append(flash_word(pg))
+                press("Enter")      # 翻面
+                press("Enter")      # 认识
+                press("Enter")      # 反馈继续
+            import collections
+            cnt = collections.Counter(order_seen)
+            check("错过的 4 个词各出现 2 次（双倍权重 = 错误的多练）",
+                  [cnt.get(w, 0) for w in i_words[:4]], [2, 2, 2, 2],
+                  extra=str(dict(cnt)))
+            check("没错过错的 2 个词各出现 1 次",
+                  [cnt.get(w, 0) for w in i_words[4:6]], [1, 1],
+                  extra=str(dict(cnt)))
+            check("最近答错的词排在自由复习最前", order_seen[0], i_words[0])
 
             # ================= E) 控制台 =================
             log("\n--- E) 控制台 ---")

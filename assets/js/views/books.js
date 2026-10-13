@@ -13,8 +13,9 @@
 
   function progressBar(stats, count) {
     var p = TW.pct(stats.master, count);
+    var unseen = Math.max(0, count - stats.touched);
     return '<div class="bk-bar"><div class="bk-meta">' +
-      '<span>已学 ' + stats.touched + '</span><span>' + p + '%</span></div>' +
+      '<span>已学 ' + stats.touched + '</span><span>未学 ' + unseen + '</span><span>' + p + '%</span></div>' +
       '<div class="progress-line ok"><i style="width:' + p + '%"></i></div></div>';
   }
 

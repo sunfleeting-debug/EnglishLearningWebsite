@@ -33,6 +33,7 @@
           switchRow('autoNext', '答对后自动进入下一词', '关闭后可自己按 Enter 继续') +
           switchRow('showPhonetic', '显示音标', '') +
           switchRow('srsAuto', '答错的词自动加入复习队列', '开启后按艾宾浩斯曲线安排复习；关闭则只在单词页手动加入') +
+          switchRow('autoMaster', '连对 3 次自动标记「已掌握」', '答错会断连对；手动取消掌握后需重新连对 3 次') +
         '</div>' +
 
         '<div class="card card-pad" style="margin-bottom:1rem">' +
