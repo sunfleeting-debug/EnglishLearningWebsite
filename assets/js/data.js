@@ -146,6 +146,29 @@
 
   function search(q) { return searchIn(WORDS, q); }
 
+  /** 首页搜索：在「周计划 + 已加载的词典」里做包含匹配（命中单词或释义）。
+      词典是懒加载的，所以这里只搜已加载的部分（主词书永远在）；
+      剩下的精确查词由 extWord（dict-ext.js 全量键值）兜底，见首页搜索的实现。
+      排序：前缀命中优先（event → eventually 在前），其余保持词表顺序；最多 cap 条。 */
+  function searchAll(q, cap) {
+    q = (q || '').trim().toLowerCase();
+    if (!q) return [];
+    cap = cap || 8;
+    var pool = WORDS.slice();
+    Object.keys(DECK_WORDS).forEach(function (id) { pool = pool.concat(DECK_WORDS[id]); });
+    var seen = {}, pre = [], mid = [];
+    for (var i = 0; i < pool.length; i++) {
+      var w = pool[i], k = String(w.word).toLowerCase();
+      if (seen[k]) continue;
+      seen[k] = 1;
+      var hit = k.indexOf(q);
+      if (hit === 0) pre.push(w);
+      else if (hit > 0) mid.push(w);
+      else if (w.trans && w.trans.join(' ').toLowerCase().indexOf(q) >= 0) mid.push(w);
+    }
+    return pre.concat(mid).slice(0, cap);
+  }
+
   /** 按学习状态汇总「所有来源」的词（周计划 + 已练过的词典词）
    *  词典是懒加载的，所以不在词表里的记录回退到进度快照（只有单词与一条简释）。
    *  tab: wrong | fav | master | all(已练过) */
@@ -292,6 +315,7 @@
     brief: brief,
     parseTrans: parseTrans,
     search: search,
+    searchAll: searchAll,
     searchIn: searchIn,
     progressItems: progressItems,
     filterByStatus: filterByStatus,

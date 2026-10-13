@@ -101,6 +101,55 @@ def main():
         total_count = pg.evaluate("() => TW.BOOKS.reduce((a,b)=>a+b.count,0)")
         check("各书 count 之和 = 2714", total_count, 2714)
 
+        # ---------- 首页搜词 ----------
+        # 联想 = 周计划 + 已加载词典（searchAll，前缀优先）；精确兜底 = dict-ext 全量键值
+        log("\n--- 首页搜词：联想 / 中文搜释义 / ext 兜底 / 回车直达 ---")
+        goto("#/")
+        check("首页有搜索框", pg.locator("#hs-input").count(), 1)
+
+        pg.fill("#hs-input", "event")
+        pg.wait_for_timeout(650)                      # 220ms 防抖 + 渲染
+        res = pg.evaluate("() => Array.from(document.querySelectorAll('.hs-item')).map(b => b.dataset.w)")
+        check("输入 event 出现联想结果", len(res) > 0, True, extra=str(res[:5]))
+        check("联想含 eventually", "eventually" in res, True, extra=str(res[:5]))
+        check("结果条带释义", pg.evaluate(
+            "() => (document.querySelector('.hs-item .hs-brief')||{textContent:''}).textContent.length > 0"), True)
+
+        pg.click(".hs-item")
+        pg.wait_for_timeout(1600)                     # 详解按需加载 dict.js
+        check("点击联想结果跳详解页", "#/word?w=" in pg.evaluate("() => location.hash"), True)
+        check("详解页渲染出来", pg.locator("#dc-back").count() > 0, True)
+
+        goto_fresh("#/")
+        pg.fill("#hs-input", "使")
+        pg.wait_for_timeout(650)
+        res2 = pg.evaluate("() => Array.from(document.querySelectorAll('.hs-item')).map(b => b.dataset.w)")
+        check("中文搜释义「使」出结果", len(res2) > 0, True, extra=str(res2[:5]))
+
+        # ext 兜底：选一个不在周计划里的词（词库没加载任何 deck 时 searchAll 搜不到）
+        ext_word = pg.evaluate("""() => {
+          const k = Object.keys(TW.DICT_EXT || {})[0];          // dict-ext 第一个键（如 abash）
+          return (k && !TW.data.byWord(k)) ? k : null;
+        }""")
+        if ext_word:
+            pg.fill("#hs-input", ext_word)
+            pg.wait_for_timeout(2000)                 # 首次要拉 dict-ext.js（约 1MB）
+            res3 = pg.evaluate("() => Array.from(document.querySelectorAll('.hs-item')).map(b => b.dataset.w)")
+            check("dict-ext 精确兜底命中「%s」" % ext_word, res3, [ext_word], extra=str(res3))
+        else:
+            check("dict-ext 兜底（跳过：首页词表已覆盖全部键）", True, True)
+
+        pg.fill("#hs-input", "zzqqxx")
+        pg.wait_for_timeout(700)
+        check("乱码显示「词库里没有」", pg.evaluate(
+            "() => { const e = document.querySelector('.hs-empty'); return e ? e.textContent.indexOf('zzqqxx') >= 0 : false; }"), True)
+
+        pg.fill("#hs-input", "eventually")
+        pg.wait_for_timeout(650)
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(1400)
+        check("回车直达第一条详解", "#/word?w=eventually" in pg.evaluate("() => location.hash"), True)
+
         # ---------- 导航 ----------
         goto("#/")
         nav_n = pg.locator(".nav-item").count()

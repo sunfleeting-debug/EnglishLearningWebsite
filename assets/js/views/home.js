@@ -61,6 +61,17 @@
           '</div>' +
         '</div>' +
 
+        /* ---- 首页搜词（sunfleeting：在首页就能搜出单词的意思）----
+           联想：周计划 + 已加载词典（searchAll，命中单词或释义，前缀优先）；
+           联想没有 → dict-ext.js 全量键值精确兜底（带词形还原），点击进详解页看完整词典卡。 */
+        '<div class="card card-pad hs-card" style="margin-bottom:1.2rem">' +
+          '<div class="hs-box">' +
+            TW.icon('search', 17) +
+            '<input id="hs-input" type="text" placeholder="搜索单词或释义，如 eventually / 显著地" autocomplete="off" spellcheck="false">' +
+          '</div>' +
+          '<div id="hs-res" class="hs-res" hidden></div>' +
+        '</div>' +
+
         (srs.due
           ? '<div class="card card-pad srs-callout" style="margin-bottom:1.2rem">' +
               '<div class="row" style="justify-content:space-between">' +
@@ -100,6 +111,80 @@
 
     TW.$$('.book-card', host).forEach(function (el) {
       el.addEventListener('click', function () { TW.app.go('/books?book=' + el.dataset.book); });
+    });
+
+    /* ---------- 首页搜词 ---------- */
+    var input = TW.$('#hs-input', host);
+    var resBox = TW.$('#hs-res', host);
+    var hsTimer = null;
+
+    function hsHide() { resBox.hidden = true; resBox.innerHTML = ''; }
+
+    function hsGo(word) {
+      hsHide();
+      input.value = word;
+      input.blur();
+      TW.app.go('/word?w=' + encodeURIComponent(word));
+    }
+
+    function hsItem(w) {
+      var phon = w.us ? '<span class="hs-phon">/' + TW.esc(w.us) + '/</span>' : '';
+      return '<button class="hs-item" data-w="' + TW.esc(w.word) + '">' +
+        '<span class="hs-word">' + TW.esc(w.word) + '</span>' + phon +
+        '<span class="hs-brief">' + TW.esc(TW.data.brief(w)) + '</span>' +
+        '<span class="hs-src">' + (w.deck ? '词典' : '周计划') + '</span>' +
+      '</button>';
+    }
+
+    function hsShow(list, q) {
+      resBox.innerHTML = list.length
+        ? list.map(hsItem).join('')
+        : '<div class="hs-empty">词库里没有「' + TW.esc(q) + '」</div>';
+      resBox.hidden = false;
+      TW.$$('.hs-item', resBox).forEach(function (el) {
+        el.addEventListener('click', function () { hsGo(el.dataset.w); });
+      });
+    }
+
+    function hsExtHit(q) {
+      var cands = TW.data.baseForms(q);          // 词形还原：studies → study
+      for (var i = 0; i < cands.length; i++) {
+        var e = TW.data.ext(cands[i]);
+        if (e) {
+          hsShow([{ word: cands[i], raw: cands[i], us: e.u || '', trans: e.t || [], deck: true }], q);
+          return;
+        }
+      }
+      hsShow([], q);
+    }
+
+    function hsRun(q) {
+      q = (q || '').trim();
+      if (!q) { hsHide(); return; }
+      var list = TW.data.searchAll(q, 8);
+      if (list.length) { hsShow(list, q); return; }
+      // 联想没有 → 只对「像英文单词的输入」走 dict-ext 精确兜底（中文释义搜不了全量键值）
+      if (!/^[a-zA-Z][a-zA-Z' -]*$/.test(q)) { hsShow([], q); return; }
+      if (TW.data.extReady()) { hsExtHit(q); return; }
+      resBox.innerHTML = '<div class="hs-empty">正在加载词典…</div>';
+      resBox.hidden = false;
+      TW.data.loadDictExt(function () {
+        if (input.value.trim() !== q) return;    // 加载期间用户已改输入
+        hsExtHit(q);
+      });
+    }
+
+    input.addEventListener('input', function () {
+      clearTimeout(hsTimer);
+      hsTimer = setTimeout(function () { hsRun(input.value); }, 220);
+    });
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        var first = TW.$('.hs-item', resBox);
+        if (first) first.click();                // 回车 = 打开第一条结果
+      } else if (e.key === 'Escape') {
+        input.value = ''; hsHide(); input.blur();
+      }
     });
 
     var cont = TW.$('#btn-continue', host);

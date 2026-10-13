@@ -412,8 +412,7 @@ select.field { cursor: pointer; }
 .word-display.blur { filter: blur(9px); user-select: none; }
 .word-display.fuzzy { color: transparent; text-shadow: 0 0 14px var(--text-3); user-select: none; }
 
-.typing-box { position: relative; width: min(680px, 100%); }
-.typing-input {
+.typing-box { position: relative; width: min(680px, 100%); }.typing-input {
   width: 100%;
   font-family: var(--mono);
   font-size: clamp(1.4rem, 3.6vw, 2.1rem);
@@ -1160,3 +1159,44 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 #app { transform-origin: 50% 46vh; }
 .intro-zoom #app { animation: intro-zoom-app 1.05s cubic-bezier(0.65, 0, 0.35, 1) both; }
 @keyframes intro-zoom-app { from { transform: scale(0.62); } to { transform: scale(1); } }
+
+/* ---------- 首页搜词（hs-）---------- */
+.hs-box {
+  display: flex; align-items: center; gap: 0.6rem;
+  color: var(--text-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card-2);
+  padding: 0.55rem 0.8rem;
+  transition: border-color var(--anim);
+}
+.hs-box:focus-within { border-color: var(--accent); color: var(--text-2); }
+.hs-box svg { flex: none; }
+.hs-box input {
+  flex: 1; min-width: 0;
+  border: none; background: transparent; outline: none;
+  color: var(--text); font-size: 15px;
+}
+.hs-box input::placeholder { color: var(--text-3); }
+
+.hs-res { margin-top: 0.6rem; display: flex; flex-direction: column; }
+.hs-res[hidden] { display: none; }
+.hs-item {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  width: 100%; text-align: left;
+  padding: 0.55rem 0.7rem;
+  border: none; border-radius: var(--radius-sm);
+  background: transparent; cursor: pointer;
+  color: var(--text);
+  transition: background 0.18s;
+}
+.hs-item:hover, .hs-item:focus-visible { background: var(--accent-2); }
+.hs-word { font-family: var(--mono); font-size: 15px; font-weight: 600; flex: none; }
+.hs-phon { font-family: var(--mono); font-size: 12.5px; color: var(--text-3); flex: none; }
+.hs-brief {
+  flex: 1; min-width: 0;
+  font-size: 13.5px; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hs-src { flex: none; font-size: 11px; color: var(--text-3); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 0.05rem 0.35rem; }
+.hs-empty { padding: 0.55rem 0.7rem; font-size: 13.5px; color: var(--text-3); }
