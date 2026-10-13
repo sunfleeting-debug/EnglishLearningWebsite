@@ -127,10 +127,18 @@
     });
   }
 
-  /* ---------------- 5) 首访幕布开场 ----------------
-     参考站 new-preloader：品牌字从遮罩里升起，然后整块幕布向上收走。
-     只在**首次**进站时播（sessionStorage 记一次）——这是练词工具，
-     每次刷新都来一段 1 秒的开场会让人想砸键盘。 */
+  /* ---------------- 5) 首访入场动画 ----------------
+     仿 Lenval new-preloader 的完整时间线（零依赖手写）：
+       ① 深棕幕布（竖向发丝线 + 叶影纹理 multiply）盖住页面
+       ② 标题「六级单词速记」逐字从遮罩升起（stagger 70ms）
+       ③ 中央打字机照片纵向剖开揭示（clip-path inset 50%→0 + 内图 1.2→1）
+       ④ 底部 Loading 00%→100%（2.2s，easeInOutCubic）+ 1px 进度线同步
+       ⑤ 收尾：幕布从中缝向上下退开（下半错缝 70ms），#app 从 scale .62 放大到 1
+     只在**首次**进站播（sessionStorage 记一次）——练词工具，回回都放会挨骂。
+     幕布做成上下两块窗口各自渲染整屏内容（见 style.css .intro 注释），
+     百分比与进度线两份同步更新。 */
+  var INTRO_HOLD = 2900;    // 计数结束后开始收尾
+  var INTRO_GONE = 4200;    // 收尾动画播完、移除节点
   function preloader(force) {
     if (!auto && !force) return;
     var seen = false;
@@ -140,17 +148,60 @@
     } catch (e) { seen = true; }                 // 存储被禁时宁可不放动画
     if (seen && !force) return;
 
+    var inner =
+      '<div class="intro-lines"><i></i><i></i><i></i></div>' +
+      '<div class="intro-shadow"></div>' +
+      '<div class="intro-brand">CET-6 VOCAB</div>' +
+      '<div class="intro-tag">TYPE TO REMEMBER</div>' +
+      '<div class="intro-title">' +
+        '六级单词速记'.split('').map(function (c, i) {
+          return '<span style="--wi:' + i + '">' + c + '</span>';
+        }).join('') +
+      '</div>' +
+      '<div class="intro-img-w"><img src="assets/img/intro-typewriter.webp" alt=""></div>' +
+      '<div class="intro-sub">A QUIETER WAY TO LEARN WORDS</div>' +
+      '<div class="intro-loader"><div class="intro-loader-row"><span>Loading</span>' +
+        '<span class="intro-pct">00%</span></div>' +
+        '<div class="intro-line"><i></i></div></div>';
+
     var el = document.createElement('div');
     el.className = 'intro';
     el.innerHTML =
-      '<div class="intro-in">' +
-        '<div class="intro-brand"><i>六级单词速记</i></div>' +
-        '<div class="intro-sub">A QUIETER WAY TO LEARN WORDS</div>' +
-      '</div>';
+      '<div class="intro-half intro-half-t"><div class="intro-in">' + inner + '</div></div>' +
+      '<div class="intro-half intro-half-b"><div class="intro-in">' + inner + '</div></div>';
     document.body.appendChild(el);
+
+    // 播放期间锁滚动（免得底下页面被滚走），结束兜底恢复
+    document.documentElement.style.overflow = 'hidden';
+
     requestAnimationFrame(function () { el.classList.add('run'); });
-    setTimeout(function () { el.classList.add('done'); }, 1050);
-    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 1800);
+
+    // ④ 计数 00→100 + 进度线（easeInOutCubic，2.2s）
+    var pcts = el.querySelectorAll('.intro-pct');
+    var bars = el.querySelectorAll('.intro-line i');
+    var t0 = null, DUR = 2200;
+    function tick(t) {
+      if (t0 === null) t0 = t;
+      var p = Math.min(1, (t - t0) / DUR);
+      var e = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+      var v = Math.round(e * 100);
+      var txt = (v < 10 ? '0' : '') + v + '%';
+      pcts.forEach(function (n) { n.textContent = txt; });
+      bars.forEach(function (n) { n.style.transform = 'scaleX(' + e.toFixed(4) + ')'; });
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    setTimeout(function () { requestAnimationFrame(tick); }, 400);
+
+    // ⑤ 收尾：中缝退开 + 页面放大
+    setTimeout(function () {
+      el.classList.add('done');
+      document.body.classList.add('intro-zoom');
+    }, INTRO_HOLD);
+    setTimeout(function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+      document.body.classList.remove('intro-zoom');
+      document.documentElement.style.overflow = '';
+    }, INTRO_GONE);
   }
 
   /* ---------------- 汇总入口 ---------------- */
