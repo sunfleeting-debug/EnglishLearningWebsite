@@ -53,6 +53,12 @@
   var resume = null;
   TW.store.onReset(function () { resume = null; });
 
+  /* 「自由复习已学的词」的翻页游标：完成页点「学习下一组」时记录本轮已练的词 id，
+     重新 render 时 resolvePool 把它们排除 → 取下一批；整池翻完一轮则清空从头再来。
+     只在点「学习下一组」时设置（复习页入口进来不排除，永远从最近答错的最前开始）。
+     模块级生命周期与会话续接快照一致（真刷新后从头开始，行为可预期）。 */
+  var freeSkip = null;
+
   function render(host, query) {
     // 干掉上一个练习实例遗留的全局键盘监听
     if (prevGlobal) { prevGlobal(); prevGlobal = null; }
@@ -154,7 +160,8 @@
       });
     }
 
-    function resolveRecords(recs) {
+    /** 解析词源记录 → 全池（不按 size 切）。完成页算「还有几批没练到」也用它。 */
+    function resolvePool(recs) {
       var out = recs.map(function (r) {
         var w = TW.data.byWord(r.w);
         if (w) return w;
@@ -165,9 +172,16 @@
       });
       // 生词本「待攻克错词」同样按最近答错排序（随机模式本来就要打乱，跳过）
       if (cfg.status === 'wrong' && cfg.order !== 'random') out = sortByRecentWrong(out);
-      /* 「已学的词」自由复习：错过的词（w>0）进池两次 = 双倍权重 ⇒ 错误的要多练
-         （sunfleeting 要求）。之后整体打乱再切 size，错词自然出现得更频繁。 */
+      /* 「已学的词」自由复习（sunfleeting 要求）：
+         · 翻页：点过「学习下一组」后 freeSkip 记着本轮已练的词 → 排除，取下一批；
+           整池翻完（剩余为空）则清掉游标，从头再来一轮。
+         · 加权：错过的词（w>0）进池两次 = 双倍权重 ⇒ 错误的要多练。 */
       if (cfg.status === 'learned') {
+        if (freeSkip) {
+          var rest = out.filter(function (w) { return !freeSkip[w.id]; });
+          if (rest.length) out = rest;
+          else freeSkip = null;                      // 一整轮翻完了，重新开始
+        }
         var heavy = [];
         out.forEach(function (w) {
           if ((TW.store.get(w.id) || {}).w > 0) heavy.push(w);
@@ -176,6 +190,11 @@
       }
       if (cfg.order === 'random') out = TW.shuffle(out);
       else out = sortByRecentWrong(out);   // 顺序模式也按「最近答错优先」，刚错的先见
+      return out;
+    }
+
+    function resolveRecords(recs) {
+      var out = resolvePool(recs);
       return cfg.size > 0 ? out.slice(0, cfg.size) : out;
     }
 
@@ -246,7 +265,7 @@
       var st = null;
       function resetRound() {
         st = {
-          i: 0, correct: 0, wrong: 0, phase: 'answering', // answering | feedback | done
+          i: 0, correct: 0, wrong: 0, phase: 'answering', // answering | retyping | feedback | done
           revealed: false, lastOk: false, hintShown: false,
           tries: 0,    // 本题已答错次数：第一次错只提示重做，不改判、不揭答案
           spoke: false // 本词是否已自动发音（drawStage 在「看提示/翻面」时会重画，不标记会读两遍）
@@ -528,7 +547,7 @@
         if (e.key === 'Enter') {
           e.preventDefault();
           e.__twHandled = true;   // 见 globalKey 里的说明：同一个按键别被处理两次
-          if (st.phase === 'answering') check();
+          if (st.phase === 'answering' || st.phase === 'retyping') check();
           else next();
         } else if (e.key === 'Escape') {
           e.preventDefault();
@@ -597,11 +616,11 @@
       // 交给下一次 render 拆掉；本实例的文档级监听不会永远堆积
       prevGlobal = function () { document.removeEventListener('keydown', globalKey); };
 
-      function visibleAnswerHtml(w, ok) {
+      function visibleAnswerHtml(w, ok, okNote) {
         return '<div class="feedback" style="margin-top:.4rem">' +
           '<div class="word-display" id="p-word" style="font-size:clamp(1.6rem,4.4vw,2.4rem);color:var(--' + (ok ? 'ok' : 'err') + ')">' + TW.esc(w.word) + '</div>' +
           '<div class="mean-box" style="margin-top:.5rem">' + meaningsHtml(w) + '</div>' +
-          (ok ? '<div class="tag ok" style="margin-top:.6rem">' + TW.icon('check', 13) + ' 正确</div>'
+          (ok ? '<div class="tag ok" style="margin-top:.6rem">' + TW.icon('check', 13) + ' ' + (okNote || '正确') + '</div>'
               : '<div class="tag err" style="margin-top:.6rem">' + TW.icon('x', 13) + ' 答错了，正确答案如上</div>') +
           // 反馈页也给完整工具条：答完正想收藏 / 跟读一下最方便，不用退回上一屏
           '<div class="practice-tools" style="margin-top:.7rem">' + toolBarHtml(w) + '</div>' +
@@ -614,11 +633,16 @@
         var val = (input.value || '').trim();
         if (!val) { input.focus(); return; }   // 空输入不判分，避免误按 Enter 被记错
         var ok = answers(w.word).some(function (a) { return TW.isCorrect(val, a); });
-        if (ok) { st.tries = 0; grade(true); return; }
+        if (ok) {
+          st.tries = 0;
+          if (st.phase === 'retyping') { retypeOk(); return; }   // 照答案重打成功
+          grade(true); return;
+        }
+        if (st.phase === 'retyping') { retypeRetry(); return; }  // 重打还打错：继续提示，不放行
         st.tries++;
         if (st.tries === 1) { retry(); return; }   // 第一次错：只提示重做，不改判、不揭答案
         st.tries = 0;
-        grade(false);
+        failReveal();
       }
 
       /** 第一次答错：给一次重做机会（sunfleeting 要求「打错了要给个重做的机会」） */
@@ -645,8 +669,68 @@
         drawProgress();
       }
 
-      /** 放弃重做：按答错处理并揭示答案 */
-      function giveUp() { st.tries = 0; grade(false); }
+      /** 放弃重做（点「看答案」）：与第 2 次答错同一条路 —— 揭示答案并要求重打一遍 */
+      function giveUp() { st.tries = 0; failReveal(); }
+
+      /** 第 2 次答错（或主动看答案）：判错记账 + 揭示答案，但**必须照着正确答案再打一遍**
+          才能继续（sunfleeting：最后打错了、给了最后答案，也要让他再打一遍正确的再跳到下一个）。
+          只用于打字类模式；翻卡没有输入框，仍走 grade(false) 的直接反馈。 */
+      function failReveal() {
+        var w = session[st.i];
+        st.phase = 'retyping';
+        st.wrong++; TW.store.markWrong(w.id);
+        TW.store.srs.onResult(w.word, false, w.book, TW.data.brief(w));
+        TW.speech.sound.wrong();
+        saveResume();
+        var rl = TW.$('.retry-line', host);
+        if (rl) rl.innerHTML = '<span class="rt-tag">' + TW.icon('refresh', 13) +
+          ' 请照着正确答案<b>再打一遍</b>，打对才能继续</span>';
+        // 揭示答案（看中文拼写 / 听音写词的答案本来是藏着的）：插在输入框上方
+        var box = TW.$('.typing-box', host);
+        if (box && !TW.$('#p-reveal', host)) {
+          var div = document.createElement('div');
+          div.className = 'feedback';
+          div.id = 'p-reveal';
+          div.style.marginTop = '.4rem';
+          div.innerHTML =
+            '<div class="word-display" style="font-size:clamp(1.6rem,4.4vw,2.4rem);color:var(--err)">' +
+              TW.esc(w.word) + '</div>' +
+            '<div class="mean-box" style="margin-top:.5rem">' + meaningsHtml(w) + '</div>';
+          box.parentNode.insertBefore(div, box);
+        }
+        if (input) { input.value = ''; input.focus(); }
+        drawProgress();
+      }
+
+      /** 重打时又打错了：只提示，不重复记账、不放行 */
+      function retypeRetry() {
+        TW.speech.sound.wrong();
+        var rl = TW.$('.retry-line', host);
+        if (rl) rl.innerHTML = '<span class="rt-tag">' + TW.icon('x', 13) +
+          ' 还不是正确答案，照着上面的答案再打一遍</span>';
+        if (input) {
+          var box = TW.$('.typing-box', host);
+          if (box) {
+            box.classList.remove('shake');
+            void box.offsetWidth;
+            box.classList.add('shake');
+          }
+        }
+      }
+
+      /** 重打成功：本题已按答错记账（failReveal 里），这里只给反馈页并放行 */
+      function retypeOk() {
+        if (!alive()) return;
+        var w = session[st.i];
+        st.phase = 'feedback';
+        st.lastOk = false;
+        TW.speech.sound.correct();
+        saveResume();
+        showFeedback(w, true, '已照答案重打 ✓');
+        if (TW.store.settings.autoNext) {
+          setTimeout(function () { if (alive() && st.phase === 'feedback') next(); }, 750);
+        }
+      }
 
       function grade(ok) {
         if (!alive()) return;
@@ -668,7 +752,13 @@
           TW.speech.sound.wrong();
         }
         saveResume();   // 反馈阶段快照指向下一题（见 saveResume 注释）
+        showFeedback(w, ok);
+        if (ok && TW.store.settings.autoNext) setTimeout(function () { if (alive() && st.phase === 'feedback') next(); }, 750);
+      }
 
+      /** 反馈页（判分后 / 重打成功后共用）：清掉输入区，渲染 答案+释义+工具条+继续 */
+      function showFeedback(w, ok, okNote) {
+        if (!alive()) return;
         // 反馈取代输入区
         var box = TW.$('.typing-box', host);
         if (box) box.remove();
@@ -676,16 +766,17 @@
         if (hint) hint.remove();
         var rl = TW.$('.retry-line', host);
         if (rl) rl.remove();
+        var reveal = TW.$('#p-reveal', host);
+        if (reveal) reveal.remove();
         var actionsHost = TW.$('.stage', host);
         if (actionsHost) {
           // 四个模式的反馈页长得一样：正确/错误 + 工具条（发音·收藏·详解）+ 继续
-          actionsHost.innerHTML = visibleAnswerHtml(w, ok) +
+          actionsHost.innerHTML = visibleAnswerHtml(w, ok, okNote) +
             '<div class="practice-actions" style="margin-top:1rem">' +
             '<button class="btn primary" data-act="next">继续 ' + TW.icon('arrowRight', 16) + ' <kbd>Enter</kbd></button></div>';
           bindActs(actionsHost, w);
         }
         drawProgress();
-        if (ok && TW.store.settings.autoNext) setTimeout(function () { if (alive() && st.phase === 'feedback') next(); }, 750);
       }
 
       function skip() {
@@ -721,10 +812,22 @@
         var stageEl = TW.$('#p-stage', host);
         if (!stageEl) return;
         var dueLeft = TW.store.srs.dueCount();
-        // 词书练习（非复习队列 / 生词本）且这本还有没学的词 → 给一个「学习下一组」入口。
-        // 下一组的取词逻辑就是 poolSession 的「从第一个未学词切起」，所以重复同一个 URL 即可。
-        var remain = cfg.src === '' ? remainingNewCount() : 0;
-        var hasNext = cfg.src === '' && remain > 0;
+        // 「学习下一组」入口：
+        // · 词书练习：这本还有没学的词 → poolSession 会从第一个未学词切起，重复同一 URL 即可
+        // · 自由复习已学的词：池里没有「未学」概念，改用 freeSkip 翻页 ——
+        //   点击时把本轮已练的词记进游标，重 render 后 resolvePool 排除它们取下一批
+        var remain = 0, hasNext = false, leftN = 0;
+        if (cfg.src === '') {
+          remain = remainingNewCount();
+          hasNext = remain > 0;
+        } else if (cfg.src === 'collection' && cfg.status === 'learned') {
+          var poolIds = {};
+          resolvePool(recordsFor(cfg.src)).forEach(function (w) { poolIds[w.id] = 1; });
+          var coveredIds = {};
+          session.forEach(function (w) { coveredIds[w.id] = 1; });
+          leftN = Math.max(0, Object.keys(poolIds).length - Object.keys(coveredIds).length);
+          hasNext = leftN > 0;
+        }
         stageEl.innerHTML =
           '<div class="stage">' +
             '<div style="font-size:3rem">🎉</div>' +
@@ -738,7 +841,9 @@
             (cfg.src === 'srs'
               ? '<div class="muted small" style="margin-top:.6rem">复习队列还剩 ' + dueLeft + ' 个到期词</div>'
               : (hasNext
-                  ? '<div class="muted small" style="margin-top:.6rem">这本词书还有 ' + remain + ' 个词没学</div>'
+                  ? (cfg.src === ''
+                      ? '<div class="muted small" style="margin-top:.6rem">这本词书还有 ' + remain + ' 个词没学</div>'
+                      : '<div class="muted small" style="margin-top:.6rem">已学的词里还有 ' + leftN + ' 个这轮没练到</div>')
                   : (cfg.src === '' ? '<div class="muted small" style="margin-top:.6rem">这本词书已经全部学完啦 🎉</div>' : ''))) +
             '<div class="practice-actions">' +
               (hasNext
@@ -759,9 +864,16 @@
         TW.$$('[data-act]', host).forEach(function (b) {
           // 再来一轮 = 同一批词重练一遍（不重新切词表），与「学习下一组」区分开
           if (b.dataset.act === 'again') b.onclick = replay;
-          // 学习下一组 = 重新进入同一 URL，poolSession 会从第一个未学的词开始取
+          // 学习下一组 = 重新进入同一 URL：
+          // 词书源 poolSession 从第一个未学的词开始取；自由复习则先把本轮已练的词记进
+          // freeSkip 游标，resolvePool 排除它们 → 取下一批（整池翻完自动清空重开）
           if (b.dataset.act === 'nextgroup') b.onclick = function () {
-            TW.app.go('/practice?' + srcQuery() + '&mode=' + cfg.mode + '&order=' + cfg.order);
+            if (cfg.src === 'collection') {
+              freeSkip = {};
+              session.forEach(function (w) { freeSkip[w.id] = 1; });
+            }
+            TW.app.go('/practice?' + srcQuery() + '&mode=' + cfg.mode + '&order=' + cfg.order +
+              '&size=' + cfg.size);
           };
           if (b.dataset.act === 'wrong') b.onclick = function () {
             TW.app.go(cfg.src === 'srs' ? '/practice?src=srs&mode=' + cfg.mode

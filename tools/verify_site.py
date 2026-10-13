@@ -198,23 +198,26 @@ def main():
         check("输入框已清空待重打", pg.evaluate("() => TW.$('#p-input').value"), "")
         pg.screenshot(path=str(SHOTS / "15-practice-retry.png"))
 
-        # 重做仍错 → 这次才判错并给出正确答案
+        # 重做仍错 → 判错 + 揭示答案，但必须**照着答案重打一遍**才能继续（sunfleeting 要求）
         pg.fill("#p-input", "yyyyyy")
         pg.keyboard.press("Enter")
         pg.wait_for_timeout(500)
         t2 = pg.evaluate("() => document.body.innerText")
-        check("重做仍错才判错并给出正确答案", ("答错" in t2), True)
+        check("重做仍错才判错并要求重打（揭示答案卡 + 「再打一遍」）",
+              ("再打一遍" in t2 and pg.locator("#p-reveal").count() == 1), True)
+        check("重打阶段不给「继续」按钮（不能跳过重打）", pg.locator("[data-act='next']").count(), 0)
         pg.screenshot(path=str(SHOTS / "15-practice-wrong.png"))
 
-        # 「看答案」= 放弃重做，直接判错
+        # 「看答案」= 放弃重做：同样揭示答案并要求重打一遍
         goto_fresh("#/practice?book=week1&mode=recall&size=10")
         pg.fill("#p-input", "zzzzzz")
         pg.keyboard.press("Enter")
         pg.wait_for_timeout(400)
         pg.locator("[data-act='giveup']").click()
         pg.wait_for_timeout(400)
-        check("点「看答案」直接判错并揭示答案",
-              "答错" in pg.evaluate("() => document.body.innerText"), True)
+        t_g = pg.evaluate("() => document.body.innerText")
+        check("点「看答案」判错并揭示答案 + 要求重打",
+              ("再打一遍" in t_g and pg.locator("#p-reveal").count() == 1), True)
 
         # 重做答对 → 正常计入答对
         goto_fresh("#/practice?book=week1&mode=type&size=10")

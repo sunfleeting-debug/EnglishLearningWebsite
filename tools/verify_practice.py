@@ -598,6 +598,78 @@ def main():
                   extra=str(dict(cnt)))
             check("最近答错的词排在自由复习最前", order_seen[0], i_words[0])
 
+            # ================= J) 自由复习「学习下一组」翻页 =================
+            log("\n--- J) 自由复习已学的词：完成页「学习下一组」取下一批，不再重练同一批 ---")
+            goto("#/")
+            setup(pg)
+            # 整本 week2 全部造成「已学」（seen=1），池 = 250 词，size=20 切批
+            pg.evaluate("""(b) => {
+              TW.data.byBook(b).forEach(w => {
+                TW.store.state.progress[w.id] =
+                  {w: 0, r: 1, seen: 1, fav: false, master: false, ts: Date.now()};
+              });
+              TW.store.save();
+            }""", BOOK)
+            j_words = book_words(pg, BOOK)
+            goto_fresh("#/practice?src=collection&status=learned&mode=flash&size=20")
+            g1 = []
+            for _ in range(20):
+                g1.append(flash_word(pg))
+                press("Enter")
+                press("Enter")
+                press("Enter")
+            check("第 1 组完成页出现「学习下一组」", act_count(pg, "nextgroup"), 1)
+            pg.locator("[data-act='nextgroup']").click()
+            pg.wait_for_timeout(900)
+            check("下一组从词表第 21 个词开始（翻页，不重练前 20 个）",
+                  flash_word(pg), j_words[20])
+            g2 = []
+            for _ in range(20):
+                g2.append(flash_word(pg))
+                press("Enter")
+                press("Enter")
+                press("Enter")
+            check("第 2 组的词与第 1 组不重叠", len(set(g1) & set(g2)), 0)
+            check("第 2 组完成页仍有「学习下一组」（池还没翻完）",
+                  act_count(pg, "nextgroup"), 1)
+
+            # ================= K) 第 2 次答错后必须照答案重打 =================
+            log("\n--- K) 打字模式：第 2 次答错揭示答案，必须照着重打一遍才能继续 ---")
+            goto("#/")
+            setup(pg)
+            goto_fresh("#/practice?book=%s&mode=type&size=%d" % (BOOK, A_SIZE))
+            k_words = book_words(pg, BOOK)
+            k1 = stage_word(pg)
+            pg.fill("#p-input", "zzzzz")
+            press("Enter")
+            check("第 1 次错只提示重做（不改判）",
+                  "再试一次" in pg.evaluate("() => document.body.innerText"), True)
+            pg.fill("#p-input", "zzzzz")
+            press("Enter")
+            check("第 2 次错揭示答案并要求重打（出现「再打一遍」提示）",
+                  "再打一遍" in pg.evaluate("() => document.body.innerText"), True)
+            check("揭示卡里显示正确答案",
+                  pg.evaluate("""() => {
+                    const el = document.querySelector('#p-reveal .word-display');
+                    return el ? el.textContent.trim() : 'MISSING';
+                  }"""), k1)
+            check("重打阶段没有「继续」按钮（不能直接跳下一个）", act_count(pg, "next"), 0)
+            pg.fill("#p-input", "zzzzz")
+            press("Enter")
+            check("重打又打错仍不放行（继续按钮不出现）", act_count(pg, "next"), 0)
+            pg.fill("#p-input", k1)
+            press("Enter")
+            check("照着打对后进入反馈（出现继续按钮）", act_count(pg, "next"), 1)
+            check("反馈提示「已照答案重打」",
+                  "已照答案重打" in pg.evaluate("() => document.body.innerText"), True)
+            check("本题记的是答错（w+1，不算答对）",
+                  pg.evaluate("""(id) => {
+                    const p = TW.store.get(id);
+                    return !!p && p.w >= 1;
+                  }""", a_ids[0]), True)
+            press("Enter")
+            check("继续后正常到第 2 个词", stage_word(pg), k_words[1])
+
             # ================= E) 控制台 =================
             log("\n--- E) 控制台 ---")
             real = [e for e in errors]
