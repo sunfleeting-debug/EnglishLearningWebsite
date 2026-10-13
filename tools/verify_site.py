@@ -140,8 +140,12 @@ def main():
         t1 = pg.evaluate("() => document.body.innerText")
         check("第一次答错只提示重做、不揭答案", ("再试一次" in t1 and "答错" not in t1), True)
         check("重做时输入框仍在（未进入反馈态）", pg.locator("#p-input").count(), 1)
-        check("第一次答错不改判（正确率仍为「开始吧」）",
-              pg.evaluate("() => TW.$('#p-acc').textContent"), "开始吧")
+        # 会话续接后（practice.js resume），从 type 切到 recall 会带着上一段的统计：
+        # 第 1 词答对过 ⇒ 正确率 100%；全新会话则还是「开始吧」。两种都算「未改判」，
+        # 关键是第一次答错不能把正确率打成 0%。
+        acc_txt = pg.evaluate("() => TW.$('#p-acc').textContent")
+        check("第一次答错不改判（正确率仍是 100% 或未开始）",
+              acc_txt in ("开始吧", "正确率 100%"), True)
         check("输入框已清空待重打", pg.evaluate("() => TW.$('#p-input').value"), "")
         pg.screenshot(path=str(SHOTS / "15-practice-retry.png"))
 

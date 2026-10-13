@@ -43,6 +43,16 @@
      各回调再用 alive() 认领舞台，双保险。 */
   var prevGlobal = null;
 
+  /* 🔴 会话续接快照（模块级，同一次页面加载内有效）：
+     练习页会因为「切模式 / 点详解后返回 / 误触工具键」重新 render，而 poolSession 是
+     「从第一个没学的词切起」——刚答错的词还没学 ⇒ 看起来像整组从头开始
+     （sunfleeting 反馈：打错了、不小心按错了，就回到第一个词 eventually）。
+     有了快照后，同一组练习重新 render 时直接沿用上次的词表与进度。
+     真刷新页面（F5）时模块状态丢失，行为与从前完全一致。
+     进度被 resetAll 清空时由下方钩子作废快照，保证「清空进度再进练习」仍从第一个词开始。 */
+  var resume = null;
+  TW.store.onReset(function () { resume = null; });
+
   function render(host, query) {
     // 干掉上一个练习实例遗留的全局键盘监听
     if (prevGlobal) { prevGlobal(); prevGlobal = null; }
@@ -55,6 +65,11 @@
       status: query.status || 'all',
       size: parseInt(query.size || '', 10) || TW.store.settings.sessionSize
     };
+
+    /* 会话续接的 key：词源 + 筛选 + 顺序 + 组大小。mode 不参与——切模式要接着当前词练。
+       （srcQuery 是函数声明，提升后此处可用） */
+    var sKey = srcQuery() + '|' + cfg.order + '|' + cfg.status + '|' + cfg.size;
+    var resumed = null;   // 本次 render 是否命中了会话续接（begin 里据此恢复进度）
 
     /* 本实例的认领标记：#view 是复用的，新页面会改写 host.dataset.owner，
        所有异步回调靠它判断自己是否已被取代。 */
@@ -115,6 +130,17 @@
       return session;
     }
 
+    /** 会话续接（见模块顶部 resume 说明）：命中时沿用上次的词表，begin 里恢复进度；
+        不命中（首次进入 / 真刷新 / 进度被重置 / 换了词源或筛选）才用传入的新词表。 */
+    function pickSession(fresh) {
+      if (resume && resume.key === sKey && resume.session && resume.session.length) {
+        resumed = resume;
+        return resume.session;
+      }
+      resumed = null;
+      return fresh;
+    }
+
     /** 复习队列 / 生词本分组：先把记录还原成 {w, s, m} 再解析成词条 */
     function recordsFor(src) {
       if (src === 'srs') {
@@ -163,7 +189,7 @@
       loadingPage(isSrs ? '正在准备复习队列…' : '正在准备词表…');
       TW.data.ensureBooks(srcs, function () {
         if (!alive()) return;
-        begin(resolveRecords(recs));
+        begin(pickSession(resolveRecords(recs)));
       });
       return;
     }
@@ -192,12 +218,12 @@
       TW.data.loadBook(cfg.book, function (ok) {
         if (!alive()) return;
         if (!ok) { emptyPage('词典加载失败，请检查网络后重试。'); return; }
-        begin(poolSession());
+        begin(pickSession(poolSession()));
       });
       return;
     }
 
-    begin(poolSession());
+    begin(pickSession(poolSession()));
 
     /* ---------- 真正的练习会话 ---------- */
     function begin(session) {
@@ -219,6 +245,22 @@
       if (!session.length) {
         emptyPage('这一组没有可练习的单词，换个筛选条件试试。');
         return;
+      }
+
+      /** 把当前进度快照到模块级 resume，供下次 render 续接（见模块顶部说明）。
+          反馈阶段 = 当前题已判完，快照直接指向下一题，恢复后正好接着练。 */
+      function saveResume() {
+        resume = {
+          key: sKey, session: session,
+          st: { i: st.phase === 'feedback' ? st.i + 1 : st.i, correct: st.correct, wrong: st.wrong }
+        };
+      }
+
+      /* 会话续接：恢复上次离开时的统计与位置（不再从第 1 个词重练） */
+      if (resumed && resumed.session === session) {
+        st.i = Math.min(resumed.st.i, session.length);
+        st.correct = resumed.st.correct;
+        st.wrong = resumed.st.wrong;
       }
 
       var REC = (cfg.src === 'srs' || cfg.src === 'collection');
@@ -609,6 +651,7 @@
           TW.store.srs.onResult(w.word, false, w.book, brief);
           TW.speech.sound.wrong();
         }
+        saveResume();   // 反馈阶段快照指向下一题（见 saveResume 注释）
 
         // 反馈取代输入区
         var box = TW.$('.typing-box', host);
@@ -647,6 +690,7 @@
         st.hintShown = false;
         st.tries = 0;
         st.spoke = false;   // 新词：允许自动发音（见 drawStage）
+        saveResume();
         drawProgress();
         drawStage();
       }
@@ -654,6 +698,7 @@
       function finish() {
         if (!alive()) return;
         st.phase = 'done';
+        resume = null;   // 本组已完成：清掉续接快照，下次进入（学下一组/再来一轮入口）重新切词表
         drawProgress();
         TW.speech.sound.complete();
         var acc = (st.correct + st.wrong) ? Math.round((st.correct / (st.correct + st.wrong)) * 100) : 0;
@@ -714,11 +759,14 @@
       function replay() {
         if (!alive()) return;
         resetRound();
+        saveResume();
         drawProgress();
         drawStage();
       }
 
       /* ---------- 启动 ---------- */
+      if (st.i >= session.length) { finish(); return; }   // 上次已判完最后一题 → 直接出完成页
+      saveResume();
       drawProgress();
       drawStage();
     }

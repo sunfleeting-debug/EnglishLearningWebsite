@@ -183,8 +183,13 @@
   /** 清空全部学习数据（保留设置与复习队列） */
   function resetAll() {
     state.progress = {}; state.daily = {}; state.recentWrong = [];
+    resetHooks.forEach(function (fn) { try { fn(); } catch (e) {} });   // 练习页等据此作废会话续接快照
     save(); emit('progress');
   }
+
+  /* 进度重置钩子：resetAll 时通知（练习页的「会话续接」快照要作废） */
+  var resetHooks = [];
+  function onReset(fn) { if (resetHooks.indexOf(fn) < 0) resetHooks.push(fn); }
 
   /* ---------- 设置 ---------- */
   function setSetting(k, v) { state.settings[k] = v; save(); emit('settings', k); }
@@ -416,7 +421,7 @@
     load: load, save: save, on: on, emit: emit, migrate: migrate,
     get: get, markRight: markRight, markWrong: markWrong,
     toggleFav: toggleFav, toggleMaster: toggleMaster,
-    resetWord: resetWord, resetAll: resetAll,
+    resetWord: resetWord, resetAll: resetAll, onReset: onReset,
     recentWrong: function () { return state.recentWrong.slice(); },
     setSetting: setSetting, counts: counts, srcStats: srcStats, today: today,
     addDays: addDays, diffDays: diffDays,

@@ -475,6 +475,33 @@ def main():
             press("Enter")    # 继续 → 错词组里第 2 个
             check("错词组第 2 个是更早错的那个（第 1 个）", flash_word(pg), words6[0])
 
+            # ================= H) 会话续接 =================
+            log("\n--- H) 会话续接：误触导航/切模式后接着当前词练，不再回到第一个词 ---")
+            goto("#/")
+            setup(pg)
+            goto_fresh("#/practice?book=%s&mode=type&size=%d" % (BOOK, A_SIZE))
+            h_words = book_words(pg, BOOK)
+            # 答对第 1 个词 → 停在第 2 个词
+            pg.fill("#p-input", stage_word(pg))
+            press("Enter")
+            press("Enter")
+            check("答对第 1 个词后停在第 2 个词", stage_word(pg), h_words[1])
+            # 模拟误触：同页 hash 导航去首页再回来（同页导航不丢模块状态，正是要测的场景）
+            goto("#/")
+            goto("#/practice?book=%s&mode=type&size=%d" % (BOOK, A_SIZE))
+            pg.wait_for_timeout(300)
+            check("离开再回来仍从刚才的词继续（不是第 1 个词）", stage_word(pg), h_words[1])
+            # 切模式也续接：switchMode 走同一 URL 重 render，mode 不参与续接 key
+            pg.locator("[data-mode='flash']").click()
+            pg.wait_for_timeout(500)
+            check("切到翻卡模式仍停在第 2 个词", flash_word(pg), h_words[1])
+            # 进度被 resetAll 清空 → 快照作废，重新从第一个词开始
+            pg.evaluate("() => TW.store.resetAll()")
+            goto("#/")
+            goto("#/practice?book=%s&mode=flash&size=%d" % (BOOK, A_SIZE))
+            pg.wait_for_timeout(300)
+            check("清空进度后重新从第 1 个词开始", flash_word(pg), h_words[0])
+
             # ================= E) 控制台 =================
             log("\n--- E) 控制台 ---")
             real = [e for e in errors]
