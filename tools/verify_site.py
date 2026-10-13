@@ -383,6 +383,10 @@ def main():
         check("设置里有「清空复习队列」按钮", pg.locator("#data-srs-clear").count(), 1)
 
         # ---------- 音频页 ----------
+        # 首屏不加载词典卡 —— 🔴 必须放在任何详情页访问之前（详情页会按需注入 dict.js）
+        goto("#/")
+        boot_dict = pg.evaluate("() => !!(window.TW.data && TW.data.dictReady())")
+        check("首屏不加载词典卡（按需加载）", boot_dict, False)
         goto("#/audio", 1200)
         audio_src = pg.evaluate("() => TW.$('#au-audio').getAttribute('src')")
         check("音频已挂载 src", bool(audio_src), True)
@@ -401,10 +405,26 @@ def main():
         active_n = pg.evaluate("() => document.querySelectorAll('.lyric-item.active').length")
         check("当前字幕被高亮", active_n >= 1, True)
 
+        # 音频行详解入口（sunfleeting：每个单词要能进详解）
+        check("音频行有详解入口（灯泡）", pg.locator(".ly-detail").count(), 250)
+        pg.locator(".ly-detail").first.click()
+        pg.wait_for_timeout(1300)
+        check("点详解入口进详情页", "#/word?id=" in pg.evaluate("() => location.hash"), True)
+        check("详情页渲染出词面", pg.locator(".dc-word").count() > 0, True)
+
+        # 详情页发音委托不叠加：旧 bug 是每次进详情页都往复用的 #view 容器上**追加**一层
+        # click 委托，点一次美音读 N 遍（N = 本次加载内进过详情页的次数）
+        pg.locator(".dc-nav-sp a").first.click()      # 经「下一个词」箭头再进一次详情页
+        pg.wait_for_timeout(1300)
+        check("第二个词的详情页有美音按钮", pg.locator(".dc-phon").count() >= 1, True)
+        pg.evaluate("() => { window.__spk = []; TW.speech.speak = (t) => { window.__spk.push(t); }; }")
+        pg.locator(".dc-phon").first.click()
+        pg.wait_for_timeout(400)
+        check("点一次美音只发一次音（监听不叠加）",
+              len(pg.evaluate("() => window.__spk")), 1,
+              extra=str(pg.evaluate("() => window.__spk")))
+
         # ---------- 词典卡：首屏按需加载 ----------
-        goto("#/")
-        boot_dict = pg.evaluate("() => !!(window.TW.data && TW.data.dictReady())")
-        check("首屏不加载词典卡（按需加载）", boot_dict, False)
         dr_id = pg.evaluate("() => (TW.WORDS.find(w => w.word === 'drastic') || {}).id")
         check("drastic 在词库中", bool(dr_id), True)
 

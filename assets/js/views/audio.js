@@ -50,6 +50,9 @@
         '<span class="ly-time">' + TW.fmtTime(w.time) + '</span>' +
         '<span class="ly-word">' + TW.esc(w.word) + '</span>' +
         '<span class="ly-trans">' + TW.esc(t.text || '') + '</span>' +
+        // 详解入口（sunfleeting 要求）：点行 = 跳转音频时间点，点灯泡 = 进词典详解
+        '<a class="ly-detail" href="#/word?id=' + encodeURIComponent(w.id) + '" title="查看详解">' +
+          TW.icon('lightbulb', 14) + '</a>' +
       '</div>';
     }).join('');
 
@@ -79,6 +82,7 @@
     }
 
     lyricHost.addEventListener('click', function (e) {
+      if (e.target.closest('.ly-detail')) return;   // 详解链接走 <a> 自身跳转，不要当成「点行跳时间」
       var it = e.target.closest('.lyric-item');
       if (!it) return;
       seekTo(parseFloat(it.dataset.time) || 0);

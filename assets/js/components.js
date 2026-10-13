@@ -104,9 +104,12 @@
       .join('');
   };
 
-  /** 绑定链接区内的收藏 / 掌握按钮（详情页用） */
+  /** 绑定链接区内的收藏 / 掌握 / 发音按钮（详情页用）。
+      返回清理函数 —— root 是 SPA 复用的 #view 容器，不随 innerHTML 重建而卸载；
+      每次进详情页都重新绑定会**叠加监听**：点一次美音读 N 遍（跳过 N 个词就是 N 层）、
+      收藏反复横跳（sunfleeting 实测）。调用方必须在下次 render 前拆掉旧的。 */
   ui.bindWordActions = function (root, id) {
-    root.addEventListener('click', function (e) {
+    var handler = function (e) {
       var btn = e.target.closest('[data-act]');
       if (!btn) return;
       e.preventDefault();
@@ -122,7 +125,9 @@
         var accent = btn.dataset.accent || TW.store.settings.accent;
         TW.speech.speak(btn.dataset.say || '', accent);
       }
-    });
+    };
+    root.addEventListener('click', handler);
+    return function () { root.removeEventListener('click', handler); };
   };
 
   /** 分页控件 */

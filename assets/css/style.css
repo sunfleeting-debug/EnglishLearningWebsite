@@ -1200,3 +1200,14 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 }
 .hs-src { flex: none; font-size: 11px; color: var(--text-3); border: 1px solid var(--line-soft); border-radius: var(--radius-sm); padding: 0.05rem 0.35rem; }
 .hs-empty { padding: 0.55rem 0.7rem; font-size: 13.5px; color: var(--text-3); }
+
+/* 音频跟读行的详解入口（点行 = 跳时间点；点灯泡 = 进详解） */
+.ly-detail {
+  flex: none;
+  color: var(--text-3);
+  display: inline-flex; align-items: center;
+  padding: 0.15rem 0.3rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.18s, background 0.18s;
+}
+.ly-detail:hover { color: var(--accent); background: var(--accent-2); }

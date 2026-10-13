@@ -5,6 +5,11 @@
   var TW = window.TW = window.TW || {};
   TW.views = TW.views || {};
 
+  /* 🔴 上一次详情页挂在 #view 容器上的 click 委托。#view 是路由复用的同一个容器，
+     innerHTML 重建子节点**不会**移除挂在容器上的监听 —— 不拆旧的就会层层叠加：
+     点一次美音读 N 遍（N = 本次页面加载内进过详情页的次数）、收藏反复横跳。 */
+  var prevActionsCleanup = null;
+
   function sec(title, icon, body, cls) {
     if (!body) return '';
     return '<div class="card dc-sec' + (cls ? ' ' + cls : '') + '">' +
@@ -22,6 +27,8 @@
   }
 
   function render(host, query) {
+    // 拆掉上一次详情页的委托监听（见 prevActionsCleanup 说明）
+    if (prevActionsCleanup) { prevActionsCleanup(); prevActionsCleanup = null; }
     // 路由复用同一个 #view，用 token 认领，避免异步回调写进别的页面
     var token = 'wd' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
     host.dataset.owner = token;
@@ -224,7 +231,7 @@
     // 交互
     var backBtn = TW.$('#dc-back', host);
     if (backBtn) backBtn.addEventListener('click', back);
-    TW.ui.bindWordActions(host, w.id);
+    prevActionsCleanup = TW.ui.bindWordActions(host, w.id);
 
     // 笔记自动保存（600ms 防抖；离开页面/f5 前 save() 的 120ms 落盘足够快）
     var noteEl = TW.$('#dc-note', host);
@@ -284,7 +291,7 @@
     var b1 = TW.$('#dc-back', host), b2 = TW.$('#dc-ext-back', host);
     if (b1) b1.addEventListener('click', back);
     if (b2) b2.addEventListener('click', back);
-    TW.ui.bindWordActions(host, null);
+    prevActionsCleanup = TW.ui.bindWordActions(host, null);
   }
 
   TW.views.word = { render: render };
