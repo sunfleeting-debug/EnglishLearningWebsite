@@ -20,7 +20,7 @@
     speakMode: 'auto',     // 发音通道 auto 在线音频优先(失败回退系统语音) | audio 只用在线音频 | tts 只用系统语音
     keySound: true,        // 键盘音效
     srsAuto: true,         // 答错的词自动加入复习队列
-    autoMaster: true       // 连对 3 次自动标记「已掌握」（sunfleeting 要求的自动化）
+    autoMaster: true       // 连对 5 次自动标记「已掌握」（sunfleeting 要求的自动化）
   };
 
   var state = {
@@ -130,7 +130,7 @@
   /** 答对一次：计数 +1，并维护「连对 streak」。连对达 AUTO_MASTER_STREAK（且开了设置）
       自动标记已掌握 —— sunfleeting：学过了、复习对三次就该算掌握，别让人手动点。
       streak 纯本地（master 标记本身走同步），答错/手动取消掌握都会归零。 */
-  var AUTO_MASTER_STREAK = 3;
+  var AUTO_MASTER_STREAK = 5;   // sunfleeting：连对五次（练习或复习）才算掌握
 
   function markRight(id) {
     var r = rec(id);

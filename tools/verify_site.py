@@ -244,6 +244,9 @@ def main():
               ("再打一遍" in t2 and pg.locator("#p-reveal").count() == 1), True)
         check("重打阶段不给「继续」按钮（不能跳过重打）", pg.locator("[data-act='next']").count(), 0)
         pg.screenshot(path=str(SHOTS / "15-practice-wrong.png"))
+        # 此后开始有到期复习词（答错自动入队）——给「每日复习提醒」门槛种上今日已提醒标记，
+        # 免得它挡住后面所有学新词的既有用例（门槛本身有专属用例，见「每日复习提醒」段）
+        pg.evaluate("() => { const d = new Date(); localStorage.setItem('tw.reviewRemind', d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()); }")
 
         # 「看答案」= 放弃重做：同样揭示答案并要求重打一遍
         goto_fresh("#/practice?book=week1&mode=recall&size=10")
@@ -256,14 +259,17 @@ def main():
         check("点「看答案」判错并揭示答案 + 要求重打",
               ("再打一遍" in t_g and pg.locator("#p-reveal").count() == 1), True)
 
-        # 「不会」按钮 + 两个快捷键（sunfleeting：不会、看答案都要有键盘快捷键）
+        # 「不会」按钮 + 两个快捷键（sunfleeting：不会、看答案都要有键盘快捷键；
+        # 不会之后也要打一遍单词 —— 与「看答案」同路径：判错 + 揭答案 + 重打）
         goto_fresh("#/practice?book=week1&mode=recall&size=10")
         check("打字模式答题阶段有「不会」按钮", pg.locator("[data-act='no']").count() >= 1, True)
         pg.keyboard.press("Alt+N")
         pg.wait_for_timeout(600)
         t_n = pg.evaluate("() => document.body.innerText")
-        check("Alt+N 触发「不会」（判错 + 揭答案进反馈，可继续）",
-              ("答错" in t_n and pg.locator("[data-act='next']").count() == 1), True)
+        check("Alt+N 触发「不会」（判错 + 揭答案 + 要求重打）",
+              ("再打一遍" in t_n and pg.locator("#p-reveal").count() == 1
+               and pg.locator("[data-act='next']").count() == 0), True)
+        check("「不会」后输入框仍在（必须照答案打一遍）", pg.locator("#p-input").count() == 1, True)
         goto_fresh("#/practice?book=week1&mode=recall&size=10")
         pg.fill("#p-input", "zzzzzz")
         pg.keyboard.press("Enter")
@@ -288,6 +294,42 @@ def main():
         pg.wait_for_timeout(600)
         check("重做答对后判为「正确」",
               "正确" in pg.evaluate("() => document.body.innerText"), True)
+
+        # ---------- 完成页快捷键（sunfleeting：完成页按钮也要有键盘快捷键）----------
+        goto_fresh("#/practice?book=week1&mode=type&size=2")
+        for _ in range(2):
+            w_fin = pg.evaluate("() => (TW.$('#p-word')||{textContent:''}).textContent.trim()")
+            if not w_fin:
+                break
+            pg.fill("#p-input", w_fin)
+            pg.keyboard.press("Enter")
+            pg.wait_for_timeout(450)
+            pg.keyboard.press("Enter")   # 反馈页 Enter = 继续
+            pg.wait_for_timeout(700)
+        check("打完一组出完成页", pg.locator("[data-act='again']").count() == 1, True)
+        check("完成页「再来一轮」带 R 快捷键",
+              "R" in pg.evaluate("() => (document.querySelector(\"[data-act='again']\")||{innerText:''}).innerText"), True)
+        check("完成页「复习错词」带 W 快捷键",
+              "W" in pg.evaluate("() => (document.querySelector(\"[data-act='wrong']\")||{innerText:''}).innerText"), True)
+        pg.keyboard.press("r")
+        pg.wait_for_timeout(800)
+        check("完成页按 R 触发「再来一轮」（回到答题）",
+              pg.locator("#p-word").count() == 1, True)
+        # 再打完这组，回完成页按 W → 复习错词
+        for _ in range(2):
+            w_fin2 = pg.evaluate("() => (TW.$('#p-word')||{textContent:''}).textContent.trim()")
+            if not w_fin2:
+                break
+            pg.fill("#p-input", w_fin2)
+            pg.keyboard.press("Enter")
+            pg.wait_for_timeout(450)
+            pg.keyboard.press("Enter")
+            pg.wait_for_timeout(700)
+        check("回到完成页", pg.locator("[data-act='again']").count() == 1, True)
+        pg.keyboard.press("w")
+        pg.wait_for_timeout(800)
+        check("完成页按 W 触发「复习错词」", "status=wrong" in pg.evaluate("() => location.hash"), True)
+        pg.screenshot(path=str(SHOTS / "17-finish-keys.png"))
 
         # ---------- 练习：翻卡模式应有词典详解入口（工具条，翻不翻面都常驻）----------
         goto_fresh("#/practice?book=week1&mode=flash&size=10")
@@ -405,6 +447,23 @@ def main():
               "src=collection" in pg.evaluate("() => location.hash"), True)
         check("生词本练习页标注分组名",
               "待攻克错词" in pg.evaluate("() => (TW.$('.pp-src') || {}).textContent || ''"), True)
+
+        # ---------- 每日复习提醒（sunfleeting：每天学新词前必须提醒先复习）----------
+        # 此刻复习队列已有到期词（前面答错自动入队），且今天还没提醒过
+        pg.evaluate("() => localStorage.removeItem('tw.reviewRemind')")
+        goto_fresh("#/practice?book=week1&mode=recall&size=10")
+        t_gate = pg.evaluate("() => document.body.innerText")
+        check("有到期复习词时进新词练习先弹「先复习」提醒",
+              ("先复习，再学新词" in t_gate and pg.locator("#p-go-review").count() == 1), True)
+        check("提醒页给「今天不再提醒」逃生口", pg.locator("#p-skip-review").count() == 1, True)
+        pg.screenshot(path=str(SHOTS / "18-review-gate.png"))
+        pg.click("#p-go-review")
+        pg.wait_for_timeout(900)
+        check("「先去复习」跳到复习队列", "src=srs" in pg.evaluate("() => location.hash"), True)
+        # 当天第二次进入不再打扰
+        goto_fresh("#/practice?book=week1&mode=recall&size=10")
+        check("当天已提醒过就不再打扰",
+              "先复习，再学新词" not in pg.evaluate("() => document.body.innerText"), True)
 
         # 复习页
         goto("#/srs", 1200)
@@ -524,6 +583,58 @@ def main():
             pg.wait_for_timeout(600)
             href_now = pg.evaluate("() => location.hash")
             check("点击近义词已跳转", "#/word" in href_now and href_now == target.replace("#", "#"), True)
+
+        # ---------- 详解页拼写练习（sunfleeting：详解页也要能练打单词）----------
+        # 回到已知本地词 drastic：近义词跳转目标可能是 ext 词条（没有拼写练习卡）
+        pg.goto(BASE + "#/word?id=" + str(dr_id), wait_until="domcontentloaded")
+        try:
+            pg.wait_for_selector("#dc-spell-input", timeout=15000)
+        except Exception:
+            pass
+        pg.wait_for_timeout(400)
+        check("详情页有「拼写练习」板块",
+              "拼写练习" in pg.evaluate("() => Array.from(document.querySelectorAll('.dc-sec-title span')).map(x=>x.textContent).join('|')"), True)
+        sp_word = pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent.trim()")
+        pg.fill("#dc-spell-input", "zzzzzz")
+        pg.click("#dc-spell-check")
+        pg.wait_for_timeout(300)
+        check("拼错提示再试一次", "再试一次" in pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText"), True)
+        pg.fill("#dc-spell-input", "zzzzzz")
+        pg.click("#dc-spell-check")
+        pg.wait_for_timeout(300)
+        check("错两次自动揭答案并要求重打",
+              ("答案" in pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText")
+               and sp_word in pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText")), True)
+        check("揭答案后输入框被清空（必须重打）",
+              pg.evaluate("() => (TW.$('#dc-spell-input')||{value:''}).value") == "", True)
+        pg.fill("#dc-spell-input", sp_word)
+        pg.click("#dc-spell-check")
+        pg.wait_for_timeout(300)
+        check("照答案重打成功", "重打正确" in pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText"), True)
+        pg.screenshot(path=str(SHOTS / "21-word-spelling.png"))
+
+        # ---------- 详解页键盘快捷键（Esc 返回 / ←→ 换词 / F 收藏）----------
+        pg.evaluate("() => document.activeElement && document.activeElement.blur()")   # 别留在输入框里
+        d0 = pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent.trim()")
+        pg.keyboard.press("ArrowRight")
+        pg.wait_for_timeout(700)
+        d1 = pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent.trim()")
+        check("→ 跳到下一个词", bool(d1) and d1 != d0, True)
+        pg.keyboard.press("ArrowLeft")
+        pg.wait_for_timeout(700)
+        check("← 跳回上一个词",
+              pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent.trim()"), d0)
+        pg.keyboard.press("f")
+        pg.wait_for_timeout(300)
+        check("F 切换收藏", pg.evaluate("(id) => (TW.store.get(id) || {}).fav", dr_id), True)
+        pg.keyboard.press("f")
+        pg.wait_for_timeout(300)
+        check("再按 F 取消收藏", pg.evaluate("(id) => (TW.store.get(id) || {}).fav", dr_id), False)
+        h0 = pg.evaluate("() => location.hash")
+        pg.keyboard.press("Escape")
+        pg.wait_for_timeout(700)
+        check("Esc 返回上一页", pg.evaluate("() => location.hash") != h0, True)
+        pg.screenshot(path=str(SHOTS / "22-word-keys.png"))
 
         # 有道没有反义词的词也不应报错；找一个有反义词的词看板块
         goto("#/")

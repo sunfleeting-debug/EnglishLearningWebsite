@@ -16,7 +16,7 @@
   E) 「复习错词」从**最近答错的那个**开始（旧实现按词表顺序取，于是很久以前错的词
      永远排在最前，刚错的那个反而排在第 N 个）
   I) 自动掌握 + 自由复习已学的词：
-     · 连对 3 次自动标记「已掌握」（答错断连对，要重新连对；设置可关）
+     · 连对 5 次自动标记「已掌握」（答错断连对，要重新连对；设置可关）
      · 复习页「自由复习」入口 → status=learned 池 = 所有已学(seen>0)的词
      · 错过的词（w>0）进池两次 = 双倍权重，且最近答错的排最前（错误的要多练）
 
@@ -186,6 +186,10 @@ def main():
                   TW.store.setSetting('autoPronounce', false);
                   TW.store.setSetting('sessionSize', %d);
                   TW.store.setSetting('order', 'seq');
+                  /* 种「今日已提醒」标记：本套用例会答错造出到期复习词，
+                     「每日复习提醒」门槛会把后续学新词的用例全挡住（门槛有专属用例在 verify_site） */
+                  const d = new Date();
+                  try { localStorage.setItem('tw.reviewRemind', d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()); } catch (e) {}
                 }""" % SIZE)
 
             # ================= A) 翻卡键盘 =================
@@ -502,42 +506,51 @@ def main():
             pg.wait_for_timeout(500)
             check("切到翻卡模式仍停在第 2 个词", flash_word(pg), h_words[1])
             # 进度被 resetAll 清空 → 快照作废，重新从第一个词开始
-            pg.evaluate("() => TW.store.resetAll()")
+            pg.evaluate("""() => {
+              TW.store.resetAll();
+              /* 同 setup：重置后补「今日已提醒」种子，别让复习提醒门槛挡后面的用例 */
+              const d = new Date();
+              try { localStorage.setItem('tw.reviewRemind', d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()); } catch (e) {}
+            }""")
             goto("#/")
             goto("#/practice?book=%s&mode=flash&size=%d" % (BOOK, A_SIZE))
             pg.wait_for_timeout(300)
             check("清空进度后重新从第 1 个词开始", flash_word(pg), h_words[0])
 
             # ================= I) 自动掌握 + 自由复习已学的词 =================
-            log("\n--- I) 连对 3 次自动标记「已掌握」+ 自由复习（错词加权多练）---")
+            log("\n--- I) 连对 5 次自动标记「已掌握」+ 自由复习（错词加权多练）---")
             goto("#/")
             setup(pg)
 
-            # I-1 连对 3 次 → 自动掌握（markRight 返回值 = 本次是否刚触发）
+            # I-1 连对 5 次 → 自动掌握（markRight 返回值 = 本次是否刚触发）
             i_ids = a_ids
             res = pg.evaluate("""(id) => {
               const a = TW.store.markRight(id);
               const b = TW.store.markRight(id);
               const c = TW.store.markRight(id);
-              return {a: a, b: b, c: c, master: (TW.store.get(id) || {}).master};
+              const d = TW.store.markRight(id);
+              const e = TW.store.markRight(id);
+              return {a: a, d: d, e: e, master: (TW.store.get(id) || {}).master};
             }""", i_ids[6])
-            check("连对第 1、2 次不触发自动掌握", [res["a"], res["b"]], [False, False])
-            check("连对第 3 次触发自动掌握（返回 autoM）", res["c"], True)
-            check("第 3 次连对后 master=true", res["master"], True)
+            check("连对第 1~4 次不触发自动掌握", [res["a"], res["d"]], [False, False])
+            check("连对第 5 次触发自动掌握（返回 autoM）", res["e"], True)
+            check("第 5 次连对后 master=true", res["master"], True)
 
-            # I-2 答错断连对：错 1 次后要**重新**连对满 3 次才掌握
+            # I-2 答错断连对：错 1 次后要**重新**连对满 5 次才掌握
             res = pg.evaluate("""(id) => {
-              TW.store.markRight(id); TW.store.markRight(id);   // streak=2
+              TW.store.markRight(id); TW.store.markRight(id);
+              TW.store.markRight(id); TW.store.markRight(id);    // streak=4
               TW.store.markWrong(id);                            // 答错 → streak 清零
               const s0 = (TW.store.get(id) || {}).streak || 0;
-              TW.store.markRight(id); TW.store.markRight(id);    // 重新连对 2 次
+              TW.store.markRight(id); TW.store.markRight(id);
+              TW.store.markRight(id); TW.store.markRight(id);    // 重新连对 4 次
               const mid = (TW.store.get(id) || {}).master;
-              TW.store.markRight(id);                            // 第 3 次 → 掌握
+              TW.store.markRight(id);                            // 第 5 次 → 掌握
               return {s0: s0, mid: mid, master: (TW.store.get(id) || {}).master};
             }""", i_ids[7])
             check("答错后连对计数归零", res["s0"], 0)
-            check("重新连对 2 次还未掌握", res["mid"], False)
-            check("重新连对满 3 次才掌握", res["master"], True)
+            check("重新连对 4 次还未掌握", res["mid"], False)
+            check("重新连对满 5 次才掌握", res["master"], True)
 
             # I-3 设置里关掉 autoMaster 就不自动掌握
             pg.evaluate("(id) => { const p = TW.store.get(id); if (p) { p.master = false; p.streak = 0; } }",
@@ -545,9 +558,10 @@ def main():
             pg.evaluate("() => TW.store.setSetting('autoMaster', false)")
             res = pg.evaluate("""(id) => {
               TW.store.markRight(id); TW.store.markRight(id); TW.store.markRight(id);
+              TW.store.markRight(id); TW.store.markRight(id);
               return (TW.store.get(id) || {}).master;
             }""", i_ids[8])
-            check("关闭 autoMaster 后连对 3 次也不自动掌握", res, False)
+            check("关闭 autoMaster 后连对 5 次也不自动掌握", res, False)
             pg.evaluate("() => TW.store.setSetting('autoMaster', true)")
 
             # I-4 造「已学的词」池：6 个词 seen（前 4 个 w>0 = 错过），先清掉 I-1~3 的痕迹

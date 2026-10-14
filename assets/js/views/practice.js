@@ -147,6 +147,42 @@
       return fresh;
     }
 
+    /** 🔴 每日提醒（sunfleeting）：每天第一次进入「学新词」练习时，
+        若复习队列有到期词，必须先提醒「先复习再学新词」——记忆曲线靠复习维持，
+        光往前学新词旧词会烂掉。当天关掉一次后今天不再打扰（localStorage 记日期）。
+        返回 true = 不用提醒，正常 begin；false = 已渲染提醒页，调用方不要 begin。 */
+    function reviewGate(session) {
+      if (resumed) return true;                                 // 会话续接不打断
+      if (cfg.src !== '' || cfg.status !== 'all') return true;  // 只管学新词（词书/词典默认筛选）
+      if (!session.some(isNew)) return true;                    // 这组全是旧词，无所谓
+      var due = TW.store.srs.dueList().length;
+      if (!due) return true;
+      var today = (function () {
+        var d = new Date();
+        return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+      })();
+      try { if (localStorage.getItem('tw.reviewRemind') === today) return true; } catch (err) {}
+      host.innerHTML = '<div class="wrap-narrow">' +
+        TW.ui.pageHead('练习', '') +
+        '<div class="card card-pad" style="text-align:center">' +
+          '<div style="font-size:2.6rem">🔔</div>' +
+          '<h2 class="page-title">先复习，再学新词</h2>' +
+          '<p class="muted" style="margin:.4rem 0 1.1rem">今天有 <b style="color:var(--accent)">' + due +
+            '</b> 个单词到了复习时间。先复习巩固旧词，再开始学新的，记得更牢。</p>' +
+          '<div class="practice-actions">' +
+            '<button class="btn primary" id="p-go-review">' + TW.icon('refresh', 16) +
+              ' 先去复习（' + due + '）</button>' +
+            '<button class="btn ghost" id="p-skip-review">今天不再提醒，直接学新词</button>' +
+          '</div>' +
+        '</div></div>';
+      function dismiss() { try { localStorage.setItem('tw.reviewRemind', today); } catch (err) {} }
+      var gr = TW.$('#p-go-review', host);
+      if (gr) gr.onclick = function () { dismiss(); TW.app.go('/practice?src=srs&mode=' + cfg.mode); };
+      var sk = TW.$('#p-skip-review', host);
+      if (sk) sk.onclick = function () { dismiss(); begin(session); };   // begin 是函数声明，提升可用
+      return false;
+    }
+
     /** 复习队列 / 生词本分组：先把记录还原成 {w, s, m} 再解析成词条 */
     function recordsFor(src) {
       if (src === 'srs') {
@@ -249,12 +285,14 @@
       TW.data.loadBook(cfg.book, function (ok) {
         if (!alive()) return;
         if (!ok) { emptyPage('词典加载失败，请检查网络后重试。'); return; }
-        begin(pickSession(poolSession()));
+        var picked = pickSession(poolSession());
+        if (reviewGate(picked)) begin(picked);
       });
       return;
     }
 
-    begin(pickSession(poolSession()));
+    var picked = pickSession(poolSession());
+    if (reviewGate(picked)) begin(picked);
 
     /* ---------- 真正的练习会话 ---------- */
     function begin(session) {
@@ -531,7 +569,7 @@
           if (act === 'reveal') b.onclick = function () { st.revealed = true; drawStage(); };
           else if (act === 'known') b.onclick = function () { grade(true); };
           else if (act === 'unknown') b.onclick = function () { grade(false); };
-          else if (act === 'no') b.onclick = function () { if (st.phase === 'answering') grade(false); };
+          else if (act === 'no') b.onclick = function () { if (st.phase === 'answering') failReveal(); };
           else if (act === 'next') b.onclick = next;
         });
       }
@@ -564,7 +602,7 @@
           e.__twHandled = true;
           e.preventDefault();
           if (st.phase !== 'answering') return;
-          if (e.code === 'KeyN') grade(false);
+          if (e.code === 'KeyN') failReveal();
           else if (st.tries >= 1) failReveal();   // 看答案只在第一次答错后（重做行出现时）可用
           return;
         }
@@ -602,10 +640,18 @@
         if (e.key === 'Escape') { e.preventDefault(); skip(); return; }
 
         if (st.phase === 'done') {
-          // 完成页：Enter = 主按钮（有下一组就学下一组，否则再来一轮）
+          // 完成页快捷键：Enter = 主按钮（有下一组就学下一组，否则再来一轮）
+          //                R = 再来一轮 · W = 复习错词 / 继续复习（sunfleeting：完成页按钮都要有快捷键）
           if (e.key === 'Enter') {
             var b = TW.$('#p-next-group', host) || TW.$('[data-act="again"]', host);
             if (b) { e.preventDefault(); b.click(); }
+          }
+          else if (e.key === 'r' || e.key === 'R') {
+            e.preventDefault(); replay();
+          }
+          else if (e.key === 'w' || e.key === 'W') {
+            var wb = TW.$('[data-act="wrong"]', host);
+            if (wb) { e.preventDefault(); wb.click(); }
           }
           return;
         }
@@ -620,7 +666,7 @@
         if (e.altKey && !e.ctrlKey && !e.metaKey && (e.code === 'KeyN' || e.code === 'KeyA')) {
           e.preventDefault();
           if (st.phase !== 'answering') return;
-          if (e.code === 'KeyN') grade(false);
+          if (e.code === 'KeyN') failReveal();
           else if (st.tries >= 1) failReveal();
           return;
         }
@@ -689,7 +735,7 @@
           var g = TW.$('[data-act="giveup"]', line);
           if (g) g.onclick = giveUp;
           var nb = TW.$('[data-act="no"]', line);
-          if (nb) nb.onclick = function () { if (st.phase === 'answering') grade(false); };
+          if (nb) nb.onclick = function () { if (st.phase === 'answering') failReveal(); };
         }
         if (input) {
           input.value = '';
@@ -776,7 +822,7 @@
           TW.store.srs.onResult(w.word, true, w.book, brief);
           TW.speech.sound.correct();
           if (!wasMaster && (TW.store.get(w.id) || {}).master) {
-            TW.toast('连对 3 次，已自动标记「已掌握」🎉');
+            TW.toast('连对 5 次，已自动标记「已掌握」🎉');
           }
         } else {
           st.wrong++; TW.store.markWrong(w.id);
@@ -885,12 +931,12 @@
                     ' 学习下一组 <kbd>Enter</kbd></button>'
                 : '') +
               '<button class="btn' + (hasNext ? '' : ' primary') + '" data-act="again">' +
-                TW.icon('refresh', 16) + ' 再来一轮' + (hasNext ? '' : ' <kbd>Enter</kbd>') + '</button>' +
+                TW.icon('refresh', 16) + ' 再来一轮 <kbd>R</kbd>' + (hasNext ? '' : ' / <kbd>Enter</kbd>') + '</button>' +
               (REC
                 ? (cfg.src === 'srs' && dueLeft
-                    ? '<button class="btn" data-act="wrong">' + TW.icon('refresh', 16) + ' 继续复习（' + dueLeft + '）</button>'
+                    ? '<button class="btn" data-act="wrong">' + TW.icon('refresh', 16) + ' 继续复习（' + dueLeft + '） <kbd>W</kbd></button>'
                     : '')
-                : '<button class="btn" data-act="wrong">' + TW.icon('x', 16) + ' 复习错词</button>') +
+                : '<button class="btn" data-act="wrong">' + TW.icon('x', 16) + ' 复习错词 <kbd>W</kbd></button>') +
               '<button class="btn ghost" data-act="books">' +
                 (cfg.src === 'srs' ? '返回复习页' : cfg.src === 'collection' ? '返回生词本' : '返回词库') + '</button>' +
             '</div>' +

@@ -82,7 +82,7 @@
     function ready() {
       if (alive && !alive()) return;        // 已离开该页面，别再写 DOM
       if (--pending > 0) return;
-      if (w) { paintLocal(host, w); return; }
+      if (w) { paintLocal(host, w, alive); return; }
       var e = TW.data.ext(term);
       if (e) renderExt(host, term, e); else paintMissing(host);
     }
@@ -99,7 +99,7 @@
     if (bb) bb.addEventListener('click', back);
   }
 
-  function paintLocal(host, w) {
+  function paintLocal(host, w, alive) {
     var card = TW.data.card(w.word) || {};
     var book = TW.data.getBook(w.book);
     var siblings = TW.data.byBook(w.book);
@@ -144,6 +144,8 @@
       (phon ? '<div class="dc-phons">' + phon + '</div>' : '') +
       (w.note ? '<div class="muted small">字幕原形：' + TW.esc(w.note) + '</div>' : '') +
       (w.deck ? '<div class="muted small">该词条来自词典「' + TW.esc(book ? book.name : '') + '」，仅提供音标与释义</div>' : '') +
+      '<div class="muted small" style="margin-top:.5rem">快捷键：<kbd>Esc</kbd> 返回 · <kbd>←</kbd>/<kbd>→</kbd> 上/下一个词 · ' +
+        '<kbd>S</kbd> 发音 · <kbd>F</kbd> 收藏 · <kbd>M</kbd> 掌握 · <kbd>R</kbd> 复习队列</div>' +
       '<div class="row dc-tags">' + exams + srsChip + (book && book.audio ? '<a class="tag link" href="#/audio?book=' + book.id + '&t=' + w.time + '">' + TW.icon('headphone', 13) + ' 转到音频</a>' : '') + '</div>' +
     '</div>';
 
@@ -160,6 +162,21 @@
         'placeholder="记点心得：怎么记住它、哪里容易混、例句造一个…">' + TW.esc(savedNote) + '</textarea>' +
       '<div class="dc-note-foot"><span class="muted small" id="dc-note-hint">' +
         (savedNote ? '已保存' : '自动保存 · 随进度云同步') + '</span></div>');
+
+    // 拼写练习（sunfleeting：详解页也要能练打单词）。本地校验，答对/答错都计入进度
+    //（markRight/markWrong），与练习页同一套判分口径（括号变体也算对）。
+    secs += sec('拼写练习', 'check',
+      '<div class="dc-spell">' +
+        '<div class="muted small">看释义，拼出这个单词：</div>' +
+        '<div style="margin-top:.3rem;font-size:1.05rem">' + TW.esc(TW.data.brief(w)) + '</div>' +
+        '<div class="row" style="gap:.5rem;margin-top:.6rem">' +
+          '<input class="typing-input" id="dc-spell-input" autocomplete="off" autocorrect="off" ' +
+            'autocapitalize="off" spellcheck="false" placeholder="在这里打出这个单词…" style="flex:1" />' +
+          '<button class="btn sm primary" id="dc-spell-check">检查</button>' +
+          '<button class="btn sm ghost" id="dc-spell-reveal">看答案</button>' +
+        '</div>' +
+        '<div id="dc-spell-fb" style="margin-top:.6rem"></div>' +
+      '</div>');
 
     // 搭配
     if (card.colloc && card.colloc.length) {
@@ -231,7 +248,52 @@
     // 交互
     var backBtn = TW.$('#dc-back', host);
     if (backBtn) backBtn.addEventListener('click', back);
-    prevActionsCleanup = TW.ui.bindWordActions(host, w.id);
+    var clicksCleanup = TW.ui.bindWordActions(host, w.id);
+
+    /* ---- 键盘快捷键（sunfleeting：详解页也要有键盘快捷键）----
+       Esc 返回 · ←/→ 上/下一个词 · S 发音 · F 收藏 · M 掌握 · R 复习队列
+       焦点在输入框（学习笔记 / 拼写练习）里时不响应 —— 裸字母得还是字母本身。
+       🔴 监听挂 document 上，必须随 prevActionsCleanup 一起拆（见模块顶部说明）。 */
+    function onKey(e) {
+      if (!alive() || e.isComposing) return;
+      var tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;   // 正在打字
+      var k = (e.key || '').toLowerCase();
+      if (e.key === 'Escape') { e.preventDefault(); back(); }
+      else if (e.key === 'ArrowLeft' && prev) {
+        e.preventDefault(); TW.app.go('#/word?id=' + encodeURIComponent(prev.id));
+      }
+      else if (e.key === 'ArrowRight' && next) {
+        e.preventDefault(); TW.app.go('#/word?id=' + encodeURIComponent(next.id));
+      }
+      else if (k === 's') { TW.speech.speak(w.word, TW.store.settings.accent); }
+      else if (k === 'f') {
+        var on = TW.store.toggleFav(w.id);
+        var fb = TW.$('[data-act="fav"]', host);
+        if (fb) fb.classList.toggle('on', on);
+        TW.toast(on ? '已收藏' : '已取消收藏');
+      }
+      else if (k === 'm') {
+        var m = TW.store.toggleMaster(w.id);
+        var mb = TW.$('[data-act="master"]', host);
+        if (mb) mb.classList.toggle('on', m);
+        TW.toast(m ? '已标记掌握' : '已取消掌握');
+      }
+      else if (k === 'r') {
+        if (TW.store.srs.has(w.word)) {
+          TW.store.srs.remove(w.word); TW.toast('已移出复习队列');
+        } else {
+          TW.store.srs.enroll(w.word, w.book || '', TW.data.brief(w)); TW.toast('已加入复习队列');
+        }
+        var sb = TW.$('[data-act="srs"]', host);
+        if (sb) sb.classList.toggle('on', TW.store.srs.has(w.word));
+      }
+    }
+    document.addEventListener('keydown', onKey);
+    prevActionsCleanup = function () {
+      clicksCleanup();
+      document.removeEventListener('keydown', onKey);
+    };
 
     // 笔记自动保存（600ms 防抖；离开页面/f5 前 save() 的 120ms 落盘足够快）
     var noteEl = TW.$('#dc-note', host);
@@ -259,6 +321,66 @@
         TW.toast('已加入复习队列');
       }
       TW.app.render();
+    });
+
+    /* ---- 拼写练习 ---- */
+    var spInput = TW.$('#dc-spell-input', host);
+    var spFb = TW.$('#dc-spell-fb', host);
+    var spRetyping = false;   // 看答案后：必须照答案重打对才算完（sunfleeting：不会也要打一遍）
+    var spWrongTries = 0;
+    /** 与 practice.js 的 answers() 同口径：括号变体也算对（如 "color(colour)"） */
+    function spAnswers(word) {
+      var set = [word];
+      if (/[()]/.test(word)) {
+        set.push(word.replace(/[()]/g, ''));
+        set.push(word.replace(/\(([^)]*)\)/, '$1'));
+        set.push(word.replace(/\([^)]*\)/, ''));
+      }
+      return set.map(function (s) { return s.trim(); }).filter(Boolean);
+    }
+    function spSay(ok, html) {
+      if (spFb) spFb.innerHTML = '<div class="tag ' + (ok ? 'ok' : 'err') + '">' +
+        TW.icon(ok ? 'check' : 'x', 13) + ' ' + html + '</div>';
+      if (TW.speech && TW.speech.sound) TW.speech.sound[ok ? 'correct' : 'wrong']();
+    }
+    function spCheck() {
+      if (!spInput) return;
+      var val = (spInput.value || '').trim();
+      if (!val) { spInput.focus(); return; }   // 空输入不判分（同练习页）
+      var ok = spAnswers(w.word).some(function (a) { return TW.isCorrect(val, a); });
+      if (ok) {
+        var wasRetyping = spRetyping;
+        spRetyping = false;
+        spSay(true, wasRetyping ? '重打正确，这个词记住了' : '一次拼对，漂亮');
+        if (TW.store.markRight) TW.store.markRight(w.id);   // 计入练习进度（连对走自动掌握）
+        if (TW.speech && TW.speech.speak) TW.speech.speak(w.word);
+      } else {
+        spWrongTries++;
+        if (spRetyping) {
+          spSay(false, '还不对，照着上面的答案再打一遍');
+        } else if (spWrongTries >= 2) {
+          spReveal();   // 错两次自动揭答案，转入重打
+        } else {
+          spSay(false, '再试一次（' + (2 - spWrongTries) + ' 次机会）');
+        }
+        if (TW.store.markWrong) TW.store.markWrong(w.id);   // 答错进错词/复习链路
+      }
+    }
+    function spReveal() {
+      spRetyping = true;
+      if (spFb) spFb.innerHTML =
+        '<div class="tag err">' + TW.icon('x', 13) + ' 答案：<b style="font-size:1.15rem;letter-spacing:.06em">' +
+          TW.esc(w.word) + '</b> —— 照着它再打一遍</div>';
+      if (spInput) { spInput.value = ''; spInput.focus(); }
+      if (TW.speech && TW.speech.speak) TW.speech.speak(w.word);
+    }
+    var spCheckBtn = TW.$('#dc-spell-check', host);
+    if (spCheckBtn) spCheckBtn.addEventListener('click', spCheck);
+    var spRevealBtn = TW.$('#dc-spell-reveal', host);
+    if (spRevealBtn) spRevealBtn.addEventListener('click', spReveal);
+    if (spInput) spInput.addEventListener('keydown', function (e) {
+      if (e.isComposing) return;
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); spCheck(); }
     });
   }
 

@@ -196,6 +196,12 @@ def main():
             # 练习页被重建 ⇒ 打了一半的单词突然消失、页面闪一下（sunfleeting 实测反馈）。
             # 修复后 remote 只重渲染读数型视图（首页/复习/生词本），交互中视图不动。
             log("\n--- 3.5) 同步响应回来不重渲染练习页 ---")
+            # 登录账号的云端进度带复习队列（上一轮跑测试留下的到期词）——
+            # 给「每日复习提醒」门槛种上今日已提醒，别让它把练习页挡成提醒页
+            pgA.evaluate("""() => {
+              const d = new Date();
+              try { localStorage.setItem('tw.reviewRemind', d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()); } catch (e) {}
+            }""")
             goto(pgA, "#/practice?book=week1&mode=type")
             pgA.fill("#p-input", "abc")
             pgA.evaluate("() => { window.__twNode = document.querySelector('#p-input'); }")
