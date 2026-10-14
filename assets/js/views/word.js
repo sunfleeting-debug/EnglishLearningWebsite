@@ -432,6 +432,11 @@
     if (e.u) phon += '<button class="dc-phon" data-act="speak" data-say="' + TW.esc(term) + '" data-accent="us">美 /' + TW.esc(e.u) + '/</button>';
     if (e.k) phon += '<button class="dc-phon" data-act="speak" data-say="' + TW.esc(term) + '" data-accent="uk">英 /' + TW.esc(e.k) + '/</button>';
 
+    /* 学习笔记（sunfleeting：扩展词条也要能记笔记）。库外词没有词条 id，
+       按 `x:词面` 存进度（与练习页 resolvePool 对库外词的 id 规则一致），随云同步。 */
+    var noteId = 'x:' + term;
+    var savedNote = (TW.store.get(noteId) || {}).note || '';
+
     var host_ = '<div class="wrap wrap-narrow dc-wrap">' +
       '<div class="card card-pad dc-head">' +
         '<div class="dc-crumb"><button class="btn sm ghost" id="dc-back">' + TW.icon('arrowLeft', 15) + ' 返回</button>' +
@@ -443,6 +448,11 @@
         '<div class="muted small">该词不在本地六级词书中，为词典卡的扩展词条（仅提供音标与释义）。</div>' +
       '</div>' +
       sec('释义', 'file', transHtml({ trans: e.t })) +
+      sec('学习笔记', 'edit',
+        '<textarea class="dc-note" id="dc-note" rows="4" maxlength="2000" ' +
+          'placeholder="记点心得：怎么记住它、哪里容易混、例句造一个…">' + TW.esc(savedNote) + '</textarea>' +
+        '<div class="dc-note-foot"><span class="muted small" id="dc-note-hint">' +
+          (savedNote ? '已保存' : '自动保存 · 随进度云同步') + '</span></div>') +
       '<div class="row" style="justify-content:center"><button class="btn" id="dc-ext-back">' + TW.icon('arrowLeft', 16) + ' 返回上一页</button></div>' +
     '</div>';
 
@@ -451,6 +461,22 @@
     if (b1) b1.addEventListener('click', back);
     if (b2) b2.addEventListener('click', back);
     prevActionsCleanup = TW.ui.bindWordActions(host, null);
+
+    // 笔记自动保存（600ms 防抖，同 paintLocal）
+    var noteEl = TW.$('#dc-note', host);
+    var noteHint = TW.$('#dc-note-hint', host);
+    var noteTimer = null;
+    if (noteEl) {
+      noteEl.addEventListener('input', function () {
+        clearTimeout(noteTimer);
+        if (noteHint) noteHint.textContent = '输入中…';
+        noteTimer = setTimeout(function () {
+          TW.store.saveNote(noteId, noteEl.value);
+          if (noteHint) noteHint.textContent = '已保存 ' +
+            new Date().toTimeString().slice(0, 5);
+        }, 600);
+      });
+    }
   }
 
   TW.views.word = { render: render };

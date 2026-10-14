@@ -584,6 +584,20 @@ def main():
             href_now = pg.evaluate("() => location.hash")
             check("点击近义词已跳转", "#/word" in href_now and href_now == target.replace("#", "#"), True)
 
+        # 扩展词条页也要有学习笔记（sunfleeting：demerit 类 ext 词之前没地方记笔记）
+        pg.goto(BASE + "#/word?w=demerit", wait_until="domcontentloaded")
+        try:
+            pg.wait_for_selector("#dc-note", timeout=15000)
+        except Exception:
+            pass
+        pg.wait_for_timeout(300)
+        check("扩展词条页有「学习笔记」卡", pg.locator("#dc-note").count(), 1)
+        pg.fill("#dc-note", "测试笔记xyz")
+        pg.wait_for_timeout(900)   # 600ms 防抖 + 落盘
+        check("扩展词条笔记已保存（x:词面 进度记录）",
+              pg.evaluate("() => (TW.store.get('x:demerit') || {}).note"), "测试笔记xyz")
+        pg.screenshot(path=str(SHOTS / "23-ext-note.png"))
+
         # ---------- 详解页拼写练习（sunfleeting：详解页也要能练打单词）----------
         # 回到已知本地词 drastic：近义词跳转目标可能是 ext 词条（没有拼写练习卡）
         pg.goto(BASE + "#/word?id=" + str(dr_id), wait_until="domcontentloaded")

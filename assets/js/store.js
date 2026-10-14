@@ -106,7 +106,17 @@
   function snapshot(r, id) {
     if (r.word) return;
     var w = (TW.data && TW.data.byId) ? TW.data.byId(id) : null;
-    if (!w) return;
+    if (!w) {
+      /* 库外词（`x:词面`，扩展词条的笔记/进度）：本地词表查不到词面，
+         手动补齐快照——同步协议的 merge 要求 progress 全字段（word/src/brief
+         缺了会被 worker/mock_api 拒写）。 */
+      if (id && id.indexOf('x:') === 0) {
+        r.word = id.slice(2);
+        r.src = '';
+        r.brief = '扩展词条';
+      }
+      return;
+    }
     r.word = w.word;
     r.src = w.book || '';
     r.brief = (TW.data.brief ? TW.data.brief(w) : '');
