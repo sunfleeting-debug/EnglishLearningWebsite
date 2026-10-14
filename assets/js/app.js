@@ -152,6 +152,11 @@
     var doRender = function () {
       host.classList.remove('view-out');
       host.innerHTML = '';
+      /* 🔴 作废旧视图的认领标记：practice/word 挂在 document 上的键盘监听靠
+         alive()（host.dataset.owner === token）自灭，但只有部分视图会重设 owner ——
+         不清掉的话，旧监听会活到下一个「也设 owner」的页面为止，期间按 Esc/S/F
+         都会被旧页面抢走（sunfleeting：词库页按 Esc 被详解页的返回劫持，实测踩中） */
+      host.dataset.owner = '';
       try {
         r.view.render(host, route.query);
       } catch (e) {
@@ -176,6 +181,22 @@
   }
 
   window.addEventListener('hashchange', render);
+
+  /* 🔴 全站「返回」快捷键（sunfleeting：每个界面返回加一个快捷键）：Esc = 返回上一页。
+     豁免：practice（Esc=跳过当前词，自己的语义）、word 详解页（自带更聪明的 back：
+     无历史时去词库）、home（已是根页面，没处可退）、阅读页灯箱打开时（Esc=关灯箱）。
+     焦点在输入框/文本域里时不响应 —— Esc 在输入框里是清空/退出编辑的惯例。 */
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (!current || current.name === 'home' || current.name === 'practice' ||
+        current.name === 'word' || current.name === 'error') return;
+    var tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (document.querySelector('.rd-lightbox')) return;   // 阅读页灯箱自己处理 Esc
+    if (history.length > 1) { e.preventDefault(); history.back(); }
+    else { e.preventDefault(); go('/'); }
+  });
+
   TW.store.on('progress', function () {
     renderNav(current.name);
     // 生词本 / 复习 / 首页需要实时刷新

@@ -145,7 +145,7 @@
       (w.note ? '<div class="muted small">字幕原形：' + TW.esc(w.note) + '</div>' : '') +
       (w.deck ? '<div class="muted small">该词条来自词典「' + TW.esc(book ? book.name : '') + '」，仅提供音标与释义</div>' : '') +
       '<div class="muted small" style="margin-top:.5rem">快捷键：<kbd>Esc</kbd> 返回 · <kbd>←</kbd>/<kbd>→</kbd> 上/下一个词 · ' +
-        '<kbd>S</kbd> 发音 · <kbd>F</kbd> 收藏 · <kbd>M</kbd> 掌握 · <kbd>R</kbd> 复习队列</div>' +
+        '<kbd>S</kbd> 发音 · <kbd>F</kbd> 收藏 · <kbd>M</kbd> 掌握 · <kbd>R</kbd> 复习队列 · <kbd>Alt+V</kbd> 看答案</div>' +
       '<div class="row dc-tags">' + exams + srsChip + (book && book.audio ? '<a class="tag link" href="#/audio?book=' + book.id + '&t=' + w.time + '">' + TW.icon('headphone', 13) + ' 转到音频</a>' : '') + '</div>' +
     '</div>';
 
@@ -172,8 +172,8 @@
         '<div class="row" style="gap:.5rem;margin-top:.6rem">' +
           '<input class="typing-input" id="dc-spell-input" autocomplete="off" autocorrect="off" ' +
             'autocapitalize="off" spellcheck="false" placeholder="在这里打出这个单词…" style="flex:1" />' +
-          '<button class="btn sm primary" id="dc-spell-check">检查</button>' +
-          '<button class="btn sm ghost" id="dc-spell-reveal">看答案</button>' +
+          '<button class="btn sm primary" id="dc-spell-check" title="快捷键 Enter">检查 <kbd>Enter</kbd></button>' +
+          '<button class="btn sm ghost" id="dc-spell-reveal" title="快捷键 Alt+V（输入框里也能按）">看答案 <kbd>Alt+V</kbd></button>' +
         '</div>' +
         '<div id="dc-spell-fb" style="margin-top:.6rem"></div>' +
       '</div>');
@@ -288,6 +288,7 @@
         var sb = TW.$('[data-act="srs"]', host);
         if (sb) sb.classList.toggle('on', TW.store.srs.has(w.word));
       }
+      else if (k === 'v') { spReveal(); }   // V = 拼写练习「看答案」（焦点在输入框里时用 Alt+V）
     }
     document.addEventListener('keydown', onKey);
     prevActionsCleanup = function () {
@@ -381,6 +382,10 @@
     if (spInput) spInput.addEventListener('keydown', function (e) {
       if (e.isComposing) return;
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); spCheck(); }
+      /* Alt+V = 看答案：打字中也能用（裸 V 是字母本体），与练习页 Alt+ 组合惯例一致 */
+      else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyV') {
+        e.preventDefault(); e.stopPropagation(); spReveal();
+      }
     });
   }
 

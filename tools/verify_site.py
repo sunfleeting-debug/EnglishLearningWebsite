@@ -613,6 +613,18 @@ def main():
         check("照答案重打成功", "重打正确" in pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText"), True)
         pg.screenshot(path=str(SHOTS / "21-word-spelling.png"))
 
+        # 拼写练习快捷键（sunfleeting：检查/看答案也要有快捷键）
+        check("「检查」带 Enter 快捷键提示",
+              "Enter" in pg.evaluate("() => (TW.$('#dc-spell-check')||{innerText:''}).innerText"), True)
+        check("「看答案」带 Alt+V 快捷键提示",
+              "Alt+V" in pg.evaluate("() => (TW.$('#dc-spell-reveal')||{innerText:''}).innerText"), True)
+        pg.fill("#dc-spell-input", "zzzzzz")
+        pg.keyboard.press("Alt+V")   # 输入框 focus 状态下也要能触发
+        pg.wait_for_timeout(300)
+        check("Alt+V 触发「看答案」（揭答案 + 要求重打）",
+              ("答案" in pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText")
+               and sp_word in pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText")), True)
+
         # ---------- 详解页键盘快捷键（Esc 返回 / ←→ 换词 / F 收藏）----------
         pg.evaluate("() => document.activeElement && document.activeElement.blur()")   # 别留在输入框里
         d0 = pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent.trim()")
@@ -635,6 +647,24 @@ def main():
         pg.wait_for_timeout(700)
         check("Esc 返回上一页", pg.evaluate("() => location.hash") != h0, True)
         pg.screenshot(path=str(SHOTS / "22-word-keys.png"))
+
+        # ---------- 全站 Esc 返回（sunfleeting：每个界面都要能按 Esc 返回）----------
+        goto("#/")                     # 造历史：首页 → 词库
+        goto("#/books")
+        pg.keyboard.press("Escape")    # books 无自己的 Esc 语义 → 全局返回
+        pg.wait_for_timeout(700)
+        check("词库页按 Esc 返回上一页", pg.evaluate("() => location.hash"), "#/")
+        goto("#/stats")
+        h_s = pg.evaluate("() => location.hash")
+        pg.keyboard.press("Escape")
+        pg.wait_for_timeout(700)
+        # 不锁死回退目标（同文档 hash 导航的 history 条目顺序不稳定），只验证「Esc 会返回」
+        check("统计页按 Esc 返回上一页", pg.evaluate("() => location.hash") != h_s, True)
+        # 豁免页不劫持：练习页 Esc = 跳过当前词（不是返回）
+        goto_fresh("#/practice?book=week1&mode=type&size=10")
+        pg.keyboard.press("Escape")
+        pg.wait_for_timeout(700)
+        check("练习页 Esc 仍是「跳过」而非返回", "practice" in pg.evaluate("() => location.hash"), True)
 
         # 有道没有反义词的词也不应报错；找一个有反义词的词看板块
         goto("#/")
