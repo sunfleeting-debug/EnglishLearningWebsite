@@ -152,7 +152,7 @@ def main():
     check("根地址返回 HTML", "text/html" in (hd.get("Content-Type") or ""), True,
           extra=hd.get("Content-Type"))
     check("根地址不再返回 JSON 报错", html.lstrip().startswith("{\"error"), False)
-    check("落地页写明服务名", "六级单词速记" in html, True)
+    check("落地页写明服务名", "英语学习站" in html, True)
     check("落地页给出健康检查路径", "/api/health" in html, True)
     check("落地页指回前端站点", "sunfleeting-debug.github.io" in html, True)
     st, html2, hd2 = raw(base, "GET", "/api")

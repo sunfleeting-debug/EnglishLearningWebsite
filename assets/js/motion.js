@@ -130,7 +130,7 @@
   /* ---------------- 5) 首访入场动画 ----------------
      仿 Lenval new-preloader 的完整时间线（零依赖手写）：
        ① 深棕幕布（竖向发丝线 + 叶影纹理 multiply）盖住页面
-       ② 标题「六级单词速记」逐字从遮罩升起（stagger 70ms）
+       ② 标题「英语学习站」逐字从遮罩升起（stagger 70ms）
        ③ 中央打字机照片纵向剖开揭示（clip-path inset 50%→0 + 内图 1.2→1）
        ④ 底部 Loading 00%→100%（2.2s，easeInOutCubic）+ 1px 进度线同步
        ⑤ 收尾：幕布从中缝向上下退开（下半错缝 70ms），#app 从 scale .62 放大到 1
@@ -154,7 +154,7 @@
       '<div class="intro-brand">CET-6 VOCAB</div>' +
       '<div class="intro-tag">TYPE TO REMEMBER</div>' +
       '<div class="intro-title">' +
-        '六级单词速记'.split('').map(function (c, i) {
+        '英语学习站'.split('').map(function (c, i) {
           return '<span style="--wi:' + i + '">' + c + '</span>';
         }).join('') +
       '</div>' +

@@ -46,7 +46,7 @@ def main():
 
         pg.goto(URL, wait_until="load", timeout=60000)
         pg.wait_for_timeout(800)
-        check("标题正确", "六级单词速记" in pg.title(), True)
+        check("标题正确", "英语学习站" in pg.title(), True)
         check("首页渲染出内容", pg.evaluate("() => document.body.innerText.length > 50"), True)
         pg.screenshot(path=str(SHOTS / "22-live-home.png"))
 

@@ -1,5 +1,5 @@
 /**
- * 六级单词速记 · 后端 API
+ * 英语学习站 · 后端 API
  * 运行环境：Cloudflare Workers + D1（SQLite）
  *
  * 设计要点
@@ -477,7 +477,7 @@ function landingPage(host) {
   const html = '<!doctype html>\n<html lang="zh-CN">\n<head>\n'
     + '<meta charset="utf-8">\n'
     + '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
-    + '<title>六级单词速记 · 后端 API</title>\n'
+    + '<title>英语学习站 · 后端 API</title>\n'
     + '<style>\n'
     + ':root{--bg:#f6f7f9;--fg:#1f2328;--mut:#656d76;--card:#fff;--bd:#d8dee4;--ac:#0969da}\n'
     + 'html.dark{--bg:#0d1117;--fg:#e6edf3;--mut:#8b949e;--card:#161b22;--bd:#30363d;--ac:#58a6ff}\n'
@@ -496,7 +496,7 @@ function landingPage(host) {
     + '.mut{color:var(--mut);font-size:13px}\n'
     + '</style>\n</head>\n<body>\n<main>\n'
     + '<div class="card">\n'
-    + '<h1>六级单词速记 · 后端 API</h1>\n'
+    + '<h1>英语学习站 · 后端 API</h1>\n'
     + '<p class="ok">服务正常运行中 ✅</p>\n'
     + '<p>这里<b>只有接口</b>，没有网页界面。请打开前端站点使用：</p>\n'
     + '<p><a href="' + site + '">' + site + '</a></p>\n'

@@ -89,7 +89,7 @@
     host.innerHTML =
       '<div class="brand">' +
         '<div class="brand-logo">A</div>' +
-        '<div class="brand-text"><span class="brand-name">六级单词速记</span>' +
+        '<div class="brand-text"><span class="brand-name">英语学习站</span>' +
         '<span class="brand-sub">本地词库</span></div>' +
       '</div>' +
       '<nav class="nav">' + items + '</nav>' +

@@ -1,4 +1,4 @@
-# 六级单词速记（TypingCET）
+# 英语学习站（TypingEnglish）
 
 一个**打字背单词**的静态网站，风格与交互参考开源项目
 [TypeWords](https://github.com/zyronon/TypeWords)，词库来自自己整理的
