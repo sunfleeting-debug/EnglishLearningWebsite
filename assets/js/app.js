@@ -57,7 +57,24 @@
       reading: TW.views.reading, resources: TW.views.resources, settings: TW.views.settings,
       account: TW.views.account, admin: TW.views.admin
     };
-    return { name: name, view: map[name] || TW.views.home };
+    var view = map[name];
+    if (!view) {
+      /* 🔴 视图脚本没加载成功（部署更新瞬间个别 JS 404 / 浏览器缓存混搭）时，
+         **绝不静默 fallback 到主页** —— 那会表现成「点详解玄学回主页」
+         （sunfleeting 2026-10-14 实测踩中，地址栏还在 /word，内容却是主页，完全无从排查）。
+         明确报错 + 一键刷新，用户立刻知道是加载问题而不是功能坏了。 */
+      return { name: 'error', view: { render: function (host) {
+        host.innerHTML = '<div class="wrap-narrow"><div class="card card-pad">' +
+          TW.ui.empty('页面资源没加载成功（可能是网站刚更新，缓存新旧混了）', '⚠️') +
+          '<div class="row" style="justify-content:center">' +
+            '<button class="btn primary" id="err-reload">' + TW.icon('refresh', 16) + ' 刷新重试</button>' +
+            '<a class="btn ghost" href="#/">回首页</a>' +
+          '</div></div>';
+        var rb = TW.$('#err-reload', host);
+        if (rb) rb.addEventListener('click', function () { location.reload(); });
+      } } };
+    }
+    return { name: name, view: view };
   }
 
   function renderNav(active) {
