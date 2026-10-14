@@ -138,8 +138,19 @@ def main():
               pg.evaluate("() => document.querySelectorAll('#bk-list .wl-row').length") > 0, True)
 
         # 复习队列：练习答错 → 自动入队 → 导航角标 → 复习页可打开
+        # 🔴 前面阅读答题段已经答错过（自动入复习队列、今天到期）——「每日先复习」
+        #    门槛会把这里的新词练习挡成提醒页。种上今日已提醒再进（门槛有专属用例）。
+        pg.evaluate("""() => {
+          const d = new Date();
+          try { localStorage.setItem('tw.reviewRemind', d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate()); } catch (e) {}
+        }""")
         pg.goto(URL + "#/practice?book=week1&mode=type&size=3", wait_until="load", timeout=60000)
-        pg.wait_for_timeout(1200)
+        # 🔴 部署后 CDN 边缘缓存全冷，固定 sleep 等不到渲染完 ⇒ 显式等 #p-word（部署当天曾踩）
+        try:
+            pg.wait_for_selector("#p-word", timeout=15000)
+        except Exception:
+            pass
+        pg.wait_for_timeout(300)
         auto_word = pg.evaluate("() => TW.$('#p-word').textContent.trim()")
         pg.fill("#p-input", "zzzzzz")
         pg.keyboard.press("Enter")
