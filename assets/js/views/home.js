@@ -184,11 +184,20 @@
             '<span class="hs-src online">在线词典</span>' +
           '</button>' +
           (lines.length ? '<div class="hs-on-body">' + lines.join('') + '</div>' : '') +
+          '<div style="margin-top:.5rem"><button class="btn sm" id="hs-online-detail">查看详解 →</button></div>' +
         '</div>';
       resBox.hidden = false;
       var item = TW.$('.hs-item', resBox);
       if (item) item.addEventListener('click', function () {
         TW.speech.speak(res.word, TW.store.settings.accent);
+      });
+      /* sunfleeting：点在线结果「没反应」——原设计点击=发音，但用户预期是进详解。
+         补一个显式的「查看详解」入口：详解页会现查在线释义展示（paintOnlineOnly）。 */
+      var detail = TW.$('#hs-online-detail', resBox);
+      if (detail) detail.addEventListener('click', function () {
+        hsHide();
+        input.blur();
+        hsGo(res.word);
       });
     }
 

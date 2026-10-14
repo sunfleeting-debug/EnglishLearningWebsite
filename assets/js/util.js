@@ -60,6 +60,9 @@
   TW.toast = function (msg, type) {
     var host = document.getElementById('toast-host');
     if (!host) return;
+    /* 🔴 替换式：只显示最新一条。监听叠加类 bug 曾把「已收藏/已取消收藏」
+       糊满半屏（2026-10-15 实测），旧 toast 留着只会遮挡内容。 */
+    host.textContent = '';
     var el = TW.h('<div class="toast ' + (type || '') + '">' + TW.esc(msg) + '</div>');
     host.appendChild(el);
     setTimeout(function () {

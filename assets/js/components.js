@@ -109,7 +109,14 @@
       每次进详情页都重新绑定会**叠加监听**：点一次美音读 N 遍（跳过 N 个词就是 N 层）、
       收藏反复横跳（sunfleeting 实测）。调用方必须在下次 render 前拆掉旧的。 */
   ui.bindWordActions = function (root, id) {
+    /* 🔴 认领检查：委托挂在 #view 这种持久容器上，跨视图切换不会自动拆（prevActionsCleanup
+       只在下次 word render 时执行）。绑定瞬间记住 owner，app.js 每次路由渲染前会清掉
+       host.dataset.owner —— 离开本视图后旧委托立即哑掉。不检查的话：详解 → 练习返回，
+       委托残留，练习页点一次收藏 = N 次 toggle（N = 本次会话进过详解页的次数），
+       表现为「已收藏/已取消收藏」连环横跳（sunfleeting 2026-10-15 实测踩中）。 */
+    var owner = root.dataset.owner;
     var handler = function (e) {
+      if (root.dataset.owner !== owner) return;
       var btn = e.target.closest('[data-act]');
       if (!btn) return;
       e.preventDefault();

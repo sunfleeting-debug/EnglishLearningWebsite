@@ -84,7 +84,7 @@
       if (--pending > 0) return;
       if (w) { paintLocal(host, w, alive); return; }
       var e = TW.data.ext(term);
-      if (e) renderExt(host, term, e); else paintMissing(host);
+      if (e) renderExt(host, term, e); else paintOnlineOnly(host, term, alive);
     }
     if (w) TW.data.loadDict(ready);
     TW.data.loadDictExt(ready);
@@ -97,6 +97,38 @@
       '</div></div>';
     var bb = TW.$('#dc-back', host);
     if (bb) bb.addEventListener('click', back);
+  }
+
+  /** 本地词库和扩展词库都没有的词（首页搜索在线兜底跳过来的）：
+      现查在线词典展示释义，不再干巴巴一句「未找到」（sunfleeting：点了搜索结果要能看到东西） */
+  function paintOnlineOnly(host, term, alive) {
+    host.innerHTML = '<div class="wrap wrap-narrow"><div class="card card-pad muted">正在查询「' +
+      TW.esc(term) + '」…</div></div>';
+    TW.data.lookupChain(term, function (res) {
+      if (alive && !alive()) return;            // 已离开该页面
+      if (!res || !res.word) { paintMissing(host); return; }
+      var means = (res.ms || []).map(function (m) {
+        return '<div style="margin:.5rem 0">' +
+          (m.pos ? '<span class="dc-pos">' + TW.esc(m.pos) + '</span>' : '') +
+          '<div style="margin-top:.2rem">' + m.defs.map(function (d) { return TW.esc(d); }).join('<br>') + '</div>' +
+        '</div>';
+      }).join('');
+      host.innerHTML = '<div class="wrap wrap-narrow dc-wrap">' +
+        '<div class="card card-pad dc-head">' +
+          '<div class="dc-crumb"><button class="btn sm ghost" id="dc-back">' + TW.icon('arrowLeft', 15) + ' 返回</button>' +
+            '<span class="muted small">在线词典 · 该词不在本地词库，练习/收藏需先加入词库</span></div>' +
+          '<div class="dc-title"><div class="dc-word">' + TW.esc(res.word) + '</div>' +
+            '<div class="dc-actions"><button class="dc-phon" id="dc-online-speak" title="朗读">' +
+              TW.icon('volume', 16) + '</button></div></div>' +
+          (res.ph ? '<div class="dc-phons"><span class="dc-phon">/' + TW.esc(res.ph) + '/</span></div>' : '') +
+        '</div>' +
+        '<div class="card card-pad">' + (means || '<div class="muted">（在线词典暂无释义）</div>') + '</div>' +
+      '</div>';
+      var bb = TW.$('#dc-back', host);
+      if (bb) bb.addEventListener('click', back);
+      var sb = TW.$('#dc-online-speak', host);
+      if (sb) sb.addEventListener('click', function () { TW.speech.speak(res.word, TW.store.settings.accent); });
+    });
   }
 
   function paintLocal(host, w, alive) {
