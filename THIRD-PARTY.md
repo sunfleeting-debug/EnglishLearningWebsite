@@ -69,3 +69,10 @@
   Node 依赖与其私有 CDN 上的词库**均未引入**。
 - **说明**：本站的复习调度是自己的实现（艾宾浩斯固定间隔 1/2/4/7/15/30/60 天），
   与 TypeWords 使用的 FSRS（ts-fsrs）算法无关。
+
+## 7. Earthworm（句子练习交互参考）
+
+- **来源**：<https://github.com/cuixueshe/earthworm>（AGPL-3.0）
+- **参考内容**：从短语递进到完整句的练习方式、中文题面、英文输入、逐词纠错和键盘推进。
+- **本项目实现**：`assets/js/sentences.js`、`assets/js/views/sentences.js`、`assets/css/sentences.css` 和 `data/sentences.js` 为独立编写；6 门内置课程为本站原创，没有复制上游源码、品牌素材或课程数据。
+- **句子复习**：由本站独立新增，使用 1 / 2 / 4 / 7 / 15 / 30 / 60 天固定间隔；不宣称复用了 Earthworm 的复习算法。

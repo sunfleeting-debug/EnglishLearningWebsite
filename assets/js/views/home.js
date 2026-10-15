@@ -61,6 +61,11 @@
           '</div>' +
         '</div>' +
 
+        '<div class="sentence-home-callout"><div><span class="sentence-eyebrow">从单词到表达 · SENTENCE STUDIO</span>' +
+          '<h2>把学过的词，写成完整的句子</h2><p>递进练习 / 整句翻译 / 听音写句 · 原创分级课程与自定义素材' +
+            (TW.sentences && TW.sentences.summary().due ? ' · 今天有 ' + TW.sentences.summary().due + ' 组句子待复习' : '') + '</p></div>' +
+          '<a class="btn primary" id="btn-sentences" href="#/sentences">开始打句子 ' + TW.icon('arrowRight', 16) + '</a></div>' +
+
         /* ---- 首页搜词（sunfleeting：在首页就能搜出单词的意思）----
            联想：周计划 + 已加载词典（searchAll，命中单词或释义，前缀优先）；
            联想没有 → dict-ext.js 全量键值精确兜底（带词形还原），点击进详解页看完整词典卡。 */

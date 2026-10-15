@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">英语学习站</string>
+    <string name="title_activity_main">英语学习站</string>
+    <string name="package_name">com.englishlearningstation.app</string>
+    <string name="custom_url_scheme">com.englishlearningstation.app</string>
+</resources>
