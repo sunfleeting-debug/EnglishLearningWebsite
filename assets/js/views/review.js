@@ -11,7 +11,8 @@
     { id: 'wrong', name: '待攻克错词', empty: '还没有错词，练习时答错的词会自动进来' },
     { id: 'fav', name: '我的收藏', empty: '还没有收藏，在词库或练习中点星标即可收藏' },
     { id: 'master', name: '已掌握', empty: '还没有标记掌握的单词' },
-    { id: 'notes', name: '我的笔记', empty: '还没有笔记，在单词详解页写下第一条吧' }
+    { id: 'notes', name: '我的笔记', empty: '还没有笔记，在单词详解页写下第一条吧' },
+    { id: 'learned', name: '已练过', empty: '还没有练过的词，去练习页开始吧' }
   ];
 
   function render(host, query) {

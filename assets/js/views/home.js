@@ -83,11 +83,11 @@
           : '') +
 
         '<div class="grid stats" style="margin-bottom:1.2rem">' +
-          statCard(c.total, '周计划词数', 'accent') +
-          statCard(c.touched, '已练过的词', '') +
-          statCard(c.master, '已掌握', 'ok') +
-          statCard(c.wrong, '待攻克错词', 'err') +
-          statCard(srs.due, '今日待复习', srs.due ? 'accent' : '') +
+          statCard(c.total, '周计划词数', 'accent', '/books') +
+          statCard(c.touched, '已练过的词', '', '/review?tab=learned') +
+          statCard(c.master, '已掌握', 'ok', '/review?tab=master') +
+          statCard(c.wrong, '待攻克错词', 'err', '/review?tab=wrong') +
+          statCard(srs.due, '今日待复习', srs.due ? 'accent' : '', '/srs') +
         '</div>' +
 
         '<div class="card card-pad" style="margin-bottom:1.2rem">' +
@@ -105,9 +105,16 @@
         '<div class="grid books">' + booksHtml + '</div>' +
       '</div>';
 
-    function statCard(num, label, cls) {
-      return '<div class="stat-card"><div class="stat-num ' + cls + '">' + num + '</div><div class="stat-label">' + label + '</div></div>';
+    function statCard(num, label, cls, go) {
+      /* sunfleeting：统计卡可点击——周计划→词库、已练/掌握/错词→生词本对应分组、待复习→复习页 */
+      return '<div class="stat-card' + (go ? ' stat-link' : '') + '"' +
+        (go ? ' data-go="' + go + '" title="点击查看" style="cursor:pointer"' : '') + '>' +
+        '<div class="stat-num ' + cls + '">' + num + '</div><div class="stat-label">' + label + '</div></div>';
     }
+
+    TW.$$('.stat-card[data-go]', host).forEach(function (el) {
+      el.addEventListener('click', function () { TW.app.go(el.dataset.go); });
+    });
 
     TW.$$('.book-card', host).forEach(function (el) {
       el.addEventListener('click', function () { TW.app.go('/books?book=' + el.dataset.book); });

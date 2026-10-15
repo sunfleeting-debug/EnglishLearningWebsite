@@ -649,6 +649,20 @@ def main():
         check("清空后记录消失",
               pg.evaluate("() => JSON.parse(localStorage.getItem('tw.searchHistory') || '[]').length"), 0)
 
+        # 首页统计卡可点击（sunfleeting：点数字要看得到明细）
+        goto("#/")
+        cards = pg.evaluate("() => Array.from(document.querySelectorAll('.stat-card[data-go]')).map(function (x) { return x.dataset.go; })")
+        check("5 张统计卡都可点击且目标正确", cards,
+              ["/books", "/review?tab=learned", "/review?tab=master", "/review?tab=wrong", "/srs"])
+        pg.locator(".stat-card[data-go='/review?tab=wrong']").click()
+        pg.wait_for_timeout(900)
+        check("点「待攻克错词」卡跳生词本对应分组",
+              ("#/review?tab=wrong" in pg.evaluate("() => location.hash") and
+               "共 " in pg.evaluate("() => document.body.innerText")), True)
+        goto("#/review?tab=learned")
+        t_learned = pg.evaluate("() => document.body.innerText")
+        check("生词本有「已练过」tab 且有词条", ("已练过" in t_learned and "共 " in t_learned), True)
+
         # ---------- 详解页拼写练习（sunfleeting：详解页也要能练打单词）----------
         # 回到已知本地词 drastic：近义词跳转目标可能是 ext 词条（没有拼写练习卡）
         pg.goto(BASE + "#/word?id=" + str(dr_id), wait_until="domcontentloaded")

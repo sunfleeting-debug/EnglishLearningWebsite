@@ -347,6 +347,10 @@ select.field { cursor: pointer; }
 .hero p { margin: 0 0 1.3rem; color: var(--text-2); font-size: 14px; max-width: 46ch; }
 
 .stat-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.95rem 1.05rem; }
+/* 统计卡可点击（sunfleeting：点数字要看得到明细）：hover 边框着色 + 轻微上浮 */
+.stat-card.stat-link { transition: transform .15s ease, border-color .15s ease; }
+.stat-card.stat-link:hover { border-color: var(--accent); transform: translateY(-2px); }
+.stat-card.stat-link:active { transform: translateY(0); }
 .stat-num { font-size: 2rem; font-weight: 500; font-family: var(--font-display); letter-spacing: -0.02em; line-height: 1.05; }
 .stat-label { font-size: 12.5px; color: var(--text-3); margin-top: 0.15rem; }
 .stat-num.accent { color: var(--accent); }
