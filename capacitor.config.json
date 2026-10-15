@@ -1,0 +1,7 @@
+{
+  "appId": "com.englishlearningstation.app",
+  "appName": "英语学习站",
+  "webDir": "www",
+  "androidScheme": "https",
+  "loggingBehavior": "none"
+}

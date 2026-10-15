@@ -41,6 +41,8 @@ class RangeHandler(SimpleHTTPRequestHandler):
     """支持单段 Range 的静态文件处理器。"""
 
     protocol_version = "HTTP/1.1"   # 支持 keep-alive，也对 Range 必需
+    # Windows 的 MIME 注册表不一定包含 WebP；固定类型以便阅读页正确识别图片。
+    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".webp": "image/webp"}
 
     def send_head(self):
         # 🔴 每次请求入口都必须清空 Range 长度。

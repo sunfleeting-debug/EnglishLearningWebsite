@@ -26,11 +26,16 @@
     var stats = TW.store.srs.stats();
     var due = TW.store.srs.dueList();
     var intervals = TW.store.srs.INTERVALS;
+    var sentenceSummary = TW.sentences ? TW.sentences.summary() : null;
+    var sentenceCard = sentenceSummary ? '<div class="sentence-overview-link"><div><h3>句子也可以按时复习</h3><p>今日到期 ' + sentenceSummary.due +
+      ' 组 · 待攻克 ' + sentenceSummary.wrong + ' 组 · 句子与单词分别安排，不互相混计。</p></div>' +
+      '<a class="btn" href="#/sentences?tab=review">复习句子 ' + TW.icon('arrowRight', 15) + '</a></div>' : '';
 
     /* ---------- 空闲态 ---------- */
     if (!stats.total) {
       var learnedN0 = TW.data.progressItems('learned').length;
       host.innerHTML = '<div class="wrap">' + TW.ui.pageHead('复习', '艾宾浩斯遗忘曲线复习队列') +
+        sentenceCard +
         '<div class="card card-pad">' + TW.ui.empty('复习队列还是空的') +
           '<div class="muted small" style="text-align:center;max-width:560px;margin:0 auto 1rem">' +
             '在「练习」里答错的单词会自动进入复习队列：<b>当天重新回到队列</b>，之后每答对一次，' +
@@ -112,6 +117,7 @@
 
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead('复习', '答错的词自动入队，按 ' + intervals.join(' / ') + ' 天的间隔滚动复习') +
+      sentenceCard +
 
       '<div class="grid stats" style="margin-bottom:1.2rem">' +
         '<div class="stat-card"><div class="stat-num accent">' + stats.due + '</div><div class="stat-label">今日待复习</div></div>' +

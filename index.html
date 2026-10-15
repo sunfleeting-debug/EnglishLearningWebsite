@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>英语学习站 · 打字背单词 · 听读 · 词典</title>
-  <meta name="description" content="基于六级词汇周计划音频整理的单词本，支持看词打字、听音写词、看中文拼写、翻卡记忆等练习模式，含一词一卡的词典详解。" />
+  <title>英语学习站 · 打字背单词 · 句子练习 · 听读</title>
+  <meta name="description" content="打字背单词与递进句子练习，支持整句翻译、听写、原创分级课程、自定义素材导入和间隔复习，含词典详解与真题阅读。" />
   <!-- 移动端：主题色 / 添加到主屏幕 -->
-  <meta name="theme-color" content="#2f6df6" />
+  <meta name="theme-color" content="#26100d" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -15,6 +15,8 @@
   <link rel="apple-touch-icon" href="assets/img/icon-180.png" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%234b8bff'/><text x='50' y='70' font-size='58' font-family='monospace' font-weight='700' fill='white' text-anchor='middle'>A</text></svg>" />
   <link rel="stylesheet" href="assets/css/style.css" />
+  <link rel="stylesheet" href="assets/css/sentences.css" />
+  <script src="assets/js/pwa.js"></script>
 </head>
 <body>
   <div id="app">
@@ -31,11 +33,13 @@
   <script src="data/reading.js"></script>
   <script src="data/dicts/index.js"></script>
   <script src="data/quotes.js"></script>
+  <script src="data/sentences.js"></script>
 
   <!-- 应用脚本（按依赖顺序加载） -->
   <script src="assets/js/util.js"></script>
   <script src="assets/js/config.js"></script>
   <script src="assets/js/store.js"></script>
+  <script src="assets/js/sentences.js"></script>
   <script src="assets/js/api.js"></script>
   <script src="assets/js/sync.js"></script>
   <script src="assets/js/speech.js"></script>
@@ -45,6 +49,7 @@
   <script src="assets/js/views/books.js"></script>
   <script src="assets/js/views/word.js"></script>
   <script src="assets/js/views/practice.js"></script>
+  <script src="assets/js/views/sentences.js"></script>
   <script src="assets/js/views/review.js"></script>
   <script src="assets/js/views/srs.js"></script>
   <script src="assets/js/views/audio.js"></script>

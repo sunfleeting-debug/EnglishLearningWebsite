@@ -8,6 +8,7 @@
     { key: 'home', label: '首页', path: '/', icon: 'home' },
     { key: 'books', label: '词库', path: '/books', icon: 'book' },
     { key: 'practice', label: '练习', path: '/practice', icon: 'keyboard' },
+    { key: 'sentences', label: '句子练习', path: '/sentences', icon: 'sentence', badge: 'sentences' },
     { key: 'srs', label: '复习', path: '/srs', icon: 'refresh', badge: 'srs' },
     { key: 'review', label: '生词本', path: '/review', icon: 'star', badge: 'review' },
     { key: 'audio', label: '音频跟读', path: '/audio', icon: 'headphone' },
@@ -17,6 +18,7 @@
     { key: 'account', label: '账号', path: '/account', icon: 'user' },
     { key: 'settings', label: '设置', path: '/settings', icon: 'settings' }
   ];
+  var MOBILE_PRIMARY = ['home', 'books', 'practice', 'sentences', 'srs'];
 
   /** 管理看板只对管理员显示（真正的权限判定在后端） */
   function navList() {
@@ -52,7 +54,7 @@
     var name = m ? m[1] : 'home';
     var map = {
       home: TW.views.home, books: TW.views.books, word: TW.views.word,
-      practice: TW.views.practice, srs: TW.views.srs,
+      practice: TW.views.practice, sentences: TW.views.sentences, srs: TW.views.srs,
       review: TW.views.review, audio: TW.views.audio, stats: TW.views.stats,
       reading: TW.views.reading, resources: TW.views.resources, settings: TW.views.settings,
       account: TW.views.account, admin: TW.views.admin
@@ -81,15 +83,20 @@
     var c = TW.store.counts();
     var due = TW.store.srs.dueCount();
     var host = document.getElementById('sidebar');
-    var items = navList().map(function (n) {
+    var navItems = navList();
+    var items = navItems.map(function (n) {
       var badge = '';
       if (n.badge === 'review') {
         var num = c.wrong + c.fav;
         badge = num ? '<span class="nav-badge">' + num + '</span>' : '';
       } else if (n.badge === 'srs') {
         badge = due ? '<span class="nav-badge srs">' + due + '</span>' : '';
+      } else if (n.badge === 'sentences' && TW.sentences) {
+        var sentenceDue = TW.sentences.summary().due;
+        badge = sentenceDue ? '<span class="nav-badge srs">' + sentenceDue + '</span>' : '';
       }
-      return '<button class="nav-item' + (n.key === active ? ' active' : '') + '" data-path="' + n.path + '">' +
+      var secondary = MOBILE_PRIMARY.indexOf(n.key) < 0;
+      return '<button aria-label="' + TW.esc(n.label) + '" class="nav-item' + (n.key === active ? ' active' : '') + (secondary ? ' mobile-secondary' : '') + '" data-path="' + n.path + '">' +
         '<span class="nav-ico">' + TW.icon(n.icon) + '</span>' +
         '<span class="nav-label">' + n.label + '</span>' + badge + '</button>';
     }).join('');
@@ -103,13 +110,17 @@
       '<i class="sync-dot ' + snap.status + '" title="' + TW.esc(snap.status) + '"></i>' +
       '</button>';
 
+    var secondaryItems = navItems.filter(function (n) { return MOBILE_PRIMARY.indexOf(n.key) < 0; }).map(function (n) {
+      return '<button class="mobile-more-item' + (n.key === active ? ' active' : '') + '" data-path="' + n.path + '">' + TW.icon(n.icon, 18) + '<span>' + TW.esc(n.label) + '</span></button>';
+    }).join('');
     host.innerHTML =
       '<div class="brand">' +
         '<div class="brand-logo">A</div>' +
         '<div class="brand-text"><span class="brand-name">英语学习站</span>' +
         '<span class="brand-sub">本地词库</span></div>' +
       '</div>' +
-      '<nav class="nav">' + items + '</nav>' +
+      '<nav class="nav">' + items + '<button aria-label="更多功能" class="nav-more-toggle" id="nav-more-toggle" type="button">' + TW.icon('list', 19) + '<span class="nav-label">更多</span></button></nav>' +
+      '<div class="mobile-more-sheet" id="mobile-more-sheet" hidden><div class="mobile-more-head"><b>更多功能</b><button class="icon-btn" id="mobile-more-close" aria-label="关闭更多功能">' + TW.icon('x', 18) + '</button></div><div class="mobile-more-grid">' + secondaryItems + '</div></div>' +
       '<div class="sidebar-foot">' +
         footUser +
         '<button class="icon-btn" id="theme-btn" title="切换主题">' + TW.icon(TW.store.settings.theme === 'dark' ? 'sun' : 'moon') + '</button>' +
@@ -122,6 +133,13 @@
     if (fu) fu.addEventListener('click', function () { go(fu.dataset.path); });
     var tb = TW.$('#theme-btn', host);
     if (tb) tb.addEventListener('click', toggleTheme);
+    var more = TW.$('#nav-more-toggle', host);
+    var sheet = TW.$('#mobile-more-sheet', host);
+    function closeMore() { if (sheet) sheet.hidden = true; }
+    if (more && sheet) more.addEventListener('click', function () { sheet.hidden = !sheet.hidden; });
+    var close = TW.$('#mobile-more-close', host);
+    if (close) close.addEventListener('click', closeMore);
+    TW.$$('.mobile-more-item', host).forEach(function (b) { b.addEventListener('click', function () { closeMore(); go(b.dataset.path); }); });
   }
 
   function applyTheme() {
@@ -188,7 +206,7 @@
      焦点在输入框/文本域里时不响应 —— Esc 在输入框里是清空/退出编辑的惯例。 */
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
-    if (!current || current.name === 'home' || current.name === 'practice' ||
+    if (!current || current.name === 'home' || current.name === 'practice' || current.name === 'sentences' ||
         current.name === 'word' || current.name === 'error') return;
     var tag = (document.activeElement && document.activeElement.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -214,6 +232,7 @@
   function boot() {
     TW.store.load();
     TW.store.migrate();          // 补词面快照 + 首次把历史错词导入复习队列
+    if (TW.sentences) TW.sentences.subscribe(function () { renderNav(current.name); });
     applyTheme();
     TW.speech.sound.enabled = TW.store.settings.keySound;
     if (!location.hash) location.hash = '/';

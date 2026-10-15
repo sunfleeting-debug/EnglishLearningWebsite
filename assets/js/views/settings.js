@@ -69,6 +69,7 @@
           '<div class="card-title" style="font-weight:400;font-size:13px;color:var(--text-3);margin:.5rem 0 .8rem">' +
             '当前共有 ' + TW.store.counts().touched + ' 个单词的学习记录，复习队列 ' +
             TW.store.srs.stats().total + ' 词。数据仅存本机，清理浏览器数据会丢失。' +
+            (TW.sentences ? ' 句子练习已学 ' + TW.sentences.summary().learned + ' 组，句子课程与进度会一并备份。' : '') +
           '</div>' +
           '<div class="row">' +
             '<button class="btn" id="data-export">' + TW.icon('download', 15) + ' 导出备份</button>' +
@@ -120,7 +121,9 @@
 
     /* 导入导出 */
     TW.$('#data-export', host).addEventListener('click', function () {
-      var blob = new Blob([JSON.stringify(TW.store.state, null, 2)], { type: 'application/json' });
+      var backup = Object.assign({}, TW.store.state);
+      if (TW.sentences) backup.sentences = TW.sentences.exportState();
+      var blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = 'typingcet-backup-' + TW.store.today() + '.json';
@@ -136,6 +139,7 @@
       fr.onload = function () {
         try {
           var d = JSON.parse(fr.result);
+          if (d.sentences && TW.sentences) TW.sentences.importState(d.sentences);
           if (d.settings) TW.store.state.settings = Object.assign({}, TW.store.settings, d.settings);
           if (d.progress) TW.store.state.progress = d.progress;
           if (d.daily) TW.store.state.daily = d.daily;
@@ -145,7 +149,7 @@
           TW.store.save();
           TW.toast('导入成功', 'ok');
           TW.app.render();
-        } catch (err) { TW.toast('文件格式不正确', 'err'); }
+        } catch (err) { TW.toast(err.message || '文件格式不正确', 'err'); }
       };
       fr.readAsText(f);
     });
@@ -159,6 +163,7 @@
     TW.$('#data-reset', host).addEventListener('click', function () {
       if (confirm('确定清空全部学习记录吗？此操作不可撤销。')) {
         TW.store.resetAll();
+        if (TW.sentences) TW.sentences.resetProgress();
         TW.toast('已清空学习记录');
         TW.app.render();
       }

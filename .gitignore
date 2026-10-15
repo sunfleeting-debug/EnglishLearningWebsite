@@ -8,6 +8,8 @@ tools/__pycache__/
 __pycache__/
 *.pyc
 node_modules/
+www/
+.npm-cache/
 _ref_typewords/
 _target_repo/
 

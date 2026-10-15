@@ -1,0 +1,22 @@
+{
+  "name": "english-learning-station-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Mobile packaging tools for the zero-build English Learning Station",
+  "type": "module",
+  "scripts": {
+    "mobile:prepare": "node tools/copy-web-assets.mjs",
+    "mobile:sync": "npm run mobile:prepare && npx cap sync",
+    "mobile:android": "npm run mobile:sync && npx cap open android",
+    "mobile:ios": "npm run mobile:sync && npx cap open ios",
+    "mobile:run:android": "npm run mobile:sync && npx cap run android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/core": "^6.2.2",
+    "@capacitor/ios": "^6.2.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.2"
+  }
+}

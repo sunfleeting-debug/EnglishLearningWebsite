@@ -21,6 +21,7 @@
   function render(host) {
     var c = TW.store.counts();
     var daily = TW.store.state.daily;
+    var sentenceStats = TW.sentences ? TW.sentences.summary() : null;
 
     // 近 14 天做题量
     var days = lastDays(14);
@@ -87,6 +88,9 @@
     host.innerHTML =
       '<div class="wrap">' +
         TW.ui.pageHead('学习统计', '数据保存在本机浏览器，换设备不会同步') +
+        (sentenceStats ? '<div class="sentence-overview-link"><div><h3>句子练习</h3><p>已练 ' + sentenceStats.learned + ' / ' + sentenceStats.total +
+          ' 组 · 今日完成 ' + sentenceStats.doneToday + ' 组 · 独立答对 ' + sentenceStats.rightToday + ' 组 · 到期复习 ' + sentenceStats.due + ' 组（仅本机记录）</p></div>' +
+          '<a class="btn" href="#/sentences">查看句子课程 ' + TW.icon('arrowRight', 15) + '</a></div>' : '') +
         '<div class="grid stats" style="margin-bottom:1.2rem">' +
           card(c.total, '周计划词数', '') +
           card(c.touched, '已练过', 'accent') +
