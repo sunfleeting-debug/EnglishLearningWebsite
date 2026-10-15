@@ -133,7 +133,12 @@ def main():
         pg.screenshot(path=str(SHOTS / "30-live-decks.png"))
         pg.goto(URL + "#/books?book=cet6", wait_until="load", timeout=60000)
         pg.wait_for_timeout(1800)
-        check("线上词典按需加载成功", "cet6" in pg.evaluate("() => TW.data.decksLoaded()"), True)
+        # 部署刚完成时 CDN 边缘冷缓存，大文件可能一次性拉超时——失败后多等 4s 重查一次
+        ok_deck = pg.evaluate("() => 'cet6' in TW.data.decksLoaded()")
+        if not ok_deck:
+            pg.wait_for_timeout(4000)
+            ok_deck = pg.evaluate("() => 'cet6' in TW.data.decksLoaded()")
+        check("线上词典按需加载成功", ok_deck, True)
         check("线上词典词表有词条",
               pg.evaluate("() => document.querySelectorAll('#bk-list .wl-row').length") > 0, True)
 
