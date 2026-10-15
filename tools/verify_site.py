@@ -490,6 +490,40 @@ def main():
         check("今日待复习清零", pg.evaluate("() => TW.store.srs.dueCount()"), 0)
         pg.screenshot(path=str(SHOTS / "31-srs-done.png"))
 
+        # srs 会话续接不得残留已复习完的词表（sunfleeting：复习页写着 6 个、点进去是上次的 20 个）
+        pg.evaluate("""() => {
+          TW.WORDS.filter(function (x) { return !TW.store.srs.get(x.word); }).slice(0, 3)
+            .forEach(function (x) { TW.store.srs.enroll(x.word, x.book || '', 't'); });
+        }""")
+        goto_fresh("#/srs", 1200)
+        pg.click("#sr-start")
+        pg.wait_for_timeout(1000)
+        for _ in range(3):   # 练完这一组（3 题，全对 → 全部升档移出到期）
+            w2 = pg.evaluate("() => (TW.$('#p-word')||{textContent:''}).textContent.trim()")
+            if not w2:
+                break
+            pg.fill("#p-input", w2)
+            pg.keyboard.press("Enter")
+            pg.wait_for_timeout(500)
+            pg.keyboard.press("Enter")   # 反馈页继续
+            pg.wait_for_timeout(800)
+        if pg.locator("[data-act='again']").count() == 1:
+            pg.locator("[data-act='again']").click()   # 「再来一轮」→ resume 残留（整组已复习完）
+            pg.wait_for_timeout(800)
+        goto_fresh("#/", 800)                           # 中途离开
+        # 一个新词到期
+        pg.evaluate("""() => {
+          const x = TW.WORDS.find(function (w) { return !TW.store.srs.get(w.word); });
+          if (x) TW.store.srs.enroll(x.word, x.book || '', 't');
+        }""")
+        goto("#/srs", 1200)
+        pg.click("#sr-start")
+        pg.wait_for_timeout(1200)
+        cur_w = pg.evaluate("() => (TW.$('#p-word')||{textContent:''}).textContent.trim()")
+        new_word = pg.evaluate("() => TW.store.srs.dueList().map(function (r) { return r.w; })[0]")
+        check("srs 续接不残留已复习完的词表（进入即当前到期词）",
+              bool(cur_w) and cur_w == new_word, True)
+
         # 设置页有复习相关开关
         goto("#/settings")
         check("设置里有「自动加入复习队列」开关",

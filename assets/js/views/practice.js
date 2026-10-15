@@ -140,6 +140,18 @@
         不命中（首次进入 / 真刷新 / 进度被重置 / 换了词源或筛选）才用传入的新词表。 */
     function pickSession(fresh) {
       if (resume && resume.key === sKey && resume.session && resume.session.length) {
+        if (cfg.src === 'srs') {
+          /* 🔴 srs 源专有校验（sunfleeting：复习页写着 6 个、点进去是上次复习完的 20 个）：
+             复习会改变到期集合（答对升档移出、答错保持），而 resume 快照不感知——
+             「再来一轮」后退出 / 复习完成残留的快照会把整组旧词带回来。
+             未练部分与当前到期集合的交集为空 ⇒ 这组已复习完，作废续接重新按到期切；
+             交集非空（练到一半退出 / 反馈页切模式）才续接。 */
+          var dueNow = {};
+          TW.store.srs.dueList().forEach(function (r) { dueNow[r.w] = 1; });
+          var left = resume.session.slice(resume.st.i);
+          var hit = left.some(function (w) { return dueNow[w.word]; });
+          if (!hit) { resumed = null; return fresh; }
+        }
         resumed = resume;
         return resume.session;
       }
