@@ -92,8 +92,8 @@
       var e = TW.data.ext(term);
       if (e) renderExt(host, term, e); else paintOnlineOnly(host, term, alive);
     }
-    if (w) TW.data.loadDict(ready);
-    TW.data.loadDictExt(ready);
+    if (w) TW.data.loadDict(ready, w.word);            // 只载这个词所在字母块（~150KB）
+    TW.data.loadDictExt(ready, w ? w.word : term);
   }
 
   function paintMissing(host) {

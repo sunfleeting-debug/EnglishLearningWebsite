@@ -603,10 +603,11 @@ def main():
         except Exception:
             pass
         pg.wait_for_timeout(400)
-        check("词典卡已按需加载", pg.evaluate("() => TW.data.dictReady()"), True)
-        check("扩展词条已按需加载", pg.evaluate("() => TW.data.extReady()"), True)
+        check("词典卡已按需加载（drastic 字母块）", pg.evaluate("() => TW.data.dictLetterReady('drastic')"), True)
+        check("扩展词条已按需加载（同字母块）", pg.evaluate("() => TW.data.extLetterReady('drastic')"), True)
         dict_n = pg.evaluate("() => Object.keys(TW.DICT || {}).length")
-        check("词典卡数量 >= 2000", dict_n >= 2000, True)
+        check("词典卡数量 >= 100（按字母分块，单块就够用）", dict_n >= 100, True)
+        check("整本词典卡未被全量加载（分块生效）", pg.evaluate("() => TW.data.dictReady()"), False)
         pg.screenshot(path=str(SHOTS / "19-word-detail.png"))
         detail_word = pg.evaluate("() => (TW.$('.dc-word') || {}).textContent")
         check("详情页显示单词", (detail_word or "").strip(), "drastic")
@@ -837,7 +838,10 @@ def main():
         check("练习页 Esc 仍是「跳过」而非返回", "practice" in pg.evaluate("() => location.hash"), True)
 
         # 有道没有反义词的词也不应报错；找一个有反义词的词看板块
+        # （词典卡已按字母分块，这里显式载 a 块——abundant 的反义词是 scarce）
         goto("#/")
+        pg.evaluate("() => new Promise(function (res) { TW.data.loadDict(res, 'abundant'); })")
+        pg.wait_for_timeout(600)
         ant_word = pg.evaluate("() => { for (var k in TW.DICT) { if (TW.DICT[k].ant && TW.DICT[k].ant.length) return k; } return ''; }")
         if ant_word:
             aw_id = pg.evaluate("(w) => (TW.WORDS.find(x => x.word.toLowerCase() === w) || {}).id", ant_word)

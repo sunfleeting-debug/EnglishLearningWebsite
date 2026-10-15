@@ -11,13 +11,10 @@
   var WORDS = TW.WORDS || [];
   var BOOKS = TW.BOOKS || [];
   var DECKS_META = TW.DECKS_META || [];
-  // 词典卡与扩展词条体积大（dict.js 约 3.9MB、dict-ext.js 约 1MB）。
-  // 为照顾移动端首屏，这两份**不在 index.html 里静态引入**，而是打开单词详情页时才按需注入
-  // <script>（经典脚本不受 CORS 限制，file:// 下同样可用）。
-  var DICT = {};
-  var DICT_EXT = {};
-  var dictLoading = null, dictReady = false;
-  var extLoading = null, extReady = false;
+  // 词典卡与扩展词条按**首字母分块**按需加载（data/dict/<字母>.js，生成器
+  // tools/build_dict_letters.py）：整本 4MB 在慢网要 96s+，详解页只需要当前词
+  // 那一块。分块注入后自动累计合并进 TW.DICT / TW.DICT_EXT，读数据直接看这两处。
+  // 不在 index.html 里静态引入，file:// 下同样可用（经典脚本不受 CORS 限制）。
   var byId = {};
   var byWordMap = {};              // 小写单词 -> 词条（跨词跳转用）
   var byBookMap = {};
@@ -260,7 +257,7 @@
     if (!word) return null;
     var cands = baseForms(word);
     for (var i = 0; i < cands.length; i++) {
-      if (DICT_EXT[cands[i]]) return DICT_EXT[cands[i]];
+      if (TW.DICT_EXT && TW.DICT_EXT[cands[i]]) return TW.DICT_EXT[cands[i]];
     }
     return null;
   }
@@ -268,7 +265,7 @@
   /** 取单词的词典卡（若无则 null） */
   function card(word) {
     if (!word) return null;
-    return DICT[String(word).toLowerCase()] || null;
+    return (TW.DICT || {})[String(word).toLowerCase()] || null;
   }
 
   /* ---------- 词典词面索引（data/deck-index.js，按需加载）----------
@@ -392,42 +389,68 @@
         onlineLookup(q, function (res) {
           cb(res ? { type: 'online', res: res } : null);
         });
+      }, q);
+    });
+  }
+
+  /* ---------- 按需加载大文件：词典卡（按首字母分块） ----------
+     整本 dict.js 4MB / dict-ext.js 1MB 在慢网下要 96s+（2026-10-15 实测），
+     而详解页一次只需要当前词那一块。分块文件由 tools/build_dict_letters.py 生成：
+     data/dict/<字母>.js、data/dict-ext/<字母>.js，注入后自动 Object.assign 进
+     TW.DICT / TW.DICT_EXT（累计合并，已载的块不重复拉）。 */
+
+  var DICT_LETTERS = 'abcdefghijklmnopqrstuvwxyz0'.split('');
+  var dictPartWaiting = {};    // 块名 -> [cb]（去重并发注入）
+  var dictPartLoaded = {};     // 块名 -> true
+  var extPartWaiting = {};
+  var extPartLoaded = {};
+
+  /** 词条所属分块：取首个字母/数字（跳过前导符号；与 build_dict_letters.py 对应） */
+  function dictLetterOf(term) {
+    var s = String(term || '').toLowerCase();
+    var i = 0;
+    while (i < s.length && !(('a' <= s[i] && s[i] <= 'z') || ('0' <= s[i] && s[i] <= '9'))) i++;
+    var c = i < s.length ? s[i] : '0';
+    return (('a' <= c && c <= 'z') || ('0' <= c && c <= '9')) ? c : '0';
+  }
+
+  function loadPart(dir, letter, waiting, loaded, cb) {
+    if (loaded[letter]) { if (cb) cb(true); return; }
+    if (waiting[letter]) { if (cb) waiting[letter].push(cb); return; }
+    waiting[letter] = cb ? [cb] : [];
+    injectOnce(dir + '/' + letter + '.js', function () {
+      loaded[letter] = true;
+      var q = waiting[letter]; delete waiting[letter];
+      (q || []).forEach(function (f) { if (f) f(true); });
+    }, function () {
+      var q = waiting[letter]; delete waiting[letter];
+      (q || []).forEach(function (f) { if (f) f(false); });
+    });
+  }
+
+  /** 请求一批分块，全部落定（成功或失败）后回调一次 */
+  function loadParts(dir, letters, waiting, loaded, cb) {
+    var need = letters.filter(function (L) { return !loaded[L]; });
+    if (!need.length) { if (cb) cb(); return; }
+    var left = need.length;
+    need.forEach(function (L) {
+      loadPart(dir, L, waiting, loaded, function () {
+        if (--left === 0) { if (cb) cb(); }
       });
     });
   }
 
-  /* ---------- 按需加载大文件：词典卡 ---------- */
-
-  /** 加载 data/dict.js（词典卡） */
-  function loadDict(cb) {
-    if (dictReady) { if (cb) cb(); return; }
-    if (dictLoading) { if (cb) dictLoading.push(cb); return; }
-    dictLoading = cb ? [cb] : [];
-    injectOnce('data/dict.js', function () {
-      DICT = TW.DICT || {};
-      dictReady = true;
-      var q = dictLoading; dictLoading = null;
-      q.forEach(function (f) { if (f) f(); });
-    }, function () {
-      var q = dictLoading; dictLoading = null;
-      q.forEach(function (f) { if (f) f(); });
-    });
+  /** 加载词典卡。term 给出时只载该词所在字母块（详解页路径）；
+      不给 term 则载全部（兜底/测试路径，慎用）。 */
+  function loadDict(cb, term) {
+    var letters = term ? [dictLetterOf(term)] : DICT_LETTERS;
+    loadParts('data/dict', letters, dictPartWaiting, dictPartLoaded, cb);
   }
 
-  /** 加载 data/dict-ext.js（扩展词条：非本词书的近义/反义词） */
-  function loadDictExt(cb) {
-    if (extReady) { if (cb) cb(); return; }
-    if (extLoading) { if (cb) extLoading.push(cb); return; }
-    extLoading = cb ? [cb] : [];
-    injectOnce('data/dict-ext.js', function () {
-      DICT_EXT = TW.DICT_EXT || {};
-      extReady = true;
-      var q = extLoading; extLoading = null;
-      q.forEach(function (f) { if (f) f(); });
-    }, function () {
-      var q = extLoading; extLoading = null;
-      q.forEach(function (f) { if (f) f(); });
-    });
+  /** 加载扩展词条（同上，按块） */
+  function loadDictExt(cb, term) {
+    var letters = term ? [dictLetterOf(term)] : DICT_LETTERS;
+    loadParts('data/dict-ext', letters, extPartWaiting, extPartLoaded, cb);
   }
 
   /* ---------- 统一的书目列表（周计划 + 词典） ---------- */
@@ -467,8 +490,17 @@
       for (var i = 0; i < DECKS_META.length; i++) if (!DECK_WORDS[DECKS_META[i].id]) return false;
       return true;
     },
-    dictReady: function () { return dictReady; },
-    extReady: function () { return extReady; },
+    /** 整本词典卡是否全部载入（分块化后通常只有部分字母在内存，详解决态看 dictLetterReady） */
+    dictReady: function () {
+      return DICT_LETTERS.every(function (L) { return !!dictPartLoaded[L]; });
+    },
+    extReady: function () {
+      return DICT_LETTERS.every(function (L) { return !!extPartLoaded[L]; });
+    },
+    /** 某个字母块的词典卡/扩展词条是否已载入（详解页按需判断用） */
+    dictLetterReady: function (letter) { return !!dictPartLoaded[dictLetterOf(letter)]; },
+    extLetterReady: function (letter) { return !!extPartLoaded[dictLetterOf(letter)]; },
+    dictLetterOf: dictLetterOf,
     byId: function (id) { return byId[id]; },
     byWord: byWord,
     hasWord: hasWord,

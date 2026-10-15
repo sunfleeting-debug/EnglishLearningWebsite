@@ -73,8 +73,8 @@ def main():
             pass
         pg.wait_for_timeout(600)
         check("线上详情页渲染", (pg.evaluate("() => (TW.$('.dc-word')||{}).textContent") or "").strip(), "drastic")
-        check("线上词典卡按需加载成功", pg.evaluate("() => TW.data.dictReady()"), True)
-        check("线上扩展词条按需加载成功", pg.evaluate("() => TW.data.extReady()"), True)
+        check("线上词典卡按需加载成功", pg.evaluate("() => TW.data.dictLetterReady('drastic')"), True)
+        check("线上扩展词条按需加载成功", pg.evaluate("() => TW.data.extLetterReady('drastic')"), True)
         pg.screenshot(path=str(SHOTS / "24-live-word.png"), full_page=True)
 
         # 近义词跳转
