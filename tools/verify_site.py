@@ -139,21 +139,32 @@ def main():
         else:
             check("dict-ext 兜底（跳过：首页词表已覆盖全部键）", True, True)
 
-        # 词典词面索引兜底：未加载词典里的词（deceptive 在 gre/toefl，本地从未加载过）
+        # 词典词面索引兜底：词库全量加载后 deceptive 直接被 searchAll 命中
+        # （首页搜索会后台拉齐 13 本词典；兜底链仅在载入窗口期/离线时使用）
         pg.fill("#hs-input", "deceptive")
-        pg.wait_for_timeout(2500)                 # 首次要拉 deck-index.js（约 400KB）
+        pg.wait_for_timeout(2500)                 # 首次要拉全部词典（~3.4MB）
         res4 = pg.evaluate("() => Array.from(document.querySelectorAll('.hs-item')).map(b => b.dataset.w)")
         check("未加载词典里的词也能搜到（deceptive）", "deceptive" in res4, True, extra=str(res4))
-        check("结果标注所属词典", "词典" in pg.evaluate(
-            "() => (document.querySelector('.hs-item .hs-brief')||{textContent:''}).textContent"), True)
+        check("词典词结果标注来源", "词典" in pg.evaluate(
+            "() => (document.querySelector('.hs-item .hs-src')||{textContent:''}).textContent"), True)
         pg.click(".hs-item")
-        pg.wait_for_timeout(2200)                 # 详解页要 loadBook 那本词典
+        pg.wait_for_timeout(2200)
         h4 = pg.evaluate("() => decodeURIComponent(location.hash)")
-        check("点击进入词典词条详解", ("id=gre:deceptive" in h4) or ("id=toefl:deceptive" in h4), True,
+        check("点击进入词典词条详解", ("w=deceptive" in h4) or ("id=gre:deceptive" in h4) or ("id=toefl:deceptive" in h4), True,
               extra=h4)
         check("词典词条详解渲染出释义", pg.locator(".dc-means").count() > 0, True)
 
         goto_fresh("#/")                             # deceptive 段点进详解页了，先回首页
+
+        # sunfleeting：中文搜释义不再截 8 条——词库全量加载后要尽可能全列 + 脚注计数
+        pg.fill("#hs-input", "反对")
+        pg.wait_for_timeout(900)
+        n_fandui = pg.evaluate("() => document.querySelectorAll('.hs-item').length")
+        check("中文搜「反对」结果超过旧上限 8 条", n_fandui > 8, True, extra="n=%d" % n_fandui)
+        check("结果区有「共 N 条结果」脚注", pg.evaluate(
+            "() => (document.querySelector('.hs-count')||{textContent:''}).textContent.indexOf('共 ') === 0"), True)
+        check("结果区可滚动（不把首页无限顶长）", pg.evaluate(
+            "() => { const el = document.querySelector('.hs-res'); return el && el.scrollHeight > el.clientHeight; }"), True)
 
         # 在线词典兜底正例：本地（周计划+12 词典+dict-ext）全没有的词 → 有道 suggest
         # JSONP 拿中文简释（依赖外网；有道接口很稳，硬断言）

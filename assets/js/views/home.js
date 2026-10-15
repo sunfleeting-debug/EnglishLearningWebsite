@@ -183,10 +183,15 @@
       '</button>';
     }
 
-    function hsShow(list, q) {
-      resBox.innerHTML = list.length
-        ? list.map(hsItem).join('')
-        : '<div class="hs-empty">词库里没有「' + TW.esc(q) + '」</div>';
+    function hsShow(list, q, partial) {
+      if (list.length) {
+        var foot = '共 ' + list.length + ' 条结果';
+        if (partial) foot += '（词典载入中，稍候自动补全）';
+        else if (list.length >= SEARCH_CAP) foot += '（已达展示上限，可换更精确的关键词）';
+        resBox.innerHTML = list.map(hsItem).join('') + '<div class="hs-count">' + foot + '</div>';
+      } else {
+        resBox.innerHTML = '<div class="hs-empty">词库里没有「' + TW.esc(q) + '」</div>';
+      }
       resBox.hidden = false;
       TW.$$('.hs-item', resBox).forEach(function (el) {
         el.addEventListener('click', function () { hsGo(el.dataset.w); });
@@ -249,11 +254,36 @@
       });
     }
 
+    /* sunfleeting：搜索要尽可能全。词典是懒加载的，第一次搜索时后台把 13 本词典
+       一次性拉齐（~3.4MB，只此一次），载完若输入没变就自动重查补全；
+       载入期间先展示已有结果（脚注提示会补全），不急着下「没有」的结论。 */
+    var SEARCH_CAP = 100;   // 最多展示 100 条：够翻，又不至于把首页拖垮
+    var decksState = 0;     // 0=未发起 1=载入中 2=发起过（成败看 decksAll）
+    var decksAll = false;   // 13 本词典是否全部载齐
+
+    function kickDecks() {
+      if (decksState) return;
+      decksState = 1;
+      TW.data.ensureBooks(TW.data.decks.map(function (d) { return d.id; }), function () {
+        decksState = 2;
+        decksAll = TW.data.allDecksReady();
+        var v = input.value.trim();
+        if (v) hsRun(v);            // 载齐（或失败）后按当前输入重查一遍
+      });
+    }
+
     function hsRun(q) {
       q = (q || '').trim();
       if (!q) { hsShowHistory(); return; }   // 清空输入 = 显示最近搜索记录
-      var list = TW.data.searchAll(q, 8);
-      if (list.length) { hsShow(list, q); return; }
+      kickDecks();
+      var list = TW.data.searchAll(q, SEARCH_CAP);
+      if (list.length) { hsShow(list, q, !decksAll); return; }
+      if (decksState === 1) {                // 词典还在载入：先别判「没有」，载完回调会重查
+        resBox.innerHTML = '<div class="hs-empty">正在载入全部词库…</div>';
+        resBox.hidden = false;
+        return;
+      }
+      if (!decksAll) { hsShow([], q); return; }   // 词典载入失败（离线等）：拿现有词库下结论
       // 只对「像英文单词的输入」走兜底链（中文释义搜不了词面索引/在线词典）
       if (!/^[a-zA-Z][a-zA-Z' -]*$/.test(q)) { hsShow([], q); return; }
       resBox.innerHTML = '<div class="hs-empty">正在查询…</div>';

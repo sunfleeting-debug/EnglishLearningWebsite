@@ -153,7 +153,7 @@
   function searchAll(q, cap) {
     q = (q || '').trim().toLowerCase();
     if (!q) return [];
-    cap = cap || 8;
+    cap = cap || 100;   // 默认也给足量：调用方想截断自己传小值
     var pool = WORDS.slice();
     Object.keys(DECK_WORDS).forEach(function (id) { pool = pool.concat(DECK_WORDS[id]); });
     var seen = {}, pre = [], mid = [];
@@ -429,6 +429,12 @@
     isDeck: function (id) { return !!metaOf(id); },
     deckMeta: metaOf,
     decksLoaded: function () { return Object.keys(DECK_WORDS); },
+    /** 全部词典（DECKS_META 里的每一本）是否都已载入——首页搜索用：
+        没载齐时只搜周计划+已加载词典，结果可能偏少 */
+    allDecksReady: function () {
+      for (var i = 0; i < DECKS_META.length; i++) if (!DECK_WORDS[DECKS_META[i].id]) return false;
+      return true;
+    },
     dictReady: function () { return dictReady; },
     extReady: function () { return extReady; },
     byId: function (id) { return byId[id]; },

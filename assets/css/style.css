@@ -1183,8 +1183,9 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 }
 .hs-box input::placeholder { color: var(--text-3); }
 
-.hs-res { margin-top: 0.6rem; display: flex; flex-direction: column; }
+.hs-res { margin-top: 0.6rem; display: flex; flex-direction: column; max-height: 65vh; overflow-y: auto; }
 .hs-res[hidden] { display: none; }
+.hs-count { padding: 0.55rem 0.7rem; font-size: 12px; color: var(--text-3); border-top: 1px solid var(--line-soft); }
 .hs-item {
   display: flex; align-items: baseline; gap: 0.6rem;
   width: 100%; text-align: left;
