@@ -633,6 +633,13 @@ def main():
         # 加载等待页 = 名句/习语积累卡（sunfleeting：与其白等，不如积累）。
         # 找一个字母块还没载过的词，把它的分块请求挂起 → 等待页持续显示；
         # 验完 abort 释放（分块加载失败会降级成无词典卡的详情页，属正常兜底）。
+        # 分支新增的 Service Worker 会接管页面请求（pwa.js 每次加载都重新注册并
+        # clients.claim()，绕过页面级 route 挂起）→ 本用例序列里把 register 桩掉
+        # （永不 settle 的 Promise，避免 unhandled rejection 进控制台错误计数）
+        pg.evaluate("() => navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); })")
+        pg.add_init_script("navigator.serviceWorker.register = function () { return new Promise(function () {}); };")
+        pg.reload()        # SPA 下 goto 只换 hash 不换文档——必须真刷新才能脱离 SW 控制并让 init 脚本生效
+        pg.wait_for_timeout(800)
         check("名句语料随首屏载入（≥30 句 + ≥30 条习语）",
               pg.evaluate("() => !!(TW.QUOTES && TW.QUOTES.quotes.length >= 30 && TW.QUOTES.idioms.length >= 30)"), True)
         qw = pg.evaluate("() => { const w = TW.WORDS.find(x => !TW.data.dictLetterReady(x.word));"
