@@ -53,6 +53,12 @@
     }
 
     var term = null;
+    /* 库外词的 id（`x:词面`，笔记/收藏列表、生词本跳过来）：转成 term 走扩展词条/在线链；
+       词面若后来进了本地词库则优先走本地详解 */
+    if (!w && id && id.indexOf('x:') === 0) {
+      term = id.slice(2);
+      w = TW.data.byWord(term) || null;
+    }
     if (!w && query.w) {
       w = TW.data.byWord(query.w);
       if (!w) {
@@ -432,22 +438,38 @@
     if (e.u) phon += '<button class="dc-phon" data-act="speak" data-say="' + TW.esc(term) + '" data-accent="us">美 /' + TW.esc(e.u) + '/</button>';
     if (e.k) phon += '<button class="dc-phon" data-act="speak" data-say="' + TW.esc(term) + '" data-accent="uk">英 /' + TW.esc(e.k) + '/</button>';
 
-    /* 学习笔记（sunfleeting：扩展词条也要能记笔记）。库外词没有词条 id，
-       按 `x:词面` 存进度（与练习页 resolvePool 对库外词的 id 规则一致），随云同步。 */
+    /* 库外词（`x:词面`）也走完整学习闭环（sunfleeting：收藏/掌握/拼写练习/笔记都要有）。
+       进度按 x:词面 存，收藏/掌握进生词本列表（词面快照已补齐），拼写计入连对。 */
     var noteId = 'x:' + term;
-    var savedNote = (TW.store.get(noteId) || {}).note || '';
+    var p = TW.store.get(noteId) || {};
+    var savedNote = p.note || '';
 
     var host_ = '<div class="wrap wrap-narrow dc-wrap">' +
       '<div class="card card-pad dc-head">' +
         '<div class="dc-crumb"><button class="btn sm ghost" id="dc-back">' + TW.icon('arrowLeft', 15) + ' 返回</button>' +
           '<span class="muted small">扩展词条</span></div>' +
         '<div class="dc-title"><div class="dc-word">' + TW.esc(term) + '</div>' +
-          '<div class="dc-actions"><button class="star-btn" data-act="speak" data-say="' + TW.esc(term) + '" title="朗读">' + TW.icon('volume') + '</button></div>' +
-        '</div>' +
+          '<div class="dc-actions">' +
+            '<button class="star-btn' + (p.fav ? ' on' : '') + '" data-act="fav" title="收藏（F）">' + TW.icon('star') + '</button>' +
+            '<button class="star-btn master' + (p.master ? ' on' : '') + '" data-act="master" title="已掌握（M）">' + TW.icon('check') + '</button>' +
+            '<button class="star-btn" data-act="speak" data-say="' + TW.esc(term) + '" title="朗读">' + TW.icon('volume') + '</button>' +
+          '</div></div>' +
         (phon ? '<div class="dc-phons">' + phon + '</div>' : '') +
-        '<div class="muted small">该词不在本地六级词书中，为词典卡的扩展词条（仅提供音标与释义）。</div>' +
+        '<div class="muted small">该词不在本地六级词书中，为词典卡的扩展词条。收藏/掌握/笔记随账号云同步。</div>' +
       '</div>' +
       sec('释义', 'file', transHtml({ trans: e.t })) +
+      sec('拼写练习', 'check',
+        '<div class="dc-spell">' +
+          '<div class="muted small">看释义，拼出这个单词：</div>' +
+          '<div style="margin-top:.3rem;font-size:1.05rem">' + TW.esc(transBrief(e.t)) + '</div>' +
+          '<div class="row" style="gap:.5rem;margin-top:.6rem">' +
+            '<input class="typing-input" id="dc-spell-input" autocomplete="off" autocorrect="off" ' +
+              'autocapitalize="off" spellcheck="false" placeholder="在这里打出这个单词…" style="flex:1" />' +
+            '<button class="btn sm primary" id="dc-spell-check" title="快捷键 Enter">检查 <kbd>Enter</kbd></button>' +
+            '<button class="btn sm ghost" id="dc-spell-reveal" title="快捷键 Alt+V（输入框里也能按）">看答案 <kbd>Alt+V</kbd></button>' +
+          '</div>' +
+          '<div id="dc-spell-fb" style="margin-top:.6rem"></div>' +
+        '</div>') +
       sec('学习笔记', 'edit',
         '<textarea class="dc-note" id="dc-note" rows="4" maxlength="2000" ' +
           'placeholder="记点心得：怎么记住它、哪里容易混、例句造一个…">' + TW.esc(savedNote) + '</textarea>' +
@@ -460,7 +482,88 @@
     var b1 = TW.$('#dc-back', host), b2 = TW.$('#dc-ext-back', host);
     if (b1) b1.addEventListener('click', back);
     if (b2) b2.addEventListener('click', back);
-    prevActionsCleanup = TW.ui.bindWordActions(host, null);
+    prevActionsCleanup = TW.ui.bindWordActions(host, noteId);   // 收藏/掌握/发音按 x:词面 记进度
+
+    /* ---- 键盘快捷键（同本地词条页：Esc 返回 · S 发音 · F 收藏 · M 掌握 · V 看答案；
+       扩展词条没有词表兄弟，没有 ←/→ 换词）---- */
+    function extSay(ok, html) {
+      var fb = TW.$('#dc-spell-fb', host);
+      if (fb) fb.innerHTML = '<div class="tag ' + (ok ? 'ok' : 'err') + '">' +
+        TW.icon(ok ? 'check' : 'x', 13) + ' ' + html + '</div>';
+      if (TW.speech && TW.speech.sound) TW.speech.sound[ok ? 'correct' : 'wrong']();
+    }
+    function extAnswers() { return [term]; }
+    var spRetyping = false, spWrongTries = 0;
+    function extCheck() {
+      var input = TW.$('#dc-spell-input', host);
+      if (!input) return;
+      var val = (input.value || '').trim();
+      if (!val) { input.focus(); return; }
+      var ok = extAnswers().some(function (a) { return TW.isCorrect(val, a); });
+      if (ok) {
+        var wasRetyping = spRetyping;
+        spRetyping = false;
+        extSay(true, wasRetyping ? '重打正确，这个词记住了' : '一次拼对，漂亮');
+        if (TW.store.markRight) TW.store.markRight(noteId);
+        if (TW.speech && TW.speech.speak) TW.speech.speak(term);
+      } else {
+        spWrongTries++;
+        if (spRetyping) extSay(false, '还不对，照着上面的答案再打一遍');
+        else if (spWrongTries >= 2) extReveal();
+        else extSay(false, '再试一次（' + (2 - spWrongTries) + ' 次机会）');
+        if (TW.store.markWrong) TW.store.markWrong(noteId);
+      }
+    }
+    function extReveal() {
+      spRetyping = true;
+      var fb = TW.$('#dc-spell-fb', host);
+      if (fb) fb.innerHTML =
+        '<div class="tag err">' + TW.icon('x', 13) + ' 答案：<b style="font-size:1.15rem;letter-spacing:.06em">' +
+          TW.esc(term) + '</b> —— 照着它再打一遍</div>';
+      var input = TW.$('#dc-spell-input', host);
+      if (input) { input.value = ''; input.focus(); }
+      if (TW.speech && TW.speech.speak) TW.speech.speak(term);
+    }
+    var cb = TW.$('#dc-spell-check', host);
+    if (cb) cb.addEventListener('click', extCheck);
+    var rb = TW.$('#dc-spell-reveal', host);
+    if (rb) rb.addEventListener('click', extReveal);
+    var spInput = TW.$('#dc-spell-input', host);
+    if (spInput) spInput.addEventListener('keydown', function (e) {
+      if (e.isComposing) return;
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); extCheck(); }
+      else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyV') {
+        e.preventDefault(); e.stopPropagation(); extReveal();
+      }
+    });
+
+    function onKey(e) {
+      if (!alive() || e.isComposing) return;
+      var tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      var k = (e.key || '').toLowerCase();
+      if (e.key === 'Escape') { e.preventDefault(); back(); }
+      else if (k === 's') { TW.speech.speak(term, TW.store.settings.accent); }
+      else if (k === 'f') {
+        var on = TW.store.toggleFav(noteId);
+        var fb = TW.$('[data-act="fav"]', host);
+        if (fb) fb.classList.toggle('on', on);
+        TW.toast(on ? '已收藏' : '已取消收藏');
+      }
+      else if (k === 'm') {
+        var m = TW.store.toggleMaster(noteId);
+        var mb = TW.$('[data-act="master"]', host);
+        if (mb) mb.classList.toggle('on', m);
+        TW.toast(m ? '已标记掌握' : '已取消掌握');
+      }
+      else if (k === 'v') { extReveal(); }
+    }
+    document.addEventListener('keydown', onKey);
+    var prevCleanup = prevActionsCleanup;
+    prevActionsCleanup = function () {
+      prevCleanup();
+      document.removeEventListener('keydown', onKey);
+    };
 
     // 笔记自动保存（600ms 防抖，同 paintLocal）
     var noteEl = TW.$('#dc-note', host);
@@ -477,6 +580,13 @@
         }, 600);
       });
     }
+  }
+
+  /** 取释义第一条的中文文本（扩展词条拼写练习的提示） */
+  function transBrief(trans) {
+    if (!trans || !trans.length) return '';
+    var parsed = TW.data.parseTrans(trans[0]);
+    return parsed.text || trans[0];
   }
 
   TW.views.word = { render: render };

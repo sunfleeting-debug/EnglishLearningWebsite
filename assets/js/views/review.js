@@ -1,5 +1,5 @@
-/* 生词本：错词 / 收藏 / 已掌握 三个分组
-   统计口径是「所有来源」——六级词汇周计划 + 各本词典（词典词靠进度快照，无需加载词典） */
+/* 生词本：错词 / 收藏 / 已掌握 / 我的笔记 四个分组
+   统计口径是「所有来源」——六级词汇周计划 + 各本词典 + 扩展词条（词典词靠进度快照，无需加载词典） */
 (function () {
   'use strict';
   var TW = window.TW = window.TW || {};
@@ -10,7 +10,8 @@
   var TABS = [
     { id: 'wrong', name: '待攻克错词', empty: '还没有错词，练习时答错的词会自动进来' },
     { id: 'fav', name: '我的收藏', empty: '还没有收藏，在词库或练习中点星标即可收藏' },
-    { id: 'master', name: '已掌握', empty: '还没有标记掌握的单词' }
+    { id: 'master', name: '已掌握', empty: '还没有标记掌握的单词' },
+    { id: 'notes', name: '我的笔记', empty: '还没有笔记，在单词详解页写下第一条吧' }
   ];
 
   function render(host, query) {
@@ -28,6 +29,13 @@
           return pb.w - pa.w || pb.ts - pa.ts;
         });
       }
+      if (tab === 'notes') {
+        // 最近写的笔记排最前（sunfleeting：方便接着昨天的笔记往下看）
+        l = l.slice().sort(function (a, b) {
+          var pa = TW.store.get(a.id) || {}, pb = TW.store.get(b.id) || {};
+          return (pb.noteTs || 0) - (pa.noteTs || 0);
+        });
+      }
       return l;
     }
 
@@ -38,6 +46,13 @@
         var dt = TW.store.diffDays(TW.store.today(), srs.d);
         tags = '<span class="tag srs">复习第 ' + (srs.b + 1) + ' 档 · ' +
           (dt <= 0 ? '今天到期' : dt + ' 天后') + '</span>';
+      }
+      if (tab === 'notes') {
+        var p = TW.store.get(w.id) || {};
+        var brief = (p.note || '').replace(/\s+/g, ' ').trim();
+        if (brief.length > 40) brief = brief.slice(0, 40) + '…';
+        var when = p.noteTs ? new Date(p.noteTs).toLocaleDateString() : '';
+        tags += '<span class="tag">📝 ' + TW.esc(brief) + (when ? ' · ' + when : '') + '</span>';
       }
       return TW.ui.wordRow(w, { showNum: true, num: num, extraTags: tags });
     }
@@ -90,7 +105,7 @@
 
     host.innerHTML =
       '<div class="wrap">' +
-        TW.ui.pageHead('生词本', '答错的词、收藏的词与已掌握的词都在这里集中管理') +
+        TW.ui.pageHead('生词本', '答错的词、收藏的词、已掌握的词与写过笔记的词都在这里集中管理') +
         '<div class="row" style="justify-content:space-between;margin-bottom:1rem">' +
           '<div class="seg" id="rv-tabs"></div>' +
           '<button class="btn primary" id="rv-practice-top">' + TW.icon('play', 16) + ' 练习这组</button>' +

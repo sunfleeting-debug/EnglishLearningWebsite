@@ -598,6 +598,57 @@ def main():
               pg.evaluate("() => (TW.store.get('x:demerit') || {}).note"), "测试笔记xyz")
         pg.screenshot(path=str(SHOTS / "23-ext-note.png"))
 
+        # 扩展词条也要有收藏/掌握/拼写练习（sunfleeting：demerit 这种也要完整学习闭环）
+        check("扩展词条有收藏/掌握按钮",
+              (pg.locator(".dc-head [data-act='fav']").count() == 1 and
+               pg.locator(".dc-head [data-act='master']").count() == 1), True)
+        check("扩展词条有拼写练习卡", pg.locator("#dc-spell-input").count(), 1)
+        pg.click("[data-act='fav']")   # 点收藏（demoerit → x:demerit）
+        pg.wait_for_timeout(400)
+        check("扩展词条收藏落库（x: 记录）",
+              pg.evaluate("() => (TW.store.get('x:demerit') || {}).fav"), True)
+        check("收藏的扩展词条出现在生词本「我的收藏」",
+              pg.evaluate("() => TW.data.progressItems('fav').some(function (x) { return x.id === 'x:demerit'; })"), True)
+        # x: 前缀 id 能跳回对应详解（生词本行点击的路径）
+        pg.goto(BASE + "#/word?id=" + pg.evaluate("() => encodeURIComponent('x:demerit')"), wait_until="domcontentloaded")
+        pg.wait_for_timeout(1200)
+        check("x: 前缀 id 可打开扩展词条详解",
+              (pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent.trim()"), True)[1] and
+              "demerit" in pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent"), True)
+
+        # 「我的笔记」分类：写过笔记的词集中可查（sunfleeting）
+        goto("#/review?tab=notes")
+        t_notes = pg.evaluate("() => document.body.innerText")
+        check("生词本有「我的笔记」tab", "我的笔记" in t_notes, True)
+        check("笔记列表含写过笔记的 demerit（含笔记摘要）",
+              ("demerit" in t_notes and "测试笔记xyz" in t_notes), True)
+        pg.screenshot(path=str(SHOTS / "24-review-notes.png"))
+        # 笔记行点击跳对应详解（x: 词走扩展词条页）
+        pg.locator("#rv-list .wl-row .wl-link").first.click()
+        pg.wait_for_timeout(1200)
+        check("笔记行点击跳对应详解（demerit）",
+              ("demerit" in pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent")), True)
+
+        # 搜索记录：最近 50 条，聚焦空输入框可查看（sunfleeting）
+        goto("#/")
+        pg.fill("#hs-input", "account")
+        pg.wait_for_timeout(600)
+        pg.locator(".hs-item").first.click()
+        pg.wait_for_timeout(800)
+        check("搜索动作写入最近搜索记录",
+              pg.evaluate("() => (JSON.parse(localStorage.getItem('tw.searchHistory') || '[]').some(function (x) { return x.w === 'account'; }))"), True)
+        pg.goto(BASE + "#/", wait_until="load")
+        pg.wait_for_timeout(800)
+        pg.click("#hs-input")
+        pg.wait_for_timeout(500)
+        hist_txt = pg.evaluate("() => (TW.$('#hs-res')||{innerText:''}).innerText")
+        check("聚焦空搜索框显示「最近搜索」", ("最近搜索" in hist_txt and "account" in hist_txt), True)
+        check("搜索记录含清空按钮", pg.locator("#hs-hist-clear").count(), 1)
+        pg.click("#hs-hist-clear")
+        pg.wait_for_timeout(300)
+        check("清空后记录消失",
+              pg.evaluate("() => JSON.parse(localStorage.getItem('tw.searchHistory') || '[]').length"), 0)
+
         # ---------- 详解页拼写练习（sunfleeting：详解页也要能练打单词）----------
         # 回到已知本地词 drastic：近义词跳转目标可能是 ext 词条（没有拼写练习卡）
         pg.goto(BASE + "#/word?id=" + str(dr_id), wait_until="domcontentloaded")

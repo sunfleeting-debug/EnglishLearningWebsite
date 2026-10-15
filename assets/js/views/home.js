@@ -118,10 +118,50 @@
     var resBox = TW.$('#hs-res', host);
     var hsTimer = null;
 
+    /* ---- 搜索记录（sunfleeting：加一下搜索记录，最近 50 条，本地存储不进同步）---- */
+    function shList() {
+      try { return JSON.parse(localStorage.getItem('tw.searchHistory') || '[]'); }
+      catch (err) { return []; }
+    }
+    function shAdd(word) {
+      try {
+        var l = shList().filter(function (x) { return x.w !== word; });
+        l.unshift({ w: word, ts: Date.now() });
+        localStorage.setItem('tw.searchHistory', JSON.stringify(l.slice(0, 50)));
+      } catch (err) {}
+    }
+    function shClear() { try { localStorage.removeItem('tw.searchHistory'); } catch (err) {} }
+    function hsShowHistory() {
+      var l = shList().slice(0, 10);
+      if (!l.length) { hsHide(); return; }
+      resBox.innerHTML = '<div class="hs-hist-head" style="display:flex;justify-content:space-between;align-items:center;padding:.2rem .4rem">' +
+          '<span class="muted small">最近搜索</span>' +
+          '<button class="btn sm ghost" id="hs-hist-clear">清空</button></div>' +
+        l.map(function (x) {
+          return '<button class="hs-item" data-w="' + TW.esc(x.w) + '">' +
+            '<span class="hs-word">' + TW.esc(x.w) + '</span>' +
+            '<span class="hs-src">' + new Date(x.ts).toLocaleDateString() + '</span></button>';
+        }).join('');
+      resBox.hidden = false;
+      TW.$$('.hs-item', resBox).forEach(function (el) {
+        el.addEventListener('click', function () {
+          input.value = el.dataset.w;
+          hsRun(el.dataset.w);   // 展示该词的联想结果；点进详解时由 hsGo 记录
+        });
+      });
+      var clr = TW.$('#hs-hist-clear', resBox);
+      if (clr) clr.addEventListener('click', function (e) {
+        e.stopPropagation();
+        shClear();
+        hsHide();
+      });
+    }
+
     function hsHide() { resBox.hidden = true; resBox.innerHTML = ''; }
 
     function hsGo(word) {
       hsHide();
+      shAdd(word);
       input.value = word;
       input.blur();
       TW.app.go('/word?w=' + encodeURIComponent(word));
@@ -159,6 +199,7 @@
       resBox.hidden = false;
       TW.$$('.hs-item', resBox).forEach(function (el) {
         el.addEventListener('click', function () {
+          shAdd(el.dataset.w);   // 词典兜底条目不走 hsGo，单独记录
           hsHide();
           input.blur();
           TW.app.go('/word?id=' + encodeURIComponent(el.dataset.deck + ':' + el.dataset.w));
@@ -203,7 +244,7 @@
 
     function hsRun(q) {
       q = (q || '').trim();
-      if (!q) { hsHide(); return; }
+      if (!q) { hsShowHistory(); return; }   // 清空输入 = 显示最近搜索记录
       var list = TW.data.searchAll(q, 8);
       if (list.length) { hsShow(list, q); return; }
       // 只对「像英文单词的输入」走兜底链（中文释义搜不了词面索引/在线词典）
@@ -222,6 +263,9 @@
     input.addEventListener('input', function () {
       clearTimeout(hsTimer);
       hsTimer = setTimeout(function () { hsRun(input.value); }, 220);
+    });
+    input.addEventListener('focus', function () {
+      if (!input.value.trim()) hsShowHistory();   // 聚焦空输入框 = 看最近搜索
     });
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') {

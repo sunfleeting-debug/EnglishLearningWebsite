@@ -183,6 +183,7 @@
       if (tab === 'master' && !p.master) return;
       if (tab === 'touched' && !(p.seen > 0)) return;
       if (tab === 'learned' && !(p.seen > 0)) return;   // 复习页「自由复习已学的词」（同 touched）
+      if (tab === 'notes' && !(p.note && p.note.trim())) return;   // 生词本「我的笔记」：写过笔记的词（含 x: 扩展词条）
       var w = byId[id];
       var word = (w && w.word) || p.word;
       if (!word) return;
