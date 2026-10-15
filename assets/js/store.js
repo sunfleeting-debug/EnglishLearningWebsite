@@ -16,6 +16,7 @@
     sessionSize: 20,       // 每轮练习词数
     autoPronounce: true,   // 出题时自动发音
     showPhonetic: true,    // 显示音标
+    listenPhonetic: false, // 听音写词显示音标（sunfleeting：默认关，音标等于泄题一半；开了当提示）
     accent: 'us',          // 发音口音 us | uk
     speakMode: 'auto',     // 发音通道 auto 在线音频优先(失败回退系统语音) | audio 只用在线音频 | tts 只用系统语音
     keySound: true,        // 键盘音效

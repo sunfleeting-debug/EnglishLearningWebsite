@@ -773,6 +773,52 @@ def main():
         pg.wait_for_timeout(700)
         # 不锁死回退目标（同文档 hash 导航的 history 条目顺序不稳定），只验证「Esc 会返回」
         check("统计页按 Esc 返回上一页", pg.evaluate("() => location.hash") != h_s, True)
+
+        # 近 14 天练习量柱状图：daily 数据非零时柱子必须真的画出来（回归：
+        # .bar-fill 的百分比高度曾因 .bar-col 高度不定而塌成 3px 矮桩，
+        # 数据全对但图面像「练习量为零」）
+        pg.evaluate("""() => {
+            const t = TW.store.today();
+            const d = TW.store.state.daily;
+            d[t] = { done: 80, right: 60 };
+            const y = new Date(); y.setDate(y.getDate() - 1);
+            const m = y.getMonth() + 1, dd = y.getDate();
+            d[y.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (dd < 10 ? '0' : '') + dd] = { done: 40, right: 30 };
+            TW.store.save();
+        }""")
+        goto("#/stats")
+        pg.wait_for_timeout(700)
+        bar_info = pg.evaluate("""() => {
+            const fills = [...document.querySelectorAll('.bar-fill')];
+            const hs = fills.map(el => el.getBoundingClientRect().height);
+            return { n: fills.length, max: Math.max.apply(null, hs),
+                     today: fills[fills.length - 1] ? fills[fills.length - 1].getBoundingClientRect().height : 0 };
+        }""")
+        check("柱状图柱子真的画出来了（不是 3px 矮桩）", bar_info["max"] > 30, True, extra=str(bar_info))
+        check("今天（数据最大那天）柱子最高", bar_info["today"] == bar_info["max"], True)
+        pg.evaluate("""() => {
+            const d = TW.store.state.daily;
+            delete d[TW.store.today()];
+            const y = new Date(); y.setDate(y.getDate() - 1);
+            const m = y.getMonth() + 1, dd = y.getDate();
+            delete d[y.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (dd < 10 ? '0' : '') + dd];
+            TW.store.save();
+        }""")
+
+        # 听音写词：题面默认不显示音标（音标=泄题一半），设置打开后才显示
+        log("\n--- 听音写词音标选项 ---")
+        keep_ph = pg.evaluate("() => TW.store.settings.listenPhonetic")
+        pg.evaluate("() => TW.store.setSetting('listenPhonetic', false)")
+        goto_fresh("#/practice?book=week1&mode=listen")
+        pg.wait_for_timeout(600)
+        check("听音写词默认不显示音标", pg.evaluate(
+            "() => (document.querySelector('#p-word') || {}).textContent || ''"), "听发音写单词")
+        pg.evaluate("() => TW.store.setSetting('listenPhonetic', true)")
+        goto_fresh("#/practice?book=week1&mode=listen")   # 练习页不监听 settings 事件，重进生效
+        pg.wait_for_timeout(600)
+        ph = pg.evaluate("() => (document.querySelector('#p-word') || {}).textContent || ''")
+        check("打开设置后题面显示音标", ph.startswith("/") and ph.endswith("/"), True, extra=ph)
+        pg.evaluate("(v) => TW.store.setSetting('listenPhonetic', v)", keep_ph)
         # 豁免页不劫持：练习页 Esc = 跳过当前词（不是返回）
         goto_fresh("#/practice?book=week1&mode=type&size=10")
         pg.keyboard.press("Escape")

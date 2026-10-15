@@ -31,6 +31,7 @@
               }).join('') +
             '</select></div>' +
           switchRow('showPhonetic', '显示音标', '') +
+          switchRow('listenPhonetic', '听音写词显示音标', '默认关闭——听音写词显示音标等于泄题一半；开启后作为拼写提示显示') +
           switchRow('srsAuto', '答错的词自动加入复习队列', '开启后按艾宾浩斯曲线安排复习；关闭则只在单词页手动加入') +
           switchRow('autoMaster', '连对 5 次自动标记「已掌握」', '答错会断连对；手动取消掌握后需重新连对 5 次') +
         '</div>' +

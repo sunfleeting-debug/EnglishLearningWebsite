@@ -218,6 +218,19 @@ def main():
     check("POST /api/me/sync = 200", st, 200)
 
     st, js, _ = req(base, "GET", "/api/me/state", token=token2)
+    check("daily 推上去能读回（done=7）", ((js or {}).get("daily") or {}).get(day, {}).get("done"), 7)
+
+    # 只推 progress 的增量同步，响应里的 full state 不应丢掉已存的 daily
+    st, js, _ = req(base, "POST", "/api/me/sync", {
+        "progress": {"week1:probe2": {"w": 0, "r": 1, "seen": 1, "fav": False, "master": False,
+                                      "ts": int(time.time() * 1000), "word": "probe2",
+                                      "src": "week1", "brief": ""}},
+    }, token=token2)
+    check("纯 progress 增量同步 = 200", st, 200)
+    st, js, _ = req(base, "GET", "/api/me/state", token=token2)
+    check("增量同步后 daily 仍在（done=7）", ((js or {}).get("daily") or {}).get(day, {}).get("done"), 7)
+
+    st, js, _ = req(base, "GET", "/api/me/state", token=token2)
     st_prog = (js or {}).get("progress") or {}
     check("同步后能读回该词", wid in st_prog, True)
     check("读回 w=2", (st_prog.get(wid) or {}).get("w"), 2)

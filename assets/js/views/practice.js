@@ -443,7 +443,9 @@
           return '<div class="stage">' +
             '<button class="btn primary" data-act="speak" style="font-size:15px" title="再听一遍（快捷键 S）">' + TW.icon('volume', 18) + ' 重听 <kbd>S</kbd></button>' +
             '<div class="word-display" id="p-word" style="font-size:1.6rem;color:var(--text-3)">' +
-              (TW.store.settings.showPhonetic && w.us ? '/' + TW.esc(w.us) + '/' : '听发音写单词') + '</div>' +
+            /* 听音写词题面默认不显示音标（音标等于泄题一半，sunfleeting）；
+               设置里开了 listenPhonetic 才作为提示显示 */
+              (TW.store.settings.listenPhonetic && w.us ? '/' + TW.esc(w.us) + '/' : '听发音写单词') + '</div>' +
             (st.hintShown ? means : '<button class="btn ghost sm" data-act="hint" title="显示中文释义（快捷键 H）">' + TW.icon('lightbulb', 15) + ' 看中文提示 <kbd>H</kbd></button>') +
             '<div class="typing-box"><input class="typing-input" id="p-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="听音拼写…" /></div>' +
             retryLineHtml() +
