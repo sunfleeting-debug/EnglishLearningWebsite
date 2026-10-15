@@ -44,7 +44,14 @@
         });
       });
     }).catch(function () { /* local file:// and restricted browsers simply keep web behavior */ });
-    navigator.serviceWorker.addEventListener('controllerchange', function () { window.location.reload(); });
+    // 首次访问：页面加载时本无 controller，资源都是网络拉的新版，
+    // claim() 接管不需要 reload（reload 会中断原始导航，产生 net::ERR_ABORTED）。
+    // 只有「更新版 SW 接管」才需要刷新拿到新 shell。
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadController) { hadController = true; return; }
+      window.location.reload();
+    });
   }
   window.addEventListener('beforeinstallprompt', function (event) {
     event.preventDefault(); deferred = event;

@@ -1,5 +1,5 @@
 /* Versioned app-shell cache for the installable mobile web app. */
-const CACHE_VERSION = 'english-learning-v1-20261016-merge';
+const CACHE_VERSION = 'english-learning-v1-20261016-claimfix';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const SHELL = [
