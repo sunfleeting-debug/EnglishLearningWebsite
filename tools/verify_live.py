@@ -66,7 +66,9 @@ def main():
         wid = pg.evaluate("() => (TW.WORDS.find(w => w.word === 'drastic') || {}).id")
         pg.goto(URL + "#/word?id=" + str(wid), wait_until="domcontentloaded", timeout=60000)
         try:
-            pg.wait_for_selector(".dc-word", timeout=60000)
+            # 慢网夜实测 dict.js 要 96s+（数据完整、只是传输慢，探针 probe_live_word.py 证实），
+            # 60s 会误报——放宽到 180s，网络正常时仍是秒级
+            pg.wait_for_selector(".dc-word", timeout=180000)
         except Exception:
             pass
         pg.wait_for_timeout(600)
