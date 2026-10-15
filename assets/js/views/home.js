@@ -186,7 +186,8 @@
     function hsShow(list, q, partial) {
       if (list.length) {
         var foot = '共 ' + list.length + ' 条结果';
-        if (partial) foot += '（词典载入中，稍候自动补全）';
+        if (partial) foot += '（词典已载入 ' + TW.data.decksLoaded().length + '/' +
+          TW.data.decks.length + '，结果自动补全中）';
         else if (list.length >= SEARCH_CAP) foot += '（已达展示上限，可换更精确的关键词）';
         resBox.innerHTML = list.map(hsItem).join('') + '<div class="hs-count">' + foot + '</div>';
       } else {
@@ -254,36 +255,36 @@
       });
     }
 
-    /* sunfleeting：搜索要尽可能全。词典是懒加载的，第一次搜索时后台把 13 本词典
-       一次性拉齐（~3.4MB，只此一次），载完若输入没变就自动重查补全；
-       载入期间先展示已有结果（脚注提示会补全），不急着下「没有」的结论。 */
-    var SEARCH_CAP = 100;   // 最多展示 100 条：够翻，又不至于把首页拖垮
-    var decksState = 0;     // 0=未发起 1=载入中 2=发起过（成败看 decksAll）
-    var decksAll = false;   // 13 本词典是否全部载齐
+    /* sunfleeting：搜索要尽可能全，也不能慢。
+       词典是懒加载的，这里在首页空闲时按常用度、限并发（2）预取全部词典：
+       等用户开始搜时大多已就位，搜索就是瞬时的；没载完也有周计划即时出结果，
+       每载完一本自动增量补全。不用 13 本并行一次性拉——那会把详解页要的
+       dict.js（4MB）带宽抢光，慢网下整个搜索+点词都卡死（实测教训）。 */
+    var SEARCH_CAP = 100;        // 最多展示 100 条：够翻，又不至于把首页拖垮
+    var prefetchStarted = false; // 预取每页只发起一次（loadBook 幂等，重渲染无害）
 
-    function kickDecks() {
-      if (decksState) return;
-      decksState = 1;
-      TW.data.ensureBooks(TW.data.decks.map(function (d) { return d.id; }), function () {
-        decksState = 2;
-        decksAll = TW.data.allDecksReady();
+    function startPrefetch() {
+      if (prefetchStarted) return;
+      prefetchStarted = true;
+      TW.data.preloadDecks(function () {
         var v = input.value.trim();
-        if (v) hsRun(v);            // 载齐（或失败）后按当前输入重查一遍
+        if (v) hsRun(v);         // 每载完一本就按当前输入补全一次结果
       });
     }
 
     function hsRun(q) {
       q = (q || '').trim();
       if (!q) { hsShowHistory(); return; }   // 清空输入 = 显示最近搜索记录
-      kickDecks();
+      startPrefetch();
+      var full = TW.data.allDecksReady();
       var list = TW.data.searchAll(q, SEARCH_CAP);
-      if (list.length) { hsShow(list, q, !decksAll); return; }
-      if (decksState === 1) {                // 词典还在载入：先别判「没有」，载完回调会重查
-        resBox.innerHTML = '<div class="hs-empty">正在载入全部词库…</div>';
+      if (list.length) { hsShow(list, q, !full); return; }
+      if (!full) {                           // 还有词典在路上：先别判「没有」，载完回调会重查
+        resBox.innerHTML = '<div class="hs-empty">正在载入词典（' +
+          TW.data.decksLoaded().length + '/' + TW.data.decks.length + '）…结果会自动补全</div>';
         resBox.hidden = false;
         return;
       }
-      if (!decksAll) { hsShow([], q); return; }   // 词典载入失败（离线等）：拿现有词库下结论
       // 只对「像英文单词的输入」走兜底链（中文释义搜不了词面索引/在线词典）
       if (!/^[a-zA-Z][a-zA-Z' -]*$/.test(q)) { hsShow([], q); return; }
       resBox.innerHTML = '<div class="hs-empty">正在查询…</div>';
@@ -312,6 +313,9 @@
         input.value = ''; hsHide(); input.blur();
       }
     });
+
+    // 进首页 1.5 秒后开始空闲预取词典：等用户点搜索框时大多已就位，搜索瞬时出全量
+    setTimeout(startPrefetch, 1500);
 
     var cont = TW.$('#btn-continue', host);
     if (cont) cont.addEventListener('click', function () {

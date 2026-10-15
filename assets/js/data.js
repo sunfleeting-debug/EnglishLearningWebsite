@@ -101,6 +101,37 @@
     });
   }
 
+  /* 搜索预取的优先级：越靠前越常用，先到先补全（其余按 DECKS_META 顺序追加） */
+  var PRELOAD_ORDER = ['cet6', 'cet4', 'kaoyan', 'longman3000', 'gaozhong', 'ielts',
+                       'toefl', 'gre', 'tem4', 'gk3500', 'oxford3000', 'bec', 'chuzhong', 'nce2'];
+
+  /** 把全部词典按优先级、限并发（2）地预取进来——首页搜索用。
+      与 ensureBooks 的一次性并行不同：并发限 2 不抢用户点击后的带宽（详解页
+      的 dict.js 要 4MB，13 个并行会把管道占满，sunfleeting 2026-10-15 实测慢到无法用）；
+      每载完一本就回调 onEach(done, total)，首页据此增量补全搜索结果，不等全载完。 */
+  function preloadDecks(onEach) {
+    var order = [];
+    PRELOAD_ORDER.forEach(function (id) {
+      if (metaOf(id) && order.indexOf(id) < 0) order.push(id);
+    });
+    DECKS_META.forEach(function (d) {
+      if (order.indexOf(d.id) < 0) order.push(d.id);
+    });
+    var queue = order.filter(function (id) { return !DECK_WORDS[id]; });
+    var total = queue.length, done = 0, i = 0;
+    var CONC = 2;
+    function next() {
+      if (i >= queue.length) return;
+      var id = queue[i++];
+      loadBook(id, function () {
+        done++;
+        if (onEach) { try { onEach(done, total); } catch (e) {} }
+        next();
+      });
+    }
+    for (var k = 0; k < CONC; k++) next();
+  }
+
   /** 生成一个英文词的候选基础词形（用于把例句/近义词里的变形对回词库） */
   function baseForms(raw) {
     var w = String(raw || '').toLowerCase().replace(/[^a-z'\-]/g, '');
@@ -426,6 +457,7 @@
     loadDictExt: loadDictExt,
     loadBook: loadBook,
     ensureBooks: ensureBooks,
+    preloadDecks: preloadDecks,
     isDeck: function (id) { return !!metaOf(id); },
     deckMeta: metaOf,
     decksLoaded: function () { return Object.keys(DECK_WORDS); },

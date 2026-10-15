@@ -629,8 +629,8 @@ def main():
             href_now = pg.evaluate("() => location.hash")
             check("点击近义词已跳转", "#/word" in href_now and href_now == target.replace("#", "#"), True)
 
-        # 扩展词条页也要有学习笔记（sunfleeting：demerit 类 ext 词之前没地方记笔记）
-        pg.goto(BASE + "#/word?w=demerit", wait_until="domcontentloaded")
+        # 扩展词条页也要有学习笔记（sunfleeting：aback 类 ext 词之前没地方记笔记）
+        pg.goto(BASE + "#/word?w=aback", wait_until="domcontentloaded")
         try:
             pg.wait_for_selector("#dc-note", timeout=15000)
         except Exception:
@@ -640,39 +640,39 @@ def main():
         pg.fill("#dc-note", "测试笔记xyz")
         pg.wait_for_timeout(900)   # 600ms 防抖 + 落盘
         check("扩展词条笔记已保存（x:词面 进度记录）",
-              pg.evaluate("() => (TW.store.get('x:demerit') || {}).note"), "测试笔记xyz")
+              pg.evaluate("() => (TW.store.get('x:aback') || {}).note"), "测试笔记xyz")
         pg.screenshot(path=str(SHOTS / "23-ext-note.png"))
 
-        # 扩展词条也要有收藏/掌握/拼写练习（sunfleeting：demerit 这种也要完整学习闭环）
+        # 扩展词条也要有收藏/掌握/拼写练习（sunfleeting：aback 这种也要完整学习闭环）
         check("扩展词条有收藏/掌握按钮",
               (pg.locator(".dc-head [data-act='fav']").count() == 1 and
                pg.locator(".dc-head [data-act='master']").count() == 1), True)
         check("扩展词条有拼写练习卡", pg.locator("#dc-spell-input").count(), 1)
-        pg.click("[data-act='fav']")   # 点收藏（demoerit → x:demerit）
+        pg.click("[data-act='fav']")   # 点收藏（aback → x:aback）
         pg.wait_for_timeout(400)
         check("扩展词条收藏落库（x: 记录）",
-              pg.evaluate("() => (TW.store.get('x:demerit') || {}).fav"), True)
+              pg.evaluate("() => (TW.store.get('x:aback') || {}).fav"), True)
         check("收藏的扩展词条出现在生词本「我的收藏」",
-              pg.evaluate("() => TW.data.progressItems('fav').some(function (x) { return x.id === 'x:demerit'; })"), True)
+              pg.evaluate("() => TW.data.progressItems('fav').some(function (x) { return x.id === 'x:aback'; })"), True)
         # x: 前缀 id 能跳回对应详解（生词本行点击的路径）
-        pg.goto(BASE + "#/word?id=" + pg.evaluate("() => encodeURIComponent('x:demerit')"), wait_until="domcontentloaded")
+        pg.goto(BASE + "#/word?id=" + pg.evaluate("() => encodeURIComponent('x:aback')"), wait_until="domcontentloaded")
         pg.wait_for_timeout(1200)
         check("x: 前缀 id 可打开扩展词条详解",
               (pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent.trim()"), True)[1] and
-              "demerit" in pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent"), True)
+              "aback" in pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent"), True)
 
         # 「我的笔记」分类：写过笔记的词集中可查（sunfleeting）
         goto("#/review?tab=notes")
         t_notes = pg.evaluate("() => document.body.innerText")
         check("生词本有「我的笔记」tab", "我的笔记" in t_notes, True)
-        check("笔记列表含写过笔记的 demerit（含笔记摘要）",
-              ("demerit" in t_notes and "测试笔记xyz" in t_notes), True)
+        check("笔记列表含写过笔记的 aback（含笔记摘要）",
+              ("aback" in t_notes and "测试笔记xyz" in t_notes), True)
         pg.screenshot(path=str(SHOTS / "24-review-notes.png"))
         # 笔记行点击跳对应详解（x: 词走扩展词条页）
         pg.locator("#rv-list .wl-row .wl-link").first.click()
         pg.wait_for_timeout(1200)
-        check("笔记行点击跳对应详解（demerit）",
-              ("demerit" in pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent")), True)
+        check("笔记行点击跳对应详解（aback）",
+              ("aback" in pg.evaluate("() => (TW.$('.dc-word')||{textContent:''}).textContent")), True)
 
         # 搜索记录：最近 50 条，聚焦空输入框可查看（sunfleeting）
         goto("#/")
