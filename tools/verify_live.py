@@ -132,12 +132,15 @@ def main():
         check("线上词典选择页卡片 >= 14", pg.locator(".deck-card").count() >= 14, True)
         pg.screenshot(path=str(SHOTS / "30-live-decks.png"))
         pg.goto(URL + "#/books?book=cet6", wait_until="load", timeout=60000)
-        pg.wait_for_timeout(1800)
-        # 部署刚完成时 CDN 边缘冷缓存，大文件可能一次性拉超时——失败后多等 4s 重查一次
-        ok_deck = pg.evaluate("() => 'cet6' in TW.data.decksLoaded()")
-        if not ok_deck:
-            pg.wait_for_timeout(4000)
-            ok_deck = pg.evaluate("() => 'cet6' in TW.data.decksLoaded()")
+        # 部署刚完成时 CDN 边缘冷缓存，大文件可能一次性拉超时——最多重试 3 次（每次重载页面）
+        ok_deck = pg.evaluate("() => TW.data.decksLoaded().includes('cet6')")
+        for _ in range(3):
+            if ok_deck:
+                break
+            pg.wait_for_timeout(3500)
+            pg.goto(URL + "#/books?book=cet6", wait_until="load", timeout=60000)
+            pg.wait_for_timeout(1800)
+            ok_deck = pg.evaluate("() => TW.data.decksLoaded().includes('cet6')")
         check("线上词典按需加载成功", ok_deck, True)
         check("线上词典词表有词条",
               pg.evaluate("() => document.querySelectorAll('#bk-list .wl-row').length") > 0, True)
