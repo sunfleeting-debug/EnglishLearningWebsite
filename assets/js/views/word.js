@@ -232,6 +232,7 @@
             'autocapitalize="off" spellcheck="false" placeholder="在这里打出这个单词…" style="flex:1" />' +
           '<button class="btn sm primary" id="dc-spell-check" title="快捷键 Enter">检查 <kbd>Enter</kbd></button>' +
           '<button class="btn sm ghost" id="dc-spell-reveal" title="快捷键 Alt+V（输入框里也能按）">看答案 <kbd>Alt+V</kbd></button>' +
+          '<button class="btn sm ghost" id="dc-spell-retry" title="清空重打，再来一遍（快捷键 Alt+R，输入框里也能按）">重练 <kbd>Alt+R</kbd></button>' +
         '</div>' +
         '<div id="dc-spell-fb" style="margin-top:.6rem"></div>' +
       '</div>');
@@ -437,12 +438,25 @@
     if (spCheckBtn) spCheckBtn.addEventListener('click', spCheck);
     var spRevealBtn = TW.$('#dc-spell-reveal', host);
     if (spRevealBtn) spRevealBtn.addEventListener('click', spReveal);
+    /** 重练：清空输入与反馈，从头再打（sunfleeting：拼对了还想再练一遍） */
+    function spRetry() {
+      spRetyping = false;
+      spWrongTries = 0;
+      if (spFb) spFb.innerHTML = '';
+      if (spInput) { spInput.value = ''; spInput.focus(); }
+    }
+    var spRetryBtn = TW.$('#dc-spell-retry', host);
+    if (spRetryBtn) spRetryBtn.addEventListener('click', spRetry);
     if (spInput) spInput.addEventListener('keydown', function (e) {
       if (e.isComposing) return;
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); spCheck(); }
       /* Alt+V = 看答案：打字中也能用（裸 V 是字母本体），与练习页 Alt+ 组合惯例一致 */
       else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyV') {
         e.preventDefault(); e.stopPropagation(); spReveal();
+      }
+      /* Alt+R = 重练（裸 R 已被「复习队列」占用） */
+      else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyR') {
+        e.preventDefault(); e.stopPropagation(); spRetry();
       }
     });
   }
@@ -487,6 +501,7 @@
               'autocapitalize="off" spellcheck="false" placeholder="在这里打出这个单词…" style="flex:1" />' +
             '<button class="btn sm primary" id="dc-spell-check" title="快捷键 Enter">检查 <kbd>Enter</kbd></button>' +
             '<button class="btn sm ghost" id="dc-spell-reveal" title="快捷键 Alt+V（输入框里也能按）">看答案 <kbd>Alt+V</kbd></button>' +
+            '<button class="btn sm ghost" id="dc-spell-retry" title="清空重打，再来一遍（快捷键 Alt+R，输入框里也能按）">重练 <kbd>Alt+R</kbd></button>' +
           '</div>' +
           '<div id="dc-spell-fb" style="margin-top:.6rem"></div>' +
         '</div>') +
@@ -548,12 +563,26 @@
     if (cb) cb.addEventListener('click', extCheck);
     var rb = TW.$('#dc-spell-reveal', host);
     if (rb) rb.addEventListener('click', extReveal);
+    /** 重练：清空输入与反馈，从头再打（同本地词条页） */
+    function extRetry() {
+      spRetyping = false;
+      spWrongTries = 0;
+      var fb = TW.$('#dc-spell-fb', host);
+      if (fb) fb.innerHTML = '';
+      var input = TW.$('#dc-spell-input', host);
+      if (input) { input.value = ''; input.focus(); }
+    }
+    var eb = TW.$('#dc-spell-retry', host);
+    if (eb) eb.addEventListener('click', extRetry);
     var spInput = TW.$('#dc-spell-input', host);
     if (spInput) spInput.addEventListener('keydown', function (e) {
       if (e.isComposing) return;
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); extCheck(); }
       else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyV') {
         e.preventDefault(); e.stopPropagation(); extReveal();
+      }
+      else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyR') {
+        e.preventDefault(); e.stopPropagation(); extRetry();
       }
     });
 

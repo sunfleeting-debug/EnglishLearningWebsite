@@ -755,6 +755,21 @@ def main():
         pg.click("#dc-spell-check")
         pg.wait_for_timeout(300)
         check("照答案重打成功", "重打正确" in pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText"), True)
+
+        # 重练按钮（sunfleeting：拼对了还想再打一遍）：清空输入与反馈
+        check("拼写练习有「重练」按钮", pg.locator("#dc-spell-retry").count(), 1)
+        pg.fill("#dc-spell-input", sp_word)
+        pg.click("#dc-spell-retry")
+        pg.wait_for_timeout(200)
+        check("重练清空输入与反馈",
+              (pg.evaluate("() => (TW.$('#dc-spell-input')||{value:''}).value") == ""
+               and pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText").strip() == ""), True)
+        pg.fill("#dc-spell-input", "x")
+        pg.evaluate("() => { const i = TW.$('#dc-spell-input'); i.dispatchEvent(new KeyboardEvent('keydown', {key: 'r', code: 'KeyR', altKey: true, bubbles: true})); }")
+        pg.wait_for_timeout(200)
+        check("Alt+R 也能重练",
+              (pg.evaluate("() => (TW.$('#dc-spell-input')||{value:''}).value") == ""
+               and pg.evaluate("() => (TW.$('#dc-spell-fb')||{innerText:''}).innerText").strip() == ""), True)
         pg.screenshot(path=str(SHOTS / "21-word-spelling.png"))
 
         # 拼写练习快捷键（sunfleeting：检查/看答案也要有快捷键）
