@@ -41,7 +41,7 @@
     if (!w && id.indexOf(':') > 0) {
       var deckId = id.slice(0, id.indexOf(':'));
       if (TW.data.isDeck(deckId)) {
-        host.innerHTML = '<div class="wrap wrap-narrow"><div class="card card-pad muted">正在加载词典数据…</div></div>';
+        host.innerHTML = '<div class="wrap wrap-narrow">' + loadQuoteHtml() + '</div>';
         TW.data.loadBook(deckId, function () {
           if (!alive()) return;
           var ww = TW.data.byId(id);
@@ -65,7 +65,7 @@
         // 复习页是「?w=单词」跳过来的，词可能属于尚未加载的词典：查复习记录里的来源再加载
         var rec = TW.store.srs.get(query.w);
         if (rec && rec.s && TW.data.isDeck(rec.s)) {
-          host.innerHTML = '<div class="wrap wrap-narrow"><div class="card card-pad muted">正在加载词典数据…</div></div>';
+          host.innerHTML = '<div class="wrap wrap-narrow">' + loadQuoteHtml() + '</div>';
           TW.data.loadBook(rec.s, function () {
             if (!alive()) return;
             var ww = TW.data.byWord(query.w);
@@ -81,9 +81,29 @@
     paintWithDict(host, w, alive, term);
   }
 
+  /** 等词典数据的空档：随机来一条名句/习语（sunfleeting：与其白等，不如积累）。
+      语料在 data/quotes.js（静态引入）；缺失时回退原提示。 */
+  function loadQuoteHtml() {
+    var Q = (TW.QUOTES && TW.QUOTES.quotes) || [];
+    var I = (TW.QUOTES && TW.QUOTES.idioms) || [];
+    var inner = '';
+    if (Q.length && (!I.length || Math.random() < 0.55)) {
+      var q = Q[Math.floor(Math.random() * Q.length)];
+      inner = '<div class="lq-text">' + TW.esc(q.t) + '</div>' +
+              '<div class="lq-src">—— ' + TW.esc(q.s) + '</div>';
+    } else if (I.length) {
+      var it = I[Math.floor(Math.random() * I.length)];
+      inner = '<div class="lq-text lq-idiom">' + TW.esc(it.t) + '</div>' +
+              '<div class="lq-src">' + TW.esc(it.m) + '</div>';
+    }
+    if (!inner) return '<div class="card card-pad muted">正在加载词典数据…</div>';
+    return '<div class="card card-pad load-quote">' + inner +
+      '<div class="lq-foot">名句积累 · 词典数据加载中</div></div>';
+  }
+
   /** 加载词典卡数据（按需），随后渲染详情 */
   function paintWithDict(host, w, alive, term) {
-    host.innerHTML = '<div class="wrap wrap-narrow"><div class="card card-pad muted">正在加载词典数据…</div></div>';
+    host.innerHTML = '<div class="wrap wrap-narrow">' + loadQuoteHtml() + '</div>';
     var pending = w ? 2 : 1;               // 本地词要「词典卡 + 扩展词条（供链接跳转）」；扩展词只需要后者
     function ready() {
       if (alive && !alive()) return;        // 已离开该页面，别再写 DOM

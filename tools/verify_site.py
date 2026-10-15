@@ -630,6 +630,25 @@ def main():
             href_now = pg.evaluate("() => location.hash")
             check("点击近义词已跳转", "#/word" in href_now and href_now == target.replace("#", "#"), True)
 
+        # 加载等待页 = 名句/习语积累卡（sunfleeting：与其白等，不如积累）。
+        # 找一个字母块还没载过的词，把它的分块请求挂起 → 等待页持续显示；
+        # 验完 abort 释放（分块加载失败会降级成无词典卡的详情页，属正常兜底）。
+        check("名句语料随首屏载入（≥30 句 + ≥30 条习语）",
+              pg.evaluate("() => !!(TW.QUOTES && TW.QUOTES.quotes.length >= 30 && TW.QUOTES.idioms.length >= 30)"), True)
+        qw = pg.evaluate("() => { const w = TW.WORDS.find(x => !TW.data.dictLetterReady(x.word));"
+                         "  return w ? (w.id + '|' + w.word) : ''; }")
+        if qw:
+            held = []
+            pg.route("**/data/dict/*.js", lambda route: held.append(route))   # 挂起，不让分块到达
+            goto_fresh("#/word?id=" + qw.split("|")[0])
+            pg.wait_for_timeout(700)
+            lq = pg.evaluate("() => (document.querySelector('.load-quote') || {textContent: ''}).textContent")
+            check("加载等待页显示名句/习语卡（%s）" % qw.split("|")[1], "名句积累" in lq, True, extra=lq[:70])
+            # 用合法空脚本释放（abort 会给控制台留 ERR_FAILED 错误、污染错误数断言）
+            for r in held:
+                r.fulfill(status=200, content_type="application/javascript", body="/* test stub */")
+            pg.unroute("**/data/dict/*.js")
+
         # 扩展词条页也要有学习笔记（sunfleeting：aback 类 ext 词之前没地方记笔记）
         pg.goto(BASE + "#/word?w=aback", wait_until="domcontentloaded")
         try:

@@ -1223,3 +1223,11 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 .hs-on-def { font-size: 13px; color: var(--text-2); line-height: 1.5; }
 .hs-on-def i { font-style: italic; color: var(--text-3); margin-right: 0.4rem; font-family: var(--mono); font-size: 12px; }
 .hs-brief.muted { color: var(--text-3); }
+
+/* 详解页加载等待：名句/习语积累卡（data/quotes.js） */
+.load-quote { text-align: center; padding: 1.7rem 1.5rem; }
+.lq-text { font-family: var(--font-display); font-size: 1.22rem; line-height: 1.55; color: var(--text); }
+.lq-idiom { letter-spacing: 0.02em; }
+.lq-src { margin-top: 0.7rem; font-size: 13px; color: var(--text-2); }
+.lq-foot { margin-top: 1.1rem; padding-top: 0.85rem; border-top: 1px solid var(--line-soft);
+  font-size: 11.5px; color: var(--text-3); letter-spacing: 0.1em; }
