@@ -1,0 +1,102 @@
+# 自动发布流水线：推 tag（v*）自动构建 Windows 桌面版 + Android APK 并发 GitHub Release。
+# 也可以在 Actions 页面手动触发（workflow_dispatch 只验证构建，不发 Release）。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ---------- Windows 桌面版（Electron portable exe） ----------
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build portable exe
+        working-directory: desktop
+        env:
+          # 本仓库 gradle-wrapper 用了腾讯镜像，与 electron-builder 无关；CI 网络快，不需要 npmmirror
+          NODE_OPTIONS: ''
+        run: |
+          npm install --no-audit --no-fund
+          npm run dist
+
+      - name: Rename artifact with tag
+        shell: bash
+        run: cp desktop/dist/EnglishLearningStation-*-portable.exe "EnglishLearningStation-${GITHUB_REF_NAME}-portable.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: EnglishLearningStation-*-portable.exe
+          if-no-files-found: error
+
+  # ---------- Android debug APK（Capacitor + Gradle） ----------
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Sync web assets
+        run: |
+          npm install --no-audit --no-fund
+          npm run mobile:sync
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Rename artifact with tag
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk "EnglishLearningStation-${GITHUB_REF_NAME}-debug.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: EnglishLearningStation-*-debug.apk
+          if-no-files-found: error
+
+  # ---------- 发布（仅 tag 推送时执行；手动触发只验证构建） ----------
+  release:
+    needs: [desktop, android]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            EnglishLearningStation-*-portable.exe
+            EnglishLearningStation-*-debug.apk
+          generate_release_notes: true

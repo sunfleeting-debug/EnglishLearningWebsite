@@ -195,7 +195,7 @@ git push origin main    # 推完等 1~2 分钟即可
 
 ## 打包桌面版与 Android App
 
-两个产物都在 [Releases](https://github.com/sunfleeting-debug/EnglishLearningWebsite/releases) 里可直接下载；要自己重新打包时：
+两个产物都在 [Releases](https://github.com/sunfleeting-debug/EnglishLearningWebsite/releases) 里可直接下载；版本更新走 **GitHub Actions 自动发布**：推一个 `v*` 标签（如 `git tag v1.1.0 && git push origin v1.1.0`），流水线自动构建 exe + apk 并附到 Release（见 [`.github/workflows/release.yml`](.github/workflows/release.yml)，也可在 Actions 页面手动触发做纯构建验证）。本机手动打包时：
 
 **Windows 桌面版（Electron，产出单文件 portable exe）**
 
