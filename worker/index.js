@@ -13,7 +13,7 @@
  * 路由
  *   GET  /api/health
  *   POST /api/register          {email, password, name?}      -> {token, user}   （未配邮件服务时的免码注册）
- *   POST /api/register/start    {email}                       -> {ok, ttl}       （发注册验证码，需 MAILJET_API_KEY/MAILJET_SECRET_KEY）
+ *   POST /api/register/start    {email}                       -> {ok, ttl}       （发注册验证码，需 SMTP_USER/SMTP_PASS=QQ 邮箱授权码）
  *   POST /api/register/verify   {email, code, password, name?}-> {token, user}
  *   POST /api/reset/start       {email}                       -> {ok}            （找回密码验证码）
  *   POST /api/reset/verify      {email, code, password}       -> {ok}
@@ -27,6 +27,8 @@
  *   POST /api/admin/users/:id/password  {password}              -> {ok}
  *   GET  /api/admin/users/:id/export                           -> text/csv
  */
+
+import { connect } from 'cloudflare:sockets';
 
 const TOKEN_TTL_MS = 30 * 24 * 3600 * 1000;   // 会话有效期 30 天
 const PBKDF2_ITER = 100000;                  // PBKDF2 迭代次数
@@ -355,7 +357,7 @@ async function applySync(env, userId, body) {
 async function handleRegister(req, env) {
   const body = await readJson(req);
   // 配了邮件服务就强制走验证码注册，防止裸接口绕过邮箱验证
-  if (env.MAILJET_API_KEY && env.MAILJET_SECRET_KEY) {
+  if (env.SMTP_USER && env.SMTP_PASS) {
     return fail('该后端已开启邮箱验证，请先获取验证码再注册', 400);
   }
   const email = normEmail(body.email);
@@ -407,12 +409,11 @@ async function handleLogin(req, env) {
 }
 
 /* ------------------------------------------------------------- 邮箱验证码
- * 注册验证码流程（Mailjet 邮件 API 发信，免费 6000 封/月、注册无电话认证、
- * 单发件人地址验证不需要域名）。设计：
+ * 注册验证码流程（QQ 邮箱 SMTP 直连发信，国内、无注册审核、无需域名）。设计：
  *  - 验证码不落明文：存 sha256(code + email)，泄露库也推不回码
  *  - 10 分钟有效、同一邮箱 60 秒一次、最多校验 5 次（防爆破）
- *  - env.MAILJET_API_KEY/MAILJET_SECRET_KEY 未配置时此流程关闭，/api/register（免码注册）
- *    照常可用，/api/register/start 明确报「未启用」——前端据此回退到免码注册。
+ *  - env.SMTP_USER/SMTP_PASS 未配置时此流程关闭，/api/register（免码注册）照常可用，
+ *    /api/register/start 明确报「未启用」——前端据此回退到免码注册。
  *  - purpose: 'register' 注册 / 'reset' 找回密码（同一张表，互不混用）
  */
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -431,37 +432,88 @@ function genCode() {
 }
 
 async function sendMail(env, toEmail, subject, text) {
-  // Mailjet v3.1：Basic 认证（API Key : Secret Key），一次一发，按 Messages[0].Status 判成败
-  const auth = btoa(env.MAILJET_API_KEY + ':' + env.MAILJET_SECRET_KEY);
-  const res = await fetch('https://api.mailjet.com/v3.1/send', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Basic ' + auth,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      Messages: [{
-        From: { Email: env.MAIL_FROM, Name: env.MAIL_FROM_NAME || '英语学习站' },
-        To: [{ Email: toEmail }],
-        Subject: subject,
-        TextPart: text
-      }]
-    })
-  });
-  if (!res.ok) {
-    const detail = await res.text().catch(function () { return ''; });
-    throw new Error('mailjet ' + res.status + ' ' + detail.slice(0, 200));
+  /* QQ 邮箱 SMTP 直连（国内、免注册第三方、无需域名）。
+   * SMTP_HOST/PORT 可换 163 等同类邮箱；465 是隐式 TLS，connect 直接带 secureTransport:'on'。
+   * 凭据：SMTP_USER = 发件邮箱；SMTP_PASS = 邮箱「授权码」（QQ：设置→账号→开 IMAP/SMTP
+   * 服务→手机短信验证后给 16 位授权码；不是 QQ 密码）。
+   * Workers 里没有 SMTP 库 ⇒ 用 cloudflare:sockets 的 TCP socket 手写会话。 */
+  const user = env.SMTP_USER;
+  const pass = env.SMTP_PASS;
+  const host = env.SMTP_HOST || 'smtp.qq.com';
+  const socket = connect({ hostname: host, port: 465, secureTransport: 'on' });
+  const reader = socket.readable.getReader();
+  const writer = socket.writable.getWriter();
+  const dec = new TextDecoder();
+  const enc = new TextEncoder();
+  let buf = '';
+
+  /* btoa 只认 Latin1，中文先转 UTF-8 字节再 base64（RFC 2047 邮件头 / base64 正文都要用） */
+  const b64 = function (s) {
+    const bytes = enc.encode(s);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(bin);
+  };
+
+  /* 读一条完整 SMTP 回复：多行回复中间行是 "NNN-xxx"，末行是 "NNN xxx" */
+  async function readReply() {
+    for (;;) {
+      const idx = buf.indexOf('\r\n');
+      if (idx === -1) {
+        const r = await reader.read();
+        if (r.done) throw new Error('SMTP 连接提前断开，缓冲: ' + buf.slice(0, 200));
+        buf += dec.decode(r.value);
+        continue;
+      }
+      const line = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      if (/^\d{3}-/.test(line)) continue;
+      if (/^\d{3} /.test(line)) return line;
+      throw new Error('SMTP 回复格式异常: ' + line.slice(0, 200));
+    }
   }
-  const out = await res.json().catch(function () { return null; });
-  const st = out && out.Messages && out.Messages[0] && out.Messages[0].Status;
-  if (st && st !== 'success') {
-    throw new Error('mailjet 发送失败 ' + JSON.stringify(out.Messages[0]).slice(0, 200));
+
+  async function cmd(line, expect) {
+    await writer.write(enc.encode(line + '\r\n'));
+    const reply = await readReply();
+    if (expect && reply.slice(0, 3) !== expect) {
+      throw new Error('SMTP 命令失败 [' + line.split(' ')[0] + ']: ' + reply.slice(0, 200));
+    }
+    return reply;
+  }
+
+  try {
+    await readReply();                                  // 220 服务问候
+    await cmd('EHLO english-site', '250');
+    await cmd('AUTH LOGIN', '334');
+    await cmd(b64(user), '334');                        // 用户名
+    await cmd(b64(pass), '235');                        // 授权码
+    await cmd('MAIL FROM:<' + user + '>', '250');
+    await cmd('RCPT TO:<' + toEmail + '>', '250');
+    await cmd('DATA', '354');
+    const bodyB64 = b64(text).replace(/(.{76})/g, '$1\r\n');   // 正文按 76 列分行
+    const fromName = '=?utf-8?B?' + b64(env.MAIL_FROM_NAME || '英语学习站') + '?=';
+    const data =
+      'From: ' + fromName + ' <' + user + '>\r\n' +
+      'To: <' + toEmail + '>\r\n' +
+      'Subject: =?utf-8?B?' + b64(subject) + '?=\r\n' +
+      'MIME-Version: 1.0\r\n' +
+      'Content-Type: text/plain; charset=UTF-8\r\n' +
+      'Content-Transfer-Encoding: base64\r\n' +
+      '\r\n' +
+      bodyB64 + '\r\n.';
+    await cmd(data, '250');
+    await cmd('QUIT', '221');
+  } finally {
+    try { await writer.close(); } catch (e) { /* 对端可能已关闭，忽略 */ }
   }
 }
 
 /* 发码公共体：限流 + 存哈希 + 发信。返回 null=成功，string=错误文案 */
 async function issueCode(env, email, purpose) {
-  if (!env.MAILJET_API_KEY || !env.MAILJET_SECRET_KEY || !env.MAIL_FROM) return '邮箱验证未启用';
+  if (!env.SMTP_USER || !env.SMTP_PASS) return '邮箱验证未启用';
   const now = Date.now();
   const row = await env.DB.prepare('SELECT * FROM email_codes WHERE email = ? AND purpose = ?')
     .bind(email, purpose).first();
@@ -690,7 +742,7 @@ function landingPage(host) {
     + '<table>\n'
     + '<tr><td><code>GET /api/health</code></td><td>健康检查，无需登录</td></tr>\n'
     + '<tr><td><code>POST /api/register</code></td><td>注册（未配置邮件服务时的免码通道）</td></tr>\n'
-    + '<tr><td><code>POST /api/register/start</code></td><td>发注册验证码（需配置 MAILJET_API_KEY / MAILJET_SECRET_KEY）</td></tr>\n'
+    + '<tr><td><code>POST /api/register/start</code></td><td>发注册验证码（需配置 SMTP_USER / SMTP_PASS，QQ 邮箱授权码）</td></tr>\n'
     + '<tr><td><code>POST /api/register/verify</code></td><td>校验验证码并完成注册</td></tr>\n'
     + '<tr><td><code>POST /api/reset/start</code></td><td>发找回密码验证码</td></tr>\n'
     + '<tr><td><code>POST /api/reset/verify</code></td><td>校验验证码并重置密码</td></tr>\n'
