@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
--- 邮箱验证码（注册 / 找回密码，SMTP2GO 发信） ---------------------------------
+-- 邮箱验证码（注册 / 找回密码，Mailjet 发信） ---------------------------------
 -- 只存 sha256(code|email|purpose)，不落明文；10 分钟有效、60 秒重发、5 次错误作废。
 CREATE TABLE IF NOT EXISTS email_codes (
   email     TEXT NOT NULL,

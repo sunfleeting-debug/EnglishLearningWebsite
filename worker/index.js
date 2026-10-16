@@ -13,7 +13,7 @@
  * 路由
  *   GET  /api/health
  *   POST /api/register          {email, password, name?}      -> {token, user}   （未配邮件服务时的免码注册）
- *   POST /api/register/start    {email}                       -> {ok, ttl}       （发注册验证码，需 SMTP2GO_API_KEY）
+ *   POST /api/register/start    {email}                       -> {ok, ttl}       （发注册验证码，需 MAILJET_API_KEY/MAILJET_SECRET_KEY）
  *   POST /api/register/verify   {email, code, password, name?}-> {token, user}
  *   POST /api/reset/start       {email}                       -> {ok}            （找回密码验证码）
  *   POST /api/reset/verify      {email, code, password}       -> {ok}
@@ -355,7 +355,7 @@ async function applySync(env, userId, body) {
 async function handleRegister(req, env) {
   const body = await readJson(req);
   // 配了邮件服务就强制走验证码注册，防止裸接口绕过邮箱验证
-  if (env.SMTP2GO_API_KEY) {
+  if (env.MAILJET_API_KEY && env.MAILJET_SECRET_KEY) {
     return fail('该后端已开启邮箱验证，请先获取验证码再注册', 400);
   }
   const email = normEmail(body.email);
@@ -407,11 +407,12 @@ async function handleLogin(req, env) {
 }
 
 /* ------------------------------------------------------------- 邮箱验证码
- * 注册验证码流程（SMTP2GO 邮件 API 发信，免费 1000 封/月、注册无电话认证）。设计：
+ * 注册验证码流程（Mailjet 邮件 API 发信，免费 6000 封/月、注册无电话认证、
+ * 单发件人地址验证不需要域名）。设计：
  *  - 验证码不落明文：存 sha256(code + email)，泄露库也推不回码
  *  - 10 分钟有效、同一邮箱 60 秒一次、最多校验 5 次（防爆破）
- *  - env.SMTP2GO_API_KEY 未配置时此流程关闭，/api/register（免码注册）照常可用，
- *    /api/register/start 明确报「未启用」——前端据此回退到免码注册。
+ *  - env.MAILJET_API_KEY/MAILJET_SECRET_KEY 未配置时此流程关闭，/api/register（免码注册）
+ *    照常可用，/api/register/start 明确报「未启用」——前端据此回退到免码注册。
  *  - purpose: 'register' 注册 / 'reset' 找回密码（同一张表，互不混用）
  */
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -430,34 +431,37 @@ function genCode() {
 }
 
 async function sendMail(env, toEmail, subject, text) {
-  const res = await fetch('https://api.smtp2go.com/v3/email/send', {
+  // Mailjet v3.1：Basic 认证（API Key : Secret Key），一次一发，按 Messages[0].Status 判成败
+  const auth = btoa(env.MAILJET_API_KEY + ':' + env.MAILJET_SECRET_KEY);
+  const res = await fetch('https://api.mailjet.com/v3.1/send', {
     method: 'POST',
     headers: {
-      'X-Smtp2go-Api-Key': env.SMTP2GO_API_KEY,
-      'Content-Type': 'application/json',
-      'accept': 'application/json'
+      'Authorization': 'Basic ' + auth,
+      'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      sender: (env.MAIL_FROM_NAME || '英语学习站') + ' <' + env.MAIL_FROM + '>',
-      to: [toEmail],
-      subject: subject,
-      text_body: text
+      Messages: [{
+        From: { Email: env.MAIL_FROM, Name: env.MAIL_FROM_NAME || '英语学习站' },
+        To: [{ Email: toEmail }],
+        Subject: subject,
+        TextPart: text
+      }]
     })
   });
   if (!res.ok) {
     const detail = await res.text().catch(function () { return ''; });
-    throw new Error('smtp2go ' + res.status + ' ' + detail.slice(0, 200));
+    throw new Error('mailjet ' + res.status + ' ' + detail.slice(0, 200));
   }
   const out = await res.json().catch(function () { return null; });
-  // SMTP2GO 业务失败也回 HTTP 200，靠 data.succeeded 判断
-  if (out && out.data && out.data.succeeded === 0) {
-    throw new Error('smtp2go 发送失败 ' + JSON.stringify(out.data.failures || []).slice(0, 200));
+  const st = out && out.Messages && out.Messages[0] && out.Messages[0].Status;
+  if (st && st !== 'success') {
+    throw new Error('mailjet 发送失败 ' + JSON.stringify(out.Messages[0]).slice(0, 200));
   }
 }
 
 /* 发码公共体：限流 + 存哈希 + 发信。返回 null=成功，string=错误文案 */
 async function issueCode(env, email, purpose) {
-  if (!env.SMTP2GO_API_KEY || !env.MAIL_FROM) return '邮箱验证未启用';
+  if (!env.MAILJET_API_KEY || !env.MAILJET_SECRET_KEY || !env.MAIL_FROM) return '邮箱验证未启用';
   const now = Date.now();
   const row = await env.DB.prepare('SELECT * FROM email_codes WHERE email = ? AND purpose = ?')
     .bind(email, purpose).first();
@@ -686,7 +690,7 @@ function landingPage(host) {
     + '<table>\n'
     + '<tr><td><code>GET /api/health</code></td><td>健康检查，无需登录</td></tr>\n'
     + '<tr><td><code>POST /api/register</code></td><td>注册（未配置邮件服务时的免码通道）</td></tr>\n'
-    + '<tr><td><code>POST /api/register/start</code></td><td>发注册验证码（需配置 SMTP2GO_API_KEY）</td></tr>\n'
+    + '<tr><td><code>POST /api/register/start</code></td><td>发注册验证码（需配置 MAILJET_API_KEY / MAILJET_SECRET_KEY）</td></tr>\n'
     + '<tr><td><code>POST /api/register/verify</code></td><td>校验验证码并完成注册</td></tr>\n'
     + '<tr><td><code>POST /api/reset/start</code></td><td>发找回密码验证码</td></tr>\n'
     + '<tr><td><code>POST /api/reset/verify</code></td><td>校验验证码并重置密码</td></tr>\n'
