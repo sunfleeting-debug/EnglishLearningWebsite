@@ -433,16 +433,18 @@ function genCode() {
 
 async function sendMail(env, toEmail, subject, text) {
   /* QQ 邮箱 SMTP 直连（国内、免注册第三方、无需域名）。
-   * SMTP_HOST/PORT 可换 163 等同类邮箱；465 是隐式 TLS，connect 直接带 secureTransport:'on'。
+   * 路线：587 明文连入 -> STARTTLS 升级（connect 第二参数 secureTransport:'starttls'，
+   * 升级用 startTls()，它返回「新 socket」——注意不能写进第一个参数，否则被静默忽略）。
+   * 465 隐式 TLS 在 Workers 上实测不通（同样原因），别改回去。
    * 凭据：SMTP_USER = 发件邮箱；SMTP_PASS = 邮箱「授权码」（QQ：设置→账号→开 IMAP/SMTP
-   * 服务→手机短信验证后给 16 位授权码；不是 QQ 密码）。
-   * Workers 里没有 SMTP 库 ⇒ 用 cloudflare:sockets 的 TCP socket 手写会话。 */
+   * 服务→手机短信验证后给 16 位授权码；不是 QQ 密码）。SMTP_HOST 可换 smtp.163.com。
+   * QQ 的 From 头要求严格（RFC5322/2047）：显示名必须单独编码，<邮箱> 不能编进去。 */
   const user = env.SMTP_USER;
   const pass = env.SMTP_PASS;
   const host = env.SMTP_HOST || 'smtp.qq.com';
-  const socket = connect({ hostname: host, port: 465, secureTransport: 'on' });
-  const reader = socket.readable.getReader();
-  const writer = socket.writable.getWriter();
+  const socket = connect({ hostname: host, port: 587 }, { secureTransport: 'starttls' });
+  let reader = socket.readable.getReader();
+  let writer = socket.writable.getWriter();
   const dec = new TextDecoder();
   const enc = new TextEncoder();
   let buf = '';
@@ -487,9 +489,14 @@ async function sendMail(env, toEmail, subject, text) {
   try {
     await readReply();                                  // 220 服务问候
     await cmd('EHLO english-site', '250');
-    await cmd('AUTH LOGIN', '334');
-    await cmd(b64(user), '334');                        // 用户名
-    await cmd(b64(pass), '235');                        // 授权码
+    await cmd('STARTTLS', '220');
+    reader.releaseLock(); writer.releaseLock();         // 解锁旧流才能升级
+    const tlsSock = socket.startTls();                  // 返回新 socket
+    reader = tlsSock.readable.getReader();
+    writer = tlsSock.writable.getWriter();
+    buf = '';
+    await cmd('EHLO english-site', '250');              // TLS 后重新 EHLO
+    await cmd('AUTH PLAIN ' + b64('\0' + user + '\0' + pass), '235');
     await cmd('MAIL FROM:<' + user + '>', '250');
     await cmd('RCPT TO:<' + toEmail + '>', '250');
     await cmd('DATA', '354');
