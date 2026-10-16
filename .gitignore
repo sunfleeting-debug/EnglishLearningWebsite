@@ -10,6 +10,19 @@ __pycache__/
 node_modules/
 www/
 .npm-cache/
+
+# ---------- 移动端 / 桌面端构建产物 ----------
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/capacitor-cordova-android-plugins/
+ios/App/App/public/
+ios/App/Pods/
+ios/DerivedData/
+desktop/app/
+desktop/dist/
+desktop/node_modules/
 _ref_typewords/
 _target_repo/
 

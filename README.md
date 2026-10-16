@@ -8,13 +8,18 @@
 
 🌐 **在线地址**：<https://sunfleeting-debug.github.io/EnglishLearningWebsite/>
 
-📱 **手机上一句话搞定**：用手机浏览器打开上面的网址 → 分享菜单 → 「添加到主屏幕」，
-之后就像 App 一样全屏打开（已配 PWA 图标与 manifest）。
+📥 **现成的 App（不用装环境）**：到 [Releases](https://github.com/sunfleeting-debug/EnglishLearningWebsite/releases/latest) 下载——
+
+- `EnglishLearningStation-1.0.0-portable.exe`：**Windows 桌面版**，单文件免安装，双击即用（Electron 壳，窗口内自带本地服务，音频拖动/离线学习全部可用）
+- `EnglishLearningStation-1.0.0-debug.apk`：**Android 安装包**（Capacitor 打包的 debug 签名），传到手机直接安装
+
+📱 **手机上也可以不装 App**：用手机浏览器打开上面的网址 → 分享菜单 → 「添加到主屏幕」，
+之后就像 App 一样全屏打开（已配 PWA 图标、manifest 与离线缓存）。
 移动端做了针对性优化：底部导航栏、单列布局、**词典数据按需加载**（首屏 JS 从 ~5.7MB 降到 ~0.8MB）。
 
-📦 **手机 App 路线已配置**：网站现在是可安装的离线 PWA，并提供 Capacitor Android/iOS 原生工程。手机底栏保留首页、词库、练习、句子练习、复习，其余功能在「更多」抽屉；首屏核心资源可离线打开，MP3/PDF 不会在首次安装时全部下载。Android Debug APK 可由 `android/app/build/outputs/apk/debug/app-debug.apk` 生成，完整流程见 [`docs/mobile-deployment.md`](docs/mobile-deployment.md)。
-
 ![预览](docs/preview-home.png)
+
+![句子练习](docs/preview-sentences.png)
 
 ![选择词典](docs/preview-decks.png)
 
@@ -44,6 +49,9 @@
   分组展示词典卡，每张卡带词数、已学数、掌握进度，可「浏览词表」或直接「练习」
 - 词典数据**按需加载**：只有打开某本词典时才注入 `data/dicts/<id>.js`（100~450KB/本），
   目录本身只有 1.7KB，首屏不受影响
+- **首页搜词是全量的**：一次搜索覆盖所有 14 本词典（进首页空闲时按常用度后台预取，
+  结果最多 100 条、区域可滚动）；词库没有的词走有道在线兜底，可点开详解
+- **搜索历史**：聚焦空输入框显示最近 10 条，可点击重搜、一键清空
 - 每个词条带美/英音标与中文释义；搜索（单词 / 释义）、按学习状态筛选（未学 / 错词 / 收藏 / 已掌握）、分页浏览
 
 **复习（艾宾浩斯遗忘曲线）**
@@ -65,6 +73,10 @@
 - **近义词、反义词、例句中的每个单词都可点击**：在本词书里的直接跳词条；不在本词书里的近义/反义词，
   也补了「扩展词条」（音标+释义）可以点开；自动做词形还原（`measures → measure`、`drastically → drastic`、`regulations → regulation`）
 - 数据来自有道词典 jsonapi（搭配、派生、辨析、近义、例句、词源）+ Datamuse（反义词），全部离线打包
+- **加载等待页是「名句积累」卡**：等词典数据时轮流展示英文名著名句（盖茨比/双城记/老人与海…附出处）与常用习语（附中文释义），白等变积累
+- 词典数据**按首字母分块加载**：详情页只拉当前词所在的字母块（~200KB），不再是整本 5MB
+- 详解页拼写练习卡带「**重练**」按钮（`Alt+R`）：拼对了想再打一遍，一键清空重来
+- 每个词条都能写**学习笔记**（自动云同步），生词本里聚合为「我的笔记」分类
 
 **练习（四种模式）**
 | 模式 | 说明 |
@@ -132,14 +144,25 @@
 - 管理员进了 `ADMIN_EMAILS` 名单后能看到**管理看板**：用户列表、逐人下钻（错词/已掌握/收藏/复习队列）、
   近 14 天练习曲线、CSV 导出、重置他人密码
 
-**移动端**
+**移动端与桌面端**
 - 自适应布局：窄屏改为底部导航栏 + 单列卡片，已断言「无横向溢出」（390×844 实测）
 - PWA：`manifest.json` + 图标（192 / 512 / maskable / apple-touch），可「添加到主屏幕」全屏打开
-- 词典卡与扩展词条按需加载，首屏 JS 约 0.8MB（详情页才加载余下的约 4.9MB）
+- **Service Worker 离线缓存**：应用壳（HTML/CSS/JS/核心词库/句子课程/图标）首次访问即缓存，
+  断网冷启动可用；发版后出现「有新版本，刷新」提示，点击即切到新资源。MP3/PDF/大词典
+  不在首次安装时全量下载，按需缓存；音频 Range 请求交给服务器处理
+- 词典卡与扩展词条按需加载，首屏 JS 约 0.8MB（详情页才按字母块加载当前词条）
+- **Windows 桌面版**：`desktop/` 里的 Electron 壳，进程内自带支持 Range 的静态服务，
+  打包为单文件 portable exe（见下方「打包桌面版与 Android App」）
+- **Android App**：`android/` 是 Capacitor 原生工程，`npm run mobile:sync` 同步网页后
+  `gradlew assembleDebug` 出 APK；手机底栏保留首页、词库、练习、句子练习、复习五个高频入口，
+  其余功能在「更多」抽屉。完整说明见 [`docs/mobile-deployment.md`](docs/mobile-deployment.md)
 
 ## 快速开始
 
-方式一：直接双击 `index.html`（推荐，无需任何环境）。
+**方式零：下载现成的 App** —— 到 [Releases](https://github.com/sunfleeting-debug/EnglishLearningWebsite/releases/latest)
+拿 Windows portable exe（双击即用）或 Android debug APK（传到手机安装）。
+
+方式一：直接双击 `index.html`（无需任何环境）。
 
 方式二：用仓库自带的本地服务器（**推荐**，音频才能拖动进度 / 点击字幕跳转）：
 
@@ -169,6 +192,37 @@ git push origin main    # 推完等 1~2 分钟即可
 - 首次开启 Pages（换仓库时）：Settings → Pages → Source 选 `Deploy from a branch`，
   Branch 选 `main`、目录 `/ (root)`；或用 API：
   `gh api --method POST repos/<owner>/<repo>/pages -f "source[branch]=main" -f "source[path]=/"`
+
+## 打包桌面版与 Android App
+
+两个产物都在 [Releases](https://github.com/sunfleeting-debug/EnglishLearningWebsite/releases) 里可直接下载；要自己重新打包时：
+
+**Windows 桌面版（Electron，产出单文件 portable exe）**
+
+```bash
+cd desktop
+npm install                                     # Electron 33 + electron-builder（走 npmmirror 快）
+npm run dist                                    # 先拷站点资源到 app/，再打 exe
+# 产物：desktop/dist/EnglishLearningStation-1.0.0-portable.exe
+```
+
+桌面壳原理：`desktop/main.js` 在进程内起一个**支持 Range 的静态服务器**（音频拖动必需），
+再用 BrowserWindow 加载 `127.0.0.1` 地址；站点资源随 asar 进包，完全离线可用。
+开发调试用 `npm start`（直接加载仓库根目录文件）。
+
+**Android debug APK（Capacitor，需 Android SDK + JDK 17）**
+
+```bash
+npm install                                     # Capacitor 6 依赖
+npm run mobile:sync                             # 网页资源复制进 www/ 并同步原生工程
+cd android
+JAVA_HOME="<JDK17 路径>" ./gradlew assembleDebug
+# 产物：android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+> Gradle 发行包在 `android/gradle/wrapper/gradle-wrapper.properties` 里指向了腾讯云镜像
+> （官方 `services.gradle.org` 在本机直连超时）；APK 是 debug 签名，供个人安装使用，
+> 正式发布需要自行配置签名密钥。iOS 工程已生成，但签名构建只能在 macOS + Xcode 做。
 
 ## 后端与云同步（可选）
 
@@ -207,7 +261,7 @@ wrangler deploy              # 拿到 https://cet-words-api.<你的账号>.worke
 改完后端代码后，除了跑本地 mock，还可以直接打线上接口确认真的部署好了：
 
 ```bash
-python tools/smoke_api.py        # 44 项断言：根地址落地页 / 健康检查 / 注册登录 / 同步合并 / 删除清空 / CORS / 权限 / 错误路径
+python tools/smoke_api.py        # 46 项断言：根地址落地页 / 健康检查 / 注册登录 / 同步合并 / 删除清空 / CORS / 权限 / 错误路径
 ```
 
 > 后端根地址 <https://cet-words-api.sunfleeting.workers.dev> 是一个**说明页**（列出所有 `/api/*` 接口
@@ -248,7 +302,16 @@ python tools/smoke_api.py        # 44 项断言：根地址落地页 / 健康检
 .
 ├── index.html              # 入口（单页应用）
 ├── manifest.json           # PWA 清单（添加到主屏幕）
+├── service-worker.js       # PWA 离线缓存（应用壳 cache-first，发版必须 bump CACHE_VERSION）
+├── offline.html            # 断网兜底页
+├── data/quotes.js          # 详解页加载等待卡的「名句积累」语料
 ├── .nojekyll               # 让 GitHub Pages 跳过 Jekyll
+├── android/                # Capacitor Android 原生工程（出 APK）
+├── ios/                    # Capacitor iOS 原生工程（需 macOS + Xcode 构建）
+├── desktop/                # Electron 桌面壳（出 Windows portable exe）
+│   ├── main.js             # 进程内静态服务器（带 Range）+ BrowserWindow
+│   ├── build.mjs           # 打包前把站点白名单资源拷到 desktop/app/
+│   └── package.json        # electron-builder 配置（产物在 desktop/dist/）
 ├── assets/
 │   ├── css/style.css       # 全部样式
 │   ├── img/                # PWA 图标（192 / 512 / maskable / apple-touch）
@@ -266,7 +329,11 @@ sync.js         # 增量同步调度（防抖 / 强制全量 / 页面隐藏 beac
 ├── data/
 │   ├── words.json/js       # 2714 个词条（含音标、释义、音频时间轴）
 │   ├── dict.json/js        # 词典卡（搭配/派生/辨析/近义/反义/例句/词源）
+│   ├── dict/<L>.js         # 词典卡按首字母分块（25 块，详情页按需加载）
 │   ├── dict-ext.json/js    # 扩展词条（近义/反义词中非本词书者，音标+释义）
+│   ├── dict-ext/<L>.js     # 扩展词条按首字母分块
+│   ├── sentences.js        # 句子练习课程（6 门 / 48 组 / 144 步）
+│   ├── quotes.js           # 加载等待页名句与习语
 │   ├── books.json/js       # 词书元信息
 │   └── dicts/              # 12 本常用词典（index.js 目录 + 每本一个按需加载的 js）
 ├── THIRD-PARTY.md          # 第三方数据来源与许可
@@ -339,13 +406,14 @@ python tools/build_qwerty_dicts.py --refresh  # 忽略缓存重新抓取
 ## 本地核验
 
 ```bash
-bash tools/verify.sh          # 起服务 + 跑 Playwright，共 96 项断言 + 33 张截图
+bash tools/verify.sh          # 起服务 + 跑 Playwright，共 181 项断言 + 截图
 ```
 
-核验通过的标准：`失败 0 / 共 96 项断言`，且控制台错误数 = 0。截图落在 `docs/shots/`。
+核验通过的标准：`失败 0 / 共 181 项断言`，且控制台错误数 = 0。截图落在 `docs/shots/`。
 断言覆盖：数据层（词条数 / 词典目录 / id 唯一 / 字节级原样下发）· 各页面渲染 ·
-练习四模式与「答错先给重做机会」· 翻卡跨会话覆盖回归 · 词典按需加载与词典词详情页 ·
-生词本跨词库统计 · 复习队列（自动入队 → 到期 → 答对升档推到明天 → 待复习清零）·
+练习四模式与「答错先给重做机会」· 翻卡跨会话覆盖回归 · 词典按需加载与字母分块 ·
+全量搜索与搜索历史 · 名句积累加载卡 · 详解页重练按钮 · 生词本跨词库统计 ·
+复习队列（自动入队 → 到期 → 答对升档推到明天 → 待复习清零）·
 移动端无横向溢出 · 控制台 0 错误。
 
 > 脚本会先自检端口是否被占用（Windows 下 `SO_REUSEADDR` 允许多进程绑同一端口，
@@ -358,7 +426,7 @@ bash tools/verify.sh          # 起服务 + 跑 Playwright，共 96 项断言 + 
 python tools/verify_speech.py
 ```
 
-练习页键盘操作与「学下一组」核验（56 项断言）：
+练习页键盘操作与「学下一组」核验（92 项断言）：
 
 ```bash
 python tools/verify_practice.py
@@ -371,7 +439,7 @@ python tools/verify_practice.py
 **四个模式进入新词都自动朗读**（且翻面重画不重复朗读）·
 工具键 `S`/`F`/`D`（打字时 `Alt+` 组合，裸字母仍能正常输入）· 控制台 0 错误。
 
-后端与同步端到端核验（47 项断言，用 **Python 标准库写的假后端**跑真实浏览器流程，
+后端与同步端到端核验（56 项断言，用 **Python 标准库写的假后端**跑真实浏览器流程，
 不需要真的 Cloudflare 账号）：
 
 ```bash
@@ -400,6 +468,12 @@ NODE_OPTIONS= python -u tools/verify_live.py
 26 项断言：标题 / 首页渲染 / 词库列表 / 详情页与按需加载 / 近义词跳转 / 发音通道 /
 真题阅读页与答题卡 / 答错给重做机会 / 词典目录与按需加载 / 复习队列自动入队与角标 /
 移动端无横向溢出 / 控制台错误 0 / 资源失败 0。
+
+句子练习独立核验（197 项断言，合并自句子练习分支自带测试）：
+
+```bash
+python tools/verify_sentences.py
+```
 > 启动 Chromium 需要真实环境（用沙箱 Bash 跑 Playwright 时需关闭沙箱，否则浏览器进程会被拦截）；
 > 另外 Playwright 版本必须与已下载的 `chromium_headless_shell` 版本一致，
 > 不匹配时先执行 `python -m playwright install chromium-headless-shell`。

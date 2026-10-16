@@ -1,0 +1,41 @@
+{
+  "name": "english-learning-station-desktop",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Windows desktop shell for the zero-build English Learning Station",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "prepare:site": "node build.mjs",
+    "dist": "node build.mjs && electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.englishlearningstation.desktop",
+    "productName": "英语学习站",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      "icon.ico",
+      "app/**/*"
+    ],
+    "portable": {
+      "artifactName": "EnglishLearningStation-${version}-portable.exe"
+    },
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    }
+  }
+}

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""名句加载卡探针：把词典分块请求挂起，让等待页停留，截图确认效果。"""
+"""复刻 verify_site 名句卡用例的调试探针。"""
 import pathlib, sys
 
 from playwright.sync_api import sync_playwright
@@ -13,23 +13,25 @@ def main():
     with sync_playwright() as p:
         pg = p.chromium.launch(executable_path=str(EXE), headless=True).new_page()
         held = []
-        pg.route("**/data/dict/*.js", lambda route: held.append(route))   # 挂起不回应
+        pg.route("**/data/dict/*.js", lambda route: held.append(route))
         pg.goto(BASE + "#/", wait_until="domcontentloaded")
-        pg.wait_for_timeout(1000)
-        print("QUOTES:", pg.evaluate("() => !!(TW.QUOTES && TW.QUOTES.quotes.length)"))
-        # 挑一个字母块还没载的词
-        wid = pg.evaluate("() => { const w = TW.WORDS.find(x => !TW.data.dictLetterReady(x.word));"
-                          "  return w ? String(w.id) : ''; }")
-        print("target word id:", wid)
-        pg.goto(BASE + "#/word?id=" + wid, wait_until="domcontentloaded")
-        pg.wait_for_timeout(800)
-        txt = pg.evaluate("() => (document.querySelector('.load-quote') || {textContent: ''}).textContent")
-        print("quote card:", txt[:120])
-        pg.screenshot(path="docs/shots/34-load-quote.png")
-        print("shot saved")
-        # 释放挂起请求（合法空脚本），避免进程退出时有悬挂连接
+        pg.wait_for_timeout(600)
+        pg.evaluate("() => navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); })")
+        pg.add_init_script("navigator.serviceWorker.register = function () { return new Promise(function () {}); };")
+        pg.goto(BASE + "#/", wait_until="domcontentloaded")
+        pg.wait_for_timeout(600)
+        qw = pg.evaluate("() => { const w = TW.WORDS.find(x => !TW.data.dictLetterReady(x.word));"
+                         "  return w ? (w.id + '|' + w.word + '|' + TW.data.dictLetterOf(w.word)) : ''; }")
+        print("qw:", qw)
+        pg.goto(BASE + "#/word?id=" + qw.split("|")[0], wait_until="domcontentloaded")
+        pg.wait_for_timeout(700)
+        print("held:", [h.request.url[-25:] for h in held])
+        print("controller:", pg.evaluate("() => !!navigator.serviceWorker.controller"))
+        lq = pg.evaluate("() => (document.querySelector('.load-quote') || {textContent: ''}).textContent")
+        print("quote:", lq[:80])
+        print("html:", pg.evaluate("() => (document.getElementById('view')||{innerHTML:''}).innerHTML.slice(0, 220)"))
         for r in held:
-            r.fulfill(status=200, content_type="application/javascript", body="/* probe stub */")
+            r.fulfill(status=200, content_type="application/javascript", body="/* stub */")
     return 0
 
 
