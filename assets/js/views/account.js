@@ -47,11 +47,19 @@
           '<label class="auth-lb" for="auth-pass2">确认密码</label>' +
           '<input class="field" id="auth-pass2" type="password" autocomplete="new-password" />' +
         '</div>' +
+        '<div id="auth-code-wrap" class="hide">' +
+          '<label class="auth-lb" for="auth-code">邮箱验证码</label>' +
+          '<div class="row" style="gap:.5rem">' +
+            '<input class="field" id="auth-code" type="text" inputmode="numeric" maxlength="6" placeholder="6 位数字" style="flex:1" />' +
+            '<button class="btn" id="auth-code-send" type="button">获取验证码</button>' +
+          '</div>' +
+        '</div>' +
         '<div class="auth-err" id="auth-err"></div>' +
         '<button class="btn primary" id="auth-submit" style="width:100%">登录</button>' +
       '</div>' +
       '<div class="small muted" style="margin-top:.9rem;line-height:1.7">' +
-        '本站<b>不发验证邮件</b>，注册填邮箱 + 密码即可；也没有「找回密码」，忘记密码请让管理员重置。<br>' +
+        '注册填邮箱 + 密码即可；部分后端会要求<b>邮箱验证码</b>（点「获取验证码」查收邮件，10 分钟内有效）。' +
+        '忘记密码可用登录页的「找回密码」，或让管理员重置。<br>' +
         '登录后本机的练习记录会自动上传并与其他设备合并：错次数/答题数取较大值，收藏与掌握状态以最后操作为准。' +
       '</div>' +
     '</div>';
@@ -123,16 +131,75 @@
       }
       if (btn) { btn.disabled = true; btn.textContent = mode === 'register' ? '注册中…' : '登录中…'; }
 
-      var p = mode === 'register' ? TW.api.register(email.trim(), pass) : TW.api.login(email.trim(), pass);
-      p.then(function (user) {
+      if (mode === 'register') {
+        var codeEl = TW.$('#auth-code', host);
+        var code = codeEl && !codeEl.closest('.hide') ? String(codeEl.value || '').trim() : '';
+        if (code) {
+          // 验证码注册
+          TW.api.request('POST', '/api/register/verify', { email: email.trim(), code: code, password: pass })
+            .then(function (r) { onAuthed(r, '注册成功，已开始同步'); })
+            .catch(function (err) { authFail(err); });
+          return;
+        }
+        // 先试免码注册；后端开启了邮箱验证时自动切到验证码流程
+        TW.api.register(email.trim(), pass).then(function (user) {
+          onAuthed(user, '注册成功，已开始同步');
+        }).catch(function (err) {
+          if (!alive()) return;
+          if (err.message && err.message.indexOf('邮箱验证') >= 0) {
+            startCodeFlow(email.trim());
+            return;
+          }
+          authFail(err);
+        });
+        return;
+      }
+      TW.api.login(email.trim(), pass).then(function (user) {
+        onAuthed(user, '登录成功');
+      }).catch(function (err) { authFail(err); });
+    }
+
+    function onAuthed(user, msg) {
+      if (!alive()) return;
+      TW.toast(msg, 'ok');
+      paint();
+      if (TW.sync) TW.sync.flush(true);
+    }
+
+    function authFail(err) {
+      if (!alive()) return;
+      setErr(err.message || '操作失败');
+      var btn = TW.$('#auth-submit', host);
+      if (btn) { btn.disabled = false; btn.textContent = mode === 'register' ? '注册' : '登录'; }
+    }
+
+    /* 验证码流程：发码 + 60s 倒计时，展示验证码输入行 */
+    function startCodeFlow(email) {
+      var wrap = TW.$('#auth-code-wrap', host);
+      var sendBtn = TW.$('#auth-code-send', host);
+      var errFn = setErr;
+      TW.api.request('POST', '/api/register/start', { email: email }).then(function () {
         if (!alive()) return;
-        TW.toast(mode === 'register' ? '注册成功，已开始同步' : '登录成功', 'ok');
-        paint();                                  // 立刻切到「已登录」界面
-        if (TW.sync) TW.sync.flush(true);         // 登录后立刻与云端对齐
-      }).catch(function (err) {
-        if (!alive()) return;
-        setErr(err.message || '操作失败');
-        if (btn) { btn.disabled = false; btn.textContent = mode === 'register' ? '注册' : '登录'; }
+        if (wrap) wrap.classList.remove('hide');
+        var codeEl = TW.$('#auth-code', host);
+        if (codeEl) codeEl.focus();
+        setErr('验证码已发送到邮箱，10 分钟内有效，请查收');
+        var left = 60;
+        if (sendBtn) {
+          sendBtn.disabled = true;
+          var timer = setInterval(function () {
+            if (!alive()) { clearInterval(timer); return; }
+            left--;
+            sendBtn.textContent = left > 0 ? ('重新发送(' + left + ')') : '获取验证码';
+            if (left <= 0) { clearInterval(timer); sendBtn.disabled = false; }
+          }, 1000);
+        }
+        var btn = TW.$('#auth-submit', host);
+        if (btn) { btn.disabled = false; btn.textContent = '注册'; }
+      }).catch(function (e) {
+        errFn(e.message || '验证码发送失败');
+        var btn = TW.$('#auth-submit', host);
+        if (btn) { btn.disabled = false; btn.textContent = '注册'; }
       });
     }
 
@@ -155,7 +222,13 @@
       }
       var sb = TW.$('#auth-submit', host);
       if (sb) sb.addEventListener('click', submit);
-      ['#auth-email', '#auth-pass', '#auth-pass2'].forEach(function (sel) {
+      var codeSend = TW.$('#auth-code-send', host);
+      if (codeSend) codeSend.addEventListener('click', function () {
+        var email = (TW.$('#auth-email', host) || {}).value || '';
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email).trim())) { setErr('请先填正确的邮箱地址'); return; }
+        startCodeFlow(email.trim());
+      });
+      ['#auth-email', '#auth-pass', '#auth-pass2', '#auth-code'].forEach(function (sel) {
         var el = TW.$(sel, host);
         if (el) el.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
       });

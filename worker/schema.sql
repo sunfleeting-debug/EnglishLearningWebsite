@@ -25,6 +25,18 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 
+-- 邮箱验证码（注册 / 找回密码，Brevo 发信） ---------------------------------
+-- 只存 sha256(code|email|purpose)，不落明文；10 分钟有效、60 秒重发、5 次错误作废。
+CREATE TABLE IF NOT EXISTS email_codes (
+  email     TEXT NOT NULL,
+  purpose   TEXT NOT NULL,              -- 'register' | 'reset'
+  code_hash TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  attempts  INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (email, purpose)
+);
+
 -- 单词学习进度（每个用户每个词一行） -----------------------------------------
 -- w/r/seen 是「累计计数」，跨设备合并取最大值（不会因为晚同步而回退）；
 -- fav/master 取「最后修改那一条」的值（这样才能把取消收藏/取消掌握同步出去）；

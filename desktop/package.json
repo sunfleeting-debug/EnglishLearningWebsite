@@ -1,7 +1,7 @@
 {
   "name": "english-learning-station-desktop",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Windows desktop shell for the zero-build English Learning Station",
   "main": "main.js",
   "scripts": {
@@ -21,6 +21,8 @@
     },
     "files": [
       "main.js",
+      "login.html",
+      "login-preload.js",
       "package.json",
       "icon.ico",
       "app/**/*"

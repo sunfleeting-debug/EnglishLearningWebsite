@@ -12,7 +12,11 @@
  *
  * 路由
  *   GET  /api/health
- *   POST /api/register          {email, password, name?}      -> {token, user}
+ *   POST /api/register          {email, password, name?}      -> {token, user}   （未配邮件服务时的免码注册）
+ *   POST /api/register/start    {email}                       -> {ok, ttl}       （发注册验证码，需 BREVO_API_KEY）
+ *   POST /api/register/verify   {email, code, password, name?}-> {token, user}
+ *   POST /api/reset/start       {email}                       -> {ok}            （找回密码验证码）
+ *   POST /api/reset/verify      {email, code, password}       -> {ok}
  *   POST /api/login             {email, password}             -> {token, user}
  *   POST /api/logout                                           -> {ok}
  *   GET  /api/me                                               -> {user}
@@ -350,6 +354,10 @@ async function applySync(env, userId, body) {
 
 async function handleRegister(req, env) {
   const body = await readJson(req);
+  // 配了邮件服务就强制走验证码注册，防止裸接口绕过邮箱验证
+  if (env.BREVO_API_KEY) {
+    return fail('该后端已开启邮箱验证，请先获取验证码再注册', 400);
+  }
   const email = normEmail(body.email);
   const password = String(body.password || '');
   if (!validEmail(email)) return fail('邮箱格式不正确');
@@ -396,6 +404,173 @@ async function handleLogin(req, env) {
     .bind(token, user.id, now, now + TOKEN_TTL_MS).run();
   await env.DB.prepare('UPDATE users SET last_seen = ? WHERE id = ?').bind(now, user.id).run();
   return jsonBody({ token: token, user: publicUser(user, env) });
+}
+
+/* ------------------------------------------------------------- 邮箱验证码
+ * 注册验证码流程（Brevo SMTP API 发信）。设计：
+ *  - 验证码不落明文：存 sha256(code + email)，泄露库也推不回码
+ *  - 10 分钟有效、同一邮箱 60 秒一次、最多校验 5 次（防爆破）
+ *  - env.BREVO_API_KEY 未配置时此流程关闭，/api/register（免码注册）照常可用，
+ *    /api/register/start 明确报「未启用」——前端据此回退到免码注册。
+ *  - purpose: 'register' 注册 / 'reset' 找回密码（同一张表，互不混用）
+ */
+const CODE_TTL_MS = 10 * 60 * 1000;
+const CODE_RESEND_MS = 60 * 1000;
+const CODE_MAX_ATTEMPTS = 5;
+
+async function sha256Hex(text) {
+  const bits = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return toHex(bits);
+}
+
+function genCode() {
+  // 6 位数字码：crypto 随机、固定 6 位输出
+  const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
+  return String(n).padStart(6, '0');
+}
+
+async function sendMail(env, toEmail, subject, text) {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': env.BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      'accept': 'application/json'
+    },
+    body: JSON.stringify({
+      sender: { email: env.MAIL_FROM, name: env.MAIL_FROM_NAME || '英语学习站' },
+      to: [{ email: toEmail }],
+      subject: subject,
+      textContent: text
+    })
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(function () { return ''; });
+    throw new Error('brevo ' + res.status + ' ' + detail.slice(0, 200));
+  }
+}
+
+/* 发码公共体：限流 + 存哈希 + 发信。返回 null=成功，string=错误文案 */
+async function issueCode(env, email, purpose) {
+  if (!env.BREVO_API_KEY || !env.MAIL_FROM) return '邮箱验证未启用';
+  const now = Date.now();
+  const row = await env.DB.prepare('SELECT * FROM email_codes WHERE email = ? AND purpose = ?')
+    .bind(email, purpose).first();
+  if (row && now - row.created_at < CODE_RESEND_MS) return '发送太频繁，请稍后再试';
+
+  const code = genCode();
+  const codeHash = await sha256Hex(code + '|' + email + '|' + purpose);
+  await env.DB.prepare(
+    'INSERT INTO email_codes (email,purpose,code_hash,expires_at,attempts,created_at) VALUES (?,?,?,?,0,?) ' +
+    'ON CONFLICT(email,purpose) DO UPDATE SET code_hash=excluded.code_hash, expires_at=excluded.expires_at, ' +
+    'attempts=0, created_at=excluded.created_at')
+    .bind(email, purpose, codeHash, now + CODE_TTL_MS, now).run();
+
+  const label = purpose === 'reset' ? '找回密码' : '注册';
+  await sendMail(env, email,
+    '【英语学习站】' + label + '验证码：' + code,
+    '你的' + label + '验证码是：' + code + '\n\n10 分钟内有效。如果不是你本人操作，请忽略本邮件。\n\n— 英语学习站');
+  return null;
+}
+
+/* 校验公共体：返回 null=通过，string=错误文案。通过后立即删码（一次性）。 */
+async function consumeCode(env, email, purpose, code) {
+  const now = Date.now();
+  const row = await env.DB.prepare('SELECT * FROM email_codes WHERE email = ? AND purpose = ?')
+    .bind(email, purpose).first();
+  if (!row) return '请先获取验证码';
+  if (now > row.expires_at) {
+    await env.DB.prepare('DELETE FROM email_codes WHERE email = ? AND purpose = ?').bind(email, purpose).run();
+    return '验证码已过期，请重新获取';
+  }
+  if (row.attempts >= CODE_MAX_ATTEMPTS) return '错误次数过多，请重新获取验证码';
+  const ok = (await sha256Hex(String(code || '') + '|' + email + '|' + purpose)) === row.code_hash;
+  if (!ok) {
+    await env.DB.prepare('UPDATE email_codes SET attempts = attempts + 1 WHERE email = ? AND purpose = ?')
+      .bind(email, purpose).run();
+    return '验证码不正确';
+  }
+  await env.DB.prepare('DELETE FROM email_codes WHERE email = ? AND purpose = ?').bind(email, purpose).run();
+  return null;
+}
+
+/* POST /api/register/start  {email} -> {ok}；开启验证码后注册必须走这个流程 */
+async function handleRegisterStart(req, env) {
+  const body = await readJson(req);
+  const email = normEmail(body.email);
+  if (!validEmail(email)) return fail('邮箱格式不正确');
+  const exists = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+  if (exists) return fail('该邮箱已注册，请直接登录', 409);
+  const err = await issueCode(env, email, 'register');
+  if (err) return fail(err, 400);
+  return jsonBody({ ok: true, ttl: CODE_TTL_MS / 1000 });
+}
+
+/* POST /api/register/verify  {email, code, password, name?} -> {token, user} */
+async function handleRegisterVerify(req, env) {
+  const body = await readJson(req);
+  const email = normEmail(body.email);
+  const password = String(body.password || '');
+  if (!validEmail(email)) return fail('邮箱格式不正确');
+  if (password.length < 6) return fail('密码至少 6 位');
+  if (password.length > 200) return fail('密码过长');
+
+  const exists = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+  if (exists) return fail('该邮箱已注册，请直接登录', 409);
+  const err = await consumeCode(env, email, 'register', body.code);
+  if (err) return fail(err, 400);
+
+  const now = Date.now();
+  const user = {
+    id: crypto.randomUUID(),
+    email: email,
+    pass_hash: await hashPassword(password),
+    name: String(body.name || '').slice(0, 40),
+    created_at: now,
+    last_seen: now,
+    synced_at: 0
+  };
+  await env.DB.prepare(
+    'INSERT INTO users (id,email,pass_hash,name,created_at,last_seen,synced_at) VALUES (?,?,?,?,?,?,?)')
+    .bind(user.id, user.email, user.pass_hash, user.name, user.created_at, user.last_seen, 0).run();
+
+  const token = newToken();
+  await env.DB.prepare('INSERT INTO sessions (token,user_id,created_at,expires_at) VALUES (?,?,?,?)')
+    .bind(token, user.id, now, now + TOKEN_TTL_MS).run();
+
+  return jsonBody({ token: token, user: publicUser(user, env) });
+}
+
+/* POST /api/reset/start  {email} -> {ok}（无论邮箱是否存在都返回 ok，避免枚举） */
+async function handleResetStart(req, env) {
+  const body = await readJson(req);
+  const email = normEmail(body.email);
+  if (!validEmail(email)) return fail('邮箱格式不正确');
+  const user = await env.DB.prepare('SELECT id FROM users WHERE email = ?').bind(email).first();
+  if (user) {
+    const err = await issueCode(env, email, 'reset');
+    if (err) return fail(err, 400);
+  }
+  return jsonBody({ ok: true });
+}
+
+/* POST /api/reset/verify  {email, code, password} -> {ok} */
+async function handleResetVerify(req, env) {
+  const body = await readJson(req);
+  const email = normEmail(body.email);
+  const password = String(body.password || '');
+  if (!validEmail(email)) return fail('邮箱格式不正确');
+  if (password.length < 6) return fail('密码至少 6 位');
+  const user = await env.DB.prepare('SELECT * FROM users WHERE email = ?').bind(email).first();
+  if (!user) return fail('邮箱或密码不正确', 401);
+  const err = await consumeCode(env, email, 'reset', body.code);
+  if (err) return fail(err, 400);
+
+  await env.DB.prepare('UPDATE users SET pass_hash = ? WHERE id = ?')
+    .bind(await hashPassword(password), user.id).run();
+  // 密码改了，全部旧会话作废（防凭据被盗后继续用）
+  await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(user.id).run();
+  return jsonBody({ ok: true });
 }
 
 async function handleSync(req, env, auth) {
@@ -505,7 +680,11 @@ function landingPage(host) {
     + '<h2 style="font-size:16px;margin:0 0 4px">接口一览</h2>\n'
     + '<table>\n'
     + '<tr><td><code>GET /api/health</code></td><td>健康检查，无需登录</td></tr>\n'
-    + '<tr><td><code>POST /api/register</code></td><td>注册</td></tr>\n'
+    + '<tr><td><code>POST /api/register</code></td><td>注册（未配置邮件服务时的免码通道）</td></tr>\n'
+    + '<tr><td><code>POST /api/register/start</code></td><td>发注册验证码（需配置 BREVO_API_KEY）</td></tr>\n'
+    + '<tr><td><code>POST /api/register/verify</code></td><td>校验验证码并完成注册</td></tr>\n'
+    + '<tr><td><code>POST /api/reset/start</code></td><td>发找回密码验证码</td></tr>\n'
+    + '<tr><td><code>POST /api/reset/verify</code></td><td>校验验证码并重置密码</td></tr>\n'
     + '<tr><td><code>POST /api/login</code></td><td>登录，返回 token</td></tr>\n'
     + '<tr><td><code>POST /api/logout</code></td><td>登出，作废当前 token</td></tr>\n'
     + '<tr><td><code>GET /api/me</code></td><td>当前登录用户</td></tr>\n'
@@ -556,6 +735,10 @@ export default {
 
       if (path === '/api/register' && method === 'POST') return withCors(await handleRegister(request, env));
       if (path === '/api/login' && method === 'POST') return withCors(await handleLogin(request, env));
+      if (path === '/api/register/start' && method === 'POST') return withCors(await handleRegisterStart(request, env));
+      if (path === '/api/register/verify' && method === 'POST') return withCors(await handleRegisterVerify(request, env));
+      if (path === '/api/reset/start' && method === 'POST') return withCors(await handleResetStart(request, env));
+      if (path === '/api/reset/verify' && method === 'POST') return withCors(await handleResetVerify(request, env));
 
       // ---- 以下接口均需登录 ----
       const auth = await currentUser(request, env);

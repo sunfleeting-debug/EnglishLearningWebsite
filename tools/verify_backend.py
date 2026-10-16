@@ -21,6 +21,8 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 
 from playwright.sync_api import sync_playwright
 
@@ -96,6 +98,48 @@ def main():
         if wait_http(API + "/api/health") != 200:
             log("mock 后端未就绪")
             return 3
+
+        # ============ 0) 邮箱验证码：注册 / 找回密码（纯 HTTP，mock 的 devCode 仅测试用） ============
+        def api_post(path, payload):
+            req = urllib.request.Request(API + path, method="POST",
+                                         data=json.dumps(payload).encode(),
+                                         headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    return r.status, json.loads(r.read().decode())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read().decode())
+
+        log("邮箱验证码流程（mock 等价实现）")
+        code_email = "code-flow@test.local"
+        st, r = api_post("/api/register/start", {"email": code_email})
+        check("发码成功且带 devCode", st == 200 and bool(r.get("devCode")))
+        dev_code = r.get("devCode")
+        st, r = api_post("/api/register/start", {"email": code_email})
+        check("60 秒内重发被限流", st == 400 and "频繁" in r.get("error", ""))
+        st, r = api_post("/api/register/verify", {"email": code_email, "code": "000000", "password": "test123456"})
+        check("错误验证码被拒", st == 400 and "验证码" in r.get("error", ""))
+        st, r = api_post("/api/register/verify",
+                         {"email": code_email, "code": dev_code, "password": "test123456"})
+        check("正确验证码注册成功", st == 200 and bool(r.get("token")))
+        st, r = api_post("/api/register/verify",
+                         {"email": code_email, "code": dev_code, "password": "test123456"})
+        # 复用被拒：可能是 400（码已消费）或 409（邮箱已注册检查在先），都算拦住了
+        check("验证码一次性（复用被拒）", st in (400, 409))
+        # ---- 找回密码完整链路：发码 → 旧密码登录仍可 → 新码重置 → 旧会话作废 → 新密码可登录 ----
+        st, r = api_post("/api/reset/start", {"email": code_email})
+        reset_code = (r or {}).get("devCode")
+        check("找回密码发码", st == 200 and bool(reset_code))
+        st, r = api_post("/api/reset/verify", {"email": code_email, "code": "999999", "password": "newpass123"})
+        check("找回密码错误码被拒", st == 400)
+        st, r = api_post("/api/reset/verify", {"email": code_email, "code": reset_code, "password": "newpass123"})
+        check("正确验证码重置成功", st == 200 and r.get("ok") is True)
+        st, r = api_post("/api/login", {"email": code_email, "password": "test123456"})
+        check("重置后旧密码登录被拒", st == 401)
+        st, r = api_post("/api/login", {"email": code_email, "password": "newpass123"})
+        check("重置后新密码可登录", st == 200 and bool(r.get("token")))
+        st, r = api_post("/api/reset/verify", {"email": "nobody@test.local", "code": "999999", "password": "newpass123"})
+        check("找回密码不存在的邮箱统一拒绝", st == 401)
 
         with sync_playwright() as pw:
             kwargs = {"executable_path": str(EXE)} if EXE.exists() else {}

@@ -297,6 +297,14 @@ def make_handler(app):
                     return self.register()
                 if path == "/api/login" and method == "POST":
                     return self.login()
+                if path == "/api/register/start" and method == "POST":
+                    return self.register_start()
+                if path == "/api/register/verify" and method == "POST":
+                    return self.register_verify()
+                if path == "/api/reset/start" and method == "POST":
+                    return self.reset_start()
+                if path == "/api/reset/verify" and method == "POST":
+                    return self.reset_verify()
 
                 need_auth = path.startswith("/api/me") or path.startswith("/api/admin")
                 auth = app.user_by_token(self.token(query)) if need_auth else None
@@ -380,6 +388,109 @@ def make_handler(app):
                        (tok, user["id"], now, now + TOKEN_TTL_MS))
             app.db.run("UPDATE users SET last_seen=? WHERE id=?", (now, user["id"]))
             return self.js({"token": tok, "user": app.public_user(user)})
+
+        # ---- 邮箱验证码（与 worker/index.js 同一套规则；mock 不发邮件，devCode 仅供测试） ----
+        CODE_TTL_MS = 10 * 60 * 1000
+        CODE_RESEND_MS = 60 * 1000
+        CODE_MAX_ATTEMPTS = 5
+
+        def issue_code(self, email, purpose):
+            now = int(time.time() * 1000)
+            row = app.db.one("SELECT * FROM email_codes WHERE email=? AND purpose=?", (email, purpose))
+            if row and now - row["created_at"] < self.CODE_RESEND_MS:
+                return "发送太频繁，请稍后再试"
+            code = "".join(secrets.choice("0123456789") for _ in range(6))
+            code_hash = hashlib.sha256(f"{code}|{email}|{purpose}".encode()).hexdigest()
+            app.db.run(
+                "INSERT INTO email_codes (email,purpose,code_hash,expires_at,attempts,created_at) "
+                "VALUES (?,?,?,?,0,?) ON CONFLICT(email,purpose) DO UPDATE SET "
+                "code_hash=excluded.code_hash, expires_at=excluded.expires_at, attempts=0, created_at=excluded.created_at",
+                (email, purpose, code_hash, now + self.CODE_TTL_MS, now))
+            return code
+
+        def consume_code(self, email, purpose, code):
+            now = int(time.time() * 1000)
+            row = app.db.one("SELECT * FROM email_codes WHERE email=? AND purpose=?", (email, purpose))
+            if not row:
+                return "请先获取验证码"
+            if now > row["expires_at"]:
+                app.db.run("DELETE FROM email_codes WHERE email=? AND purpose=?", (email, purpose))
+                return "验证码已过期，请重新获取"
+            if row["attempts"] >= self.CODE_MAX_ATTEMPTS:
+                return "错误次数过多，请重新获取验证码"
+            if hashlib.sha256(f"{code}|{email}|{purpose}".encode()).hexdigest() != row["code_hash"]:
+                app.db.run("UPDATE email_codes SET attempts=attempts+1 WHERE email=? AND purpose=?", (email, purpose))
+                return "验证码不正确"
+            app.db.run("DELETE FROM email_codes WHERE email=? AND purpose=?", (email, purpose))
+            return None
+
+        def register_start(self):
+            body = self.body()
+            email = str(body.get("email") or "").strip().lower()
+            if not EMAIL_RE.match(email or ""):
+                return self.fail("邮箱格式不正确")
+            if app.db.one("SELECT id FROM users WHERE email=?", (email,)):
+                return self.fail("该邮箱已注册，请直接登录", 409)
+            code = self.issue_code(email, "register")
+            if isinstance(code, str) and code in ("发送太频繁，请稍后再试",):
+                return self.fail(code)
+            # 🔴 仅 mock 返回 devCode（真后端发邮件、无此字段）；verify_backend 用它走通注册链
+            return self.js({"ok": True, "ttl": self.CODE_TTL_MS // 1000, "devCode": code})
+
+        def register_verify(self):
+            body = self.body()
+            email = str(body.get("email") or "").strip().lower()
+            pw = str(body.get("password") or "")
+            if not EMAIL_RE.match(email or ""):
+                return self.fail("邮箱格式不正确")
+            if len(pw) < 6:
+                return self.fail("密码至少 6 位")
+            if app.db.one("SELECT id FROM users WHERE email=?", (email,)):
+                return self.fail("该邮箱已注册，请直接登录", 409)
+            err = self.consume_code(email, "register", str(body.get("code") or ""))
+            if err:
+                return self.fail(err)
+            now = int(time.time() * 1000)
+            uid = str(uuid.uuid4())
+            app.db.run("INSERT INTO users (id,email,pass_hash,name,created_at,last_seen,synced_at) "
+                       "VALUES (?,?,?,?,?,?,0)",
+                       (uid, email, hash_password(pw), str(body.get("name") or "")[:40], now, now))
+            tok = secrets.token_hex(32)
+            app.db.run("INSERT INTO sessions (token,user_id,created_at,expires_at) VALUES (?,?,?,?)",
+                       (tok, uid, now, now + TOKEN_TTL_MS))
+            user = app.db.one("SELECT * FROM users WHERE id=?", (uid,))
+            return self.js({"token": tok, "user": app.public_user(user)})
+
+        def reset_start(self):
+            body = self.body()
+            email = str(body.get("email") or "").strip().lower()
+            if not EMAIL_RE.match(email or ""):
+                return self.fail("邮箱格式不正确")
+            dev_code = None
+            if app.db.one("SELECT id FROM users WHERE email=?", (email,)):
+                code = self.issue_code(email, "reset")
+                if isinstance(code, str) and code.startswith("发送太频繁"):
+                    return self.fail(code)
+                dev_code = code  # 🔴 仅 mock：真后端发邮件不带码，verify_backend 靠它走通找回链路
+            return self.js({"ok": True, "devCode": dev_code})
+
+        def reset_verify(self):
+            body = self.body()
+            email = str(body.get("email") or "").strip().lower()
+            pw = str(body.get("password") or "")
+            if not EMAIL_RE.match(email or ""):
+                return self.fail("邮箱格式不正确")
+            if len(pw) < 6:
+                return self.fail("密码至少 6 位")
+            user = app.db.one("SELECT * FROM users WHERE email=?", (email,))
+            if not user:
+                return self.fail("邮箱或密码不正确", 401)
+            err = self.consume_code(email, "reset", str(body.get("code") or ""))
+            if err:
+                return self.fail(err)
+            app.db.run("UPDATE users SET pass_hash=? WHERE id=?", (hash_password(pw), user["id"]))
+            app.db.run("DELETE FROM sessions WHERE user_id=?", (user["id"],))
+            return self.js({"ok": True})
 
         def admin_users(self):
             today = time.strftime("%Y-%m-%d")

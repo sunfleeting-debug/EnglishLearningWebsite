@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · 英语学习站</title>
+<style>
+  :root { --bg:#f9f4ee; --ink:#26100d; --sub:#8a7466; --line:#e8dccf; --accent:#26100d; --err:#b3261e; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; }
+  body {
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    background:var(--bg); color:var(--ink);
+    display:flex; align-items:center; justify-content:center;
+    user-select:none;
+  }
+  .card { width:340px; text-align:center; }
+  .logo {
+    width:64px; height:64px; margin:0 auto 14px; border-radius:18px;
+    background:var(--accent); color:var(--bg);
+    font-family:Georgia,"Songti SC",serif; font-size:34px; line-height:64px;
+    box-shadow:0 6px 18px rgba(38,16,13,.18);
+  }
+  h1 { font-family:Georgia,"Songti SC",serif; font-size:24px; letter-spacing:.5px; }
+  .tag { color:var(--sub); font-size:12.5px; margin:6px 0 26px; letter-spacing:2px; }
+  .tabs { display:flex; background:#efe6da; border-radius:8px; padding:3px; margin-bottom:20px; }
+  .tabs button {
+    flex:1; border:0; background:transparent; padding:8px 0; border-radius:6px;
+    font-size:14px; color:var(--sub); cursor:pointer; transition:all .15s;
+  }
+  .tabs button.on { background:var(--accent); color:var(--bg); }
+  .field { text-align:left; margin-bottom:14px; }
+  .field label { display:block; font-size:12px; color:var(--sub); margin:0 0 6px 2px; }
+  .field input {
+    width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:8px;
+    background:#fff; font-size:14px; color:var(--ink); outline:none; transition:border .15s;
+  }
+  .field input:focus { border-color:var(--ink); }
+  .submit {
+    width:100%; margin-top:6px; padding:12px 0; border:0; border-radius:8px;
+    background:var(--accent); color:var(--bg); font-size:15px; letter-spacing:6px;
+    cursor:pointer; transition:opacity .15s;
+  }
+  .submit:hover { opacity:.88; }
+  .submit:disabled { opacity:.5; cursor:default; }
+  .msg { min-height:18px; font-size:12.5px; color:var(--err); margin:10px 0 4px; }
+  .msg.ok { color:#2e7d32; }
+  .skip {
+    display:inline-block; margin-top:14px; font-size:12.5px; color:var(--sub);
+    text-decoration:none; border-bottom:1px dashed var(--line); padding-bottom:2px;
+  }
+  .skip:hover { color:var(--ink); }
+  .hint { margin-top:22px; font-size:11.5px; color:var(--sub); line-height:1.7; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">A</div>
+    <h1>英语学习站</h1>
+    <div class="tag">打字背单词 · 云同步</div>
+
+    <div class="tabs">
+      <button id="tab-login" class="on" type="button">登 录</button>
+      <button id="tab-register" type="button">注 册</button>
+    </div>
+
+    <div class="field">
+      <label>邮箱</label>
+      <input id="email" type="email" placeholder="you@example.com" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>密码（至少 6 位）</label>
+      <input id="password" type="password" placeholder="••••••" autocomplete="current-password">
+    </div>
+
+    <div class="field" id="code-row" style="display:none">
+      <label>邮箱验证码（10 分钟内有效）</label>
+      <div style="display:flex;gap:8px">
+        <input id="code" type="text" inputmode="numeric" maxlength="6" placeholder="6 位数字"
+               style="flex:1;padding:11px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:14px;outline:none">
+        <button id="code-send" type="button"
+                style="padding:0 14px;border:1px solid var(--line);border-radius:8px;background:#efe6da;color:var(--ink);font-size:13px;cursor:pointer">重新发送</button>
+      </div>
+    </div>
+
+    <button id="submit" class="submit" type="button">登 录</button>
+    <div class="msg" id="msg"></div>
+    <a href="#" class="skip" id="skip">先离线使用 →</a>
+
+    <div class="hint">登录后学习进度自动云同步，多台设备合并<br>不登录也能完整使用，数据保存在本机</div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var mode = 'login';
+  var DEFAULT_BASE = 'https://cet-words-api.sunfleeting.workers.dev';
+
+  function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+
+  function closeWin() {
+    // Electron：走 preload 暴露的 IPC（渲染层 window.close() 不可靠）；浏览器环境回退 window.close()
+    if (window.desktopLogin && window.desktopLogin.close) window.desktopLogin.close();
+    else window.close();
+  }
+
+  /* 已有登录态：直接进主窗（≈记住我自动登录） */
+  if (lsGet('typingcet.token')) { closeWin(); return; }
+
+  function apiBase() {
+    return (lsGet('typingcet.apiBase') || DEFAULT_BASE).replace(/\/+$/, '');
+  }
+
+  function setMode(m) {
+    mode = m;
+    $('tab-login').className = m === 'login' ? 'on' : '';
+    $('tab-register').className = m === 'register' ? 'on' : '';
+    $('submit').textContent = m === 'login' ? '登 录' : '注 册';
+    msg('');
+  }
+  $('tab-login').onclick = function () { setMode('login'); };
+  $('tab-register').onclick = function () { setMode('register'); };
+  $('skip').onclick = function (e) { e.preventDefault(); closeWin(); };
+
+  function msg(text, ok) {
+    var el = $('msg');
+    el.textContent = text || '';
+    el.className = 'msg' + (ok ? ' ok' : '');
+  }
+
+  function busy(b) { $('submit').disabled = b; $('submit').textContent = b ? '请稍候…' : (mode === 'login' ? '登 录' : '注 册'); }
+
+  function call(path, body) {
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 15000);
+    return fetch(apiBase() + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal
+    }).then(function (res) {
+      clearTimeout(timer);
+      return res.text().then(function (text) {
+        var data = null;
+        try { data = text ? JSON.parse(text) : null; } catch (e) {}
+        if (!res.ok) throw new Error((data && data.error) || ('请求失败（HTTP ' + res.status + '）'));
+        return data;
+      });
+    }, function (err) {
+      clearTimeout(timer);
+      throw new Error(err && err.name === 'AbortError' ? '请求超时，请检查网络' : '网络不可用，请检查网络');
+    });
+  }
+
+  var codeShown = false;
+
+  function showCodeRow() {
+    if (!codeShown) {
+      codeShown = true;
+      $('code-row').style.display = 'block';
+    }
+    msg('验证码已发送到邮箱，请查收（10 分钟内有效）');
+  }
+
+  var resendLeft = 0;
+  function startResendCountdown() {
+    resendLeft = 60;
+    var b = $('code-send');
+    b.disabled = true;
+    var timer = setInterval(function () {
+      resendLeft--;
+      if (resendLeft <= 0) { clearInterval(timer); b.disabled = false; b.textContent = '重新发送'; }
+      else b.textContent = '重新发送(' + resendLeft + ')';
+    }, 1000);
+  }
+
+  function sendCode(email) {
+    return call('/api/register/start', { email: email }).then(function () {
+      showCodeRow();
+      startResendCountdown();
+      $('code').focus();
+    });
+  }
+
+  $('code-send').addEventListener('click', function () {
+    if (resendLeft > 0) return;
+    var email = $('email').value.trim().toLowerCase();
+    sendCode(email).catch(function (e) { msg(e.message); });
+  });
+
+  function done(r) {
+    try {
+      localStorage.setItem('typingcet.token', r.token);
+      localStorage.setItem('typingcet.user', JSON.stringify(r.user || {}));
+    } catch (e) {}
+    msg('成功，正在进入…', true);
+    setTimeout(closeWin, 350);
+  }
+
+  $('submit').onclick = function () {
+    var email = $('email').value.trim().toLowerCase();
+    var password = $('password').value;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return msg('请输入正确的邮箱地址');
+    if (password.length < 6) return msg('密码至少 6 位');
+    busy(true);
+
+    if (mode === 'register') {
+      var code = codeShown ? String($('code').value || '').trim() : '';
+      var p = code
+        ? call('/api/register/verify', { email: email, code: code, password: password, name: '' })
+        : call('/api/register', { email: email, password: password, name: '' })
+            .catch(function (e) {
+              // 后端开启了邮箱验证 → 自动切到验证码流程
+              if (e.message && e.message.indexOf('邮箱验证') >= 0) return sendCode(email).then(function () { throw { silent: true }; });
+              throw e;
+            });
+      p.then(function (r) { if (r && r.token) done(r); else { busy(false); } },
+             function (e) { busy(false); msg(e && e.silent ? '' : e.message); });
+      return;
+    }
+    call('/api/login', { email: email, password: password })
+      .then(done, function (e) { busy(false); msg(e.message); });
+  };
+
+  $('password').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('submit').click(); });
+  $('email').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('password').focus(); });
+  $('email').focus();
+})();
+</script>
+</body>
+</html>
