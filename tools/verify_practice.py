@@ -154,6 +154,7 @@ def main():
             browser = pw.chromium.launch(**({"executable_path": str(EXE)} if EXE.exists() else {}))
             ctx = browser.new_context(viewport={"width": 1280, "height": 900})
             pg = ctx.new_page()
+            pg.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}");  # 登录门对测试放行
             pg.on("console", lambda m: errors.append("console:" + m.text)
                   if m.type == "error" else None)
             pg.on("pageerror", lambda e: errors.append("pageerror:" + str(e)))

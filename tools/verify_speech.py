@@ -53,6 +53,7 @@ def main():
             print("\n[场景 1] 正常联网 -> 在线音频")
             ctx = browser.new_context()
             ctx.add_init_script(HOOK_TTS)
+            ctx.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}")
             page = ctx.new_page()
             audio_reqs = []
             errors = []
@@ -95,6 +96,7 @@ def main():
             print("\n[场景 2] 在线音频不可用 -> 自动回退系统语音")
             ctx2 = browser.new_context()
             ctx2.add_init_script(HOOK_TTS)
+            ctx2.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}")
             ctx2.route("**/dictvoice*", lambda route: route.abort())
             p2 = ctx2.new_page()
             errs2 = []
@@ -113,6 +115,7 @@ def main():
             print("\n[场景 3] 显式选择「系统语音」-> 不发音频请求")
             ctx3 = browser.new_context()
             ctx3.add_init_script(HOOK_TTS)
+            ctx3.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}")
             p3 = ctx3.new_page()
             reqs3 = []
             p3.on("request", lambda r: reqs3.append(r.url) if "dictvoice" in r.url else None)

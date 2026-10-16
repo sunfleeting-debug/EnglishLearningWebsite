@@ -40,6 +40,7 @@ def main():
             kw["executable_path"] = str(EXE)
         b = pw.chromium.launch(**kw)
         pg = b.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=2)
+        pg.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}");  # 登录门对测试放行
         pg.on("console", lambda m: errors.append("console:" + m.text) if m.type == "error" else None)
         pg.on("pageerror", lambda e: errors.append("pageerror:" + str(e)))
         pg.on("requestfailed", lambda r: failed.append(r.url + " :: " + str(r.failure)))

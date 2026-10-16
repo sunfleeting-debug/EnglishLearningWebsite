@@ -57,7 +57,7 @@
       practice: TW.views.practice, sentences: TW.views.sentences, srs: TW.views.srs,
       review: TW.views.review, audio: TW.views.audio, stats: TW.views.stats,
       reading: TW.views.reading, resources: TW.views.resources, settings: TW.views.settings,
-      account: TW.views.account, admin: TW.views.admin
+      account: TW.views.account, admin: TW.views.admin, gate: TW.views.gate
     };
     var view = map[name];
     if (!view) {
@@ -157,10 +157,25 @@
   /* ---------------- 渲染 ---------------- */
   var current = { name: 'home' };
 
+  /* 登录门判定：无登录态且没选过「游客模式」⇒ 进应用前先过 #/gate。
+     游客标记与桌面端 login.html 的「先离线使用」共用同一个键（typingcet.guest）。
+     🔴 只在 boot 时拦一次：门是「入口」不是「监狱」，会话中途清了存储也不把
+     用户踢去登录页（下次冷启动才会再见到门）——中途强拦实测会打断练习流程。 */
+  function gateNeeded() {
+    if (TW.api.token()) return false;
+    try { if (window.localStorage.getItem('typingcet.guest') === '1') return false; } catch (e) {}
+    return true;
+  }
+
   function render() {
     var route = parseHash();
     var r = resolve(route.path);
+
+    /* 已登录访问 #/gate 弹回首页；门禁重定向只在 boot 里做 */
+    if (r.name === 'gate' && TW.api.token()) { location.hash = '/'; return; }
+
     current = r;
+    document.body.classList.toggle('gate-mode', r.name === 'gate');
     // 详情页归属「词库」高亮
     renderNav(r.name === 'word' ? 'books' : r.name);
     var host = document.getElementById('view');
@@ -207,7 +222,7 @@
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape' || e.isComposing || e.altKey || e.ctrlKey || e.metaKey) return;
     if (!current || current.name === 'home' || current.name === 'practice' || current.name === 'sentences' ||
-        current.name === 'word' || current.name === 'error') return;
+        current.name === 'word' || current.name === 'gate' || current.name === 'error') return;
     var tag = (document.activeElement && document.activeElement.tagName) || '';
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (document.querySelector('.rd-lightbox')) return;   // 阅读页灯箱自己处理 Esc
@@ -236,6 +251,8 @@
     applyTheme();
     TW.speech.sound.enabled = TW.store.settings.keySound;
     if (!location.hash) location.hash = '/';
+    /* 登录门：只在冷启动时拦一次（见 gateNeeded 注释） */
+    if (gateNeeded() && location.hash !== '#/gate') location.hash = '/gate';
     if (TW.sync) TW.sync.onChange(function () { renderNav(current.name); });
     if (TW.motion) {             // 幕布开场（只播一次）+ 磁吸按钮
       TW.motion.preloader();

@@ -121,7 +121,12 @@
   }
   $('tab-login').onclick = function () { setMode('login'); };
   $('tab-register').onclick = function () { setMode('register'); };
-  $('skip').onclick = function (e) { e.preventDefault(); closeWin(); };
+  $('skip').onclick = function (e) {
+    e.preventDefault();
+    /* 与站内登录门共用同一标记：跳过后主窗不再弹内嵌登录门（数据仅存本机） */
+    try { localStorage.setItem('typingcet.guest', '1'); } catch (err) {}
+    closeWin();
+  };
 
   function msg(text, ok) {
     var el = $('msg');

@@ -152,6 +152,7 @@ def main():
                         "try{localStorage.setItem('typingcet.apiBase',%s);}catch(e){}"
                         % json.dumps(api_base))
                 pg = ctx.new_page()
+                pg.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}");  # 登录门对测试放行
                 pg.on("console", lambda m: errors.append(tag + "console:" + m.text)
                       if m.type == "error" else None)
                 pg.on("pageerror", lambda e: errors.append(tag + "pageerror:" + str(e)))

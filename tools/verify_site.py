@@ -51,6 +51,7 @@ def main():
             kwargs["executable_path"] = str(EXE)
         browser = pw.chromium.launch(**kwargs)
         pg = browser.new_page(viewport={"width": 1440, "height": 900}, device_scale_factor=2)
+        pg.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}");  # 登录门对测试放行
         pg.on("console", lambda m: errors.append("console:" + m.text) if m.type == "error" else None)
         pg.on("pageerror", lambda e: errors.append("pageerror:" + str(e)))
 
@@ -362,7 +363,7 @@ def main():
         check("翻卡「详解」可进入详情页", "#/word" in pg.evaluate("() => location.hash"), True)
 
         # ---------- 收藏 + localStorage 持久化 ----------
-        pg.evaluate("() => localStorage.clear()")
+        pg.evaluate("() => { localStorage.clear(); localStorage.setItem('typingcet.guest','1'); }")
         goto("#/books?book=week1")
         pg.locator(".star-btn[data-act='fav']").first.click()
         pg.wait_for_timeout(400)

@@ -1250,3 +1250,46 @@ a.star-btn { display: inline-flex; align-items: center; justify-content: center;
 .lq-src { margin-top: 0.7rem; font-size: 13px; color: var(--text-2); }
 .lq-foot { margin-top: 1.1rem; padding-top: 0.85rem; border-top: 1px solid var(--line-soft);
   font-size: 11.5px; color: var(--text-3); letter-spacing: 0.1em; }
+
+/* ================= 登录门（#/gate）：进入应用前的登录/注册 + 游客模式 ========= */
+/* 门模式下收起侧边栏，整个视口留给登录卡 */
+body.gate-mode .sidebar { display: none !important; }
+body.gate-mode .main { padding: 0; }
+
+.gate-hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2.4rem 1.2rem 3rem;
+  background:
+    radial-gradient(60rem 30rem at 85% -10%, var(--accent-2), transparent 60%),
+    radial-gradient(48rem 26rem at -15% 105%, var(--accent-soft), transparent 55%),
+    var(--bg);
+}
+.gate-logo {
+  width: 88px; height: 88px;
+  border-radius: 22px;
+  box-shadow: 0 10px 30px rgba(38, 16, 13, 0.18);
+}
+.gate-title {
+  margin: 1.1rem 0 0.3rem;
+  font-family: var(--font-display, serif);
+  font-size: 1.9rem;
+  letter-spacing: 0.04em;
+  color: var(--text);
+}
+.gate-sub { margin: 0 0 1.4rem; color: var(--text-2); font-size: 0.92rem; }
+.gate-card { width: min(400px, 92vw); }
+.gate-divider {
+  width: min(400px, 92vw);
+  display: flex; align-items: center; gap: 0.8rem;
+  margin: 1.1rem 0 0.9rem;
+  color: var(--text-3); font-size: 12px;
+}
+.gate-divider::before, .gate-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--line-soft);
+}
+.gate-guest { width: min(400px, 92vw); }
+.gate-foot { max-width: 400px; text-align: center; margin-top: 1rem; line-height: 1.7; }

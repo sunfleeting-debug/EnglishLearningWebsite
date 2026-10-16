@@ -107,6 +107,7 @@ class Session:
             accept_downloads=True,
         )
         self.page = self.context.new_page()
+        pg.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}");  # 登录门对测试放行
         self.page.set_default_timeout(6000)
         self.page.on("pageerror", lambda error: ERRORS.append("pageerror: " + str(error)))
         self.page.on("console", lambda message: ERRORS.append("console: " + message.text) if message.type == "error" else None)
