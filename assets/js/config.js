@@ -9,7 +9,9 @@
    这个值也可以在页面上改：「账号」→「后端地址」，改完存在浏览器里，
    优先级高于本文件（localStorage 键 typingcet.apiBase）。 */
 window.TW_CONFIG = {
+  /* api.sunfleeting.website：Cloudflare Worker 自定义域（2026-10-18 起）。
+     workers.dev 在国内被 DNS 污染 + SNI 阻断，自定义域走橙云代理国内可直连。 */
   apiBase: (['127.0.0.1', 'localhost'].includes(location.hostname) && location.port === '5173')
     ? 'http://127.0.0.1:8791'
-    : 'https://cet-words-api.sunfleeting.workers.dev'
+    : 'https://api.sunfleeting.website'
 };

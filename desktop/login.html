@@ -95,7 +95,8 @@
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var mode = 'login';
-  var DEFAULT_BASE = 'https://cet-words-api.sunfleeting.workers.dev';
+  var DEFAULT_BASE = 'https://api.sunfleeting.website';   // 2026-10-18 起走自定义域，国内直连
+  var LEGACY_BASE = 'https://cet-words-api.sunfleeting.workers.dev';
 
   function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
 
@@ -109,7 +110,12 @@
   if (lsGet('typingcet.token')) { closeWin(); return; }
 
   function apiBase() {
-    return (lsGet('typingcet.apiBase') || DEFAULT_BASE).replace(/\/+$/, '');
+    var b = lsGet('typingcet.apiBase');
+    if (b && b.replace(/\/+$/, '') === LEGACY_BASE) {   // 旧地址就地迁移
+      b = DEFAULT_BASE;
+      try { localStorage.setItem('typingcet.apiBase', b); } catch (e) {}
+    }
+    return (b || DEFAULT_BASE).replace(/\/+$/, '');
   }
 
   function setMode(m) {

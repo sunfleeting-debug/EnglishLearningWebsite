@@ -19,7 +19,7 @@ const ROOT = fs.existsSync(path.join(__dirname, 'app', 'index.html'))
   ? path.join(__dirname, 'app')
   : path.join(__dirname, '..');
 
-const API_HOST = 'cet-words-api.sunfleeting.workers.dev';
+const API_HOST = 'api.sunfleeting.website';   // 2026-10-18 起走自定义域，国内直连无需梯子
 const PAGE_ORIGIN = 'https://sunfleeting-debug.github.io';
 
 /* 后端 CORS 白名单只认 Pages 域名，而桌面版的源是 http://127.0.0.1:<随机端口>，

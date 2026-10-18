@@ -9,6 +9,10 @@
   var K_USER = 'typingcet.user';
   var K_BASE = 'typingcet.apiBase';
   var TIMEOUT = 15000;
+  /* 2026-10-18 起后端默认走自定义域 api.sunfleeting.website（workers.dev 国内被墙）。
+     老用户 localStorage 里存的旧地址就地升级，避免「覆盖值优先级高」把人留在坏地址上。 */
+  var LEGACY_BASE = 'https://cet-words-api.sunfleeting.workers.dev';
+  var DEFAULT_BASE = 'https://api.sunfleeting.website';
 
   function lsGet(k) { try { return window.localStorage.getItem(k) || ''; } catch (e) { return ''; } }
   function lsSet(k, v) {
@@ -20,8 +24,11 @@
 
   /* ---------------- 地址 ---------------- */
   function base() {
-    var b = lsGet(K_BASE) || (window.TW_CONFIG && window.TW_CONFIG.apiBase) || '';
-    return String(b).trim().replace(/\/+$/, '');
+    var b = lsGet(K_BASE);
+    if (b && b.replace(/\/+$/, '') === LEGACY_BASE) {   // 旧地址迁移到自定义域
+      b = DEFAULT_BASE; lsSet(K_BASE, b);
+    }
+    return String(b || (window.TW_CONFIG && window.TW_CONFIG.apiBase) || '').trim().replace(/\/+$/, '');
   }
   function setBase(url) {
     var v = String(url || '').trim().replace(/\/+$/, '');
