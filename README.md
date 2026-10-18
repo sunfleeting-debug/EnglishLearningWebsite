@@ -6,7 +6,8 @@
 
 零依赖、零构建：**双击 `index.html` 就能用**，也可以直接托管到 GitHub Pages。
 
-🌐 **在线地址**：<https://sunfleeting-debug.github.io/EnglishLearningWebsite/>
+🌐 **在线地址**：<https://sunfleeting.website>（主域名，Cloudflare 托管国内可直连）
+　 备用：<https://sunfleeting-debug.github.io/EnglishLearningWebsite/>（GitHub Pages）
 
 📥 **现成的 App（不用装环境）**：到 [Releases](https://github.com/sunfleeting-debug/EnglishLearningWebsite/releases/latest) 下载——
 
@@ -180,7 +181,7 @@ python tools/serve.py -p 8080  # 换端口
 
 ## 部署到 GitHub Pages（已启用）
 
-线上地址：<https://sunfleeting-debug.github.io/EnglishLearningWebsite/>
+线上地址：<https://sunfleeting.website>
 
 这个站**零构建**，所以部署就是「推 main」——Pages 已配成 `main` 分支 `/ (root)`，
 `git push` 之后一两分钟自动重新发布，无需任何构建步骤。
@@ -247,8 +248,9 @@ wrangler d1 execute cet-words-db --file=schema.sql --remote   # 建表
 wrangler deploy              # 拿到 https://cet-words-api.<你的账号>.workers.dev
 ```
 
-> 本仓库的后端**已经部署好了**：<https://cet-words-api.sunfleeting.workers.dev>
-> 地址写在 `assets/js/config.js` 的 `apiBase` 里，所以打开站点就能直接注册/登录。
+> 本仓库的后端**已经部署好了**：<https://api.sunfleeting.website>（自定义域，国内可直连；
+> `*.workers.dev` 旧地址仍在但国内被墙）。地址写在 `assets/js/config.js` 的 `apiBase` 里，
+> 所以打开站点就能直接注册/登录。
 > 但**不登录 = 纯离线模式**：不发任何请求，数据只在本机，全部功能照常。
 
 部署好之后（换账号/换库时才需要重来一遍）：
@@ -266,7 +268,7 @@ wrangler deploy              # 拿到 https://cet-words-api.<你的账号>.worke
 python tools/smoke_api.py        # 46 项断言：根地址落地页 / 健康检查 / 注册登录 / 同步合并 / 删除清空 / CORS / 权限 / 错误路径
 ```
 
-> 后端根地址 <https://cet-words-api.sunfleeting.workers.dev> 是一个**说明页**（列出所有 `/api/*` 接口
+> 后端根地址 <https://api.sunfleeting.website> 是一个**说明页**（列出所有 `/api/*` 接口
 > 并链回前端站点），不是报错 —— 访问它看到 HTML 属于正常。
 
 > ⚠️ 几个环境坑（脚本里都处理了，但排查时要知道）：

@@ -7,11 +7,24 @@ workers_dev = true
 
 # 🔴 自定义域（2026-10-18）：sunfleeting.website 已把 NS 迁到 Cloudflare（zone active）。
 # workers.dev 在国内被 DNS 污染 + SNI 阻断，直连不通；自定义域走 Cloudflare 橙云代理，
-# 国内可直连。wrangler deploy 时会自动在 zone 里创建 api 这条 DNS 记录。
+# 国内可直连。wrangler deploy 时会自动在 zone 里创建 DNS 记录。
 # 前端 assets/js/config.js 的 apiBase 已同步改为 https://api.sunfleeting.website。
+#
+# 2026-10-18 追加：网站本体也用 Workers Static Assets 托管到同一个 Worker 上
+#（先跑 python tools/build_worker_site.py 生成 worker/site/ 再 deploy）——
+# custom domain 会自动建 DNS 记录，绕开「wrangler OAuth 没有 DNS 写权限」的限制；
+# 网站从此直接用 https://sunfleeting.website 访问，GitHub Pages 保留作为备用入口。
 routes = [
-  { pattern = "api.sunfleeting.website", custom_domain = true }
+  { pattern = "api.sunfleeting.website", custom_domain = true },
+  { pattern = "sunfleeting.website", custom_domain = true },
+  { pattern = "www.sunfleeting.website", custom_domain = true }
 ]
+
+# 静态站托管：只有 /api/* 进 Worker 逻辑，其余文件由 assets 直接服务（更快）。
+[assets]
+directory = "./site"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
 
 # D1 数据库绑定（换账号重部署时：npx wrangler d1 create cet-words，把输出的 database_id 换到下面）。
 # 建表：npx wrangler d1 execute cet-words --file=schema.sql --remote

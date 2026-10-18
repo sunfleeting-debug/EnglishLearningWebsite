@@ -4,10 +4,15 @@
   var TW = window.TW = window.TW || {};
   TW.views = TW.views || {};
 
+  /* 2026-10-18：网站主域名换成 Workers 托管的 sunfleeting.website 后，超大 PDF（最大 33MB，
+     超 Workers Static Assets 单文件 25MiB 上限）不随部署上传，改为回源 GitHub Pages 拉取。
+     github.io / file:// 下相对路径照旧。 */
+  var PAGES_BASE = (location.hostname.indexOf('.github.io') >= 0 || location.protocol === 'file:')
+    ? '' : 'https://sunfleeting-debug.github.io/EnglishLearningWebsite/';
   var PDFS = [
-    { name: 'DRJ172 阅读参考译文', file: 'resources/DRJ172-阅读参考译文扫一扫.pdf', desc: '六级阅读真题参考译文，扫码版', size: '约 23 MB' },
-    { name: 'DRJ172 阅读海量练习', file: 'resources/DRJ172-阅读海量练习扫一扫.pdf', desc: '配套阅读练习册，扫码版', size: '约 34 MB' },
-    { name: 'DRJ172 阅读题源文章', file: 'resources/DRJ172-阅读题源文章扫一扫.pdf', desc: '阅读题源文章汇编，扫码版', size: '约 9 MB' }
+    { name: 'DRJ172 阅读参考译文', file: PAGES_BASE + 'resources/DRJ172-阅读参考译文扫一扫.pdf', desc: '六级阅读真题参考译文，扫码版', size: '约 23 MB' },
+    { name: 'DRJ172 阅读海量练习', file: PAGES_BASE + 'resources/DRJ172-阅读海量练习扫一扫.pdf', desc: '配套阅读练习册，扫码版', size: '约 34 MB' },
+    { name: 'DRJ172 阅读题源文章', file: PAGES_BASE + 'resources/DRJ172-阅读题源文章扫一扫.pdf', desc: '阅读题源文章汇编，扫码版', size: '约 9 MB' }
   ];
 
   function render(host) {

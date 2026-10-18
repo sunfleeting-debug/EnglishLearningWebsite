@@ -39,3 +39,5 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+worker/site/
+worker/site-trash-*/
