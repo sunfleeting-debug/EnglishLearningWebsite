@@ -107,7 +107,8 @@ class Session:
             accept_downloads=True,
         )
         self.page = self.context.new_page()
-        pg.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}");  # 登录门对测试放行
+        # 登录门对测试放行：boot 前预置游客标记
+        self.page.add_init_script("try{localStorage.setItem('typingcet.guest','1')}catch(e){}")
         self.page.set_default_timeout(6000)
         self.page.on("pageerror", lambda error: ERRORS.append("pageerror: " + str(error)))
         self.page.on("console", lambda message: ERRORS.append("console: " + message.text) if message.type == "error" else None)
@@ -214,16 +215,24 @@ def run_case(browser, base, name, action, mobile=False):
 def catalogue(session):
     session.courses()
     courses = session.page.evaluate("() => window.TW_SENTENCE_COURSES")
-    check("Six original courses are loaded", len(courses), 6)
-    check("Every course contains eight units", all(len(course["units"]) == 8 for course in courses))
-    check("Every unit has three progressive stages", all(len(unit["steps"]) == 3 for course in courses for unit in course["units"]))
+    classic = [c for c in courses if c.get("id") != "quotes"]
+    quotes = [c for c in courses if c.get("id") == "quotes"]
+    check("Seven original courses are loaded", len(courses), 7)
+    check("Quotes course exists", len(quotes), 1)
+    if quotes:
+        check("Quotes course has 39 units", len(quotes[0]["units"]), 39)
+        check("Every quote unit is a single bilingual step", all(
+            len(unit["steps"]) == 1 and unit["steps"][0].get("zh") for unit in quotes[0]["units"]
+        ))
+    check("Every classic course contains eight units", all(len(course["units"]) == 8 for course in classic))
+    check("Every classic unit has three progressive stages", all(len(unit["steps"]) == 3 for course in classic for unit in course["units"]))
     ids = [unit["id"] for course in courses for unit in course["units"]]
     check("Built-in unit IDs are unique", len(ids), len(set(ids)))
     check("Each stage has an English answer and Chinese prompt", all(
         isinstance(step.get("en"), str) and step["en"].strip() and isinstance(step.get("zh"), str) and step["zh"].strip()
         for course in courses for unit in course["units"] for step in unit["steps"]
     ))
-    check("All built-in courses can be started", session.page.locator("[data-start]").count(), 6)
+    check("All built-in courses can be started", session.page.locator("[data-start]").count(), 7)
     check("Course catalogue fits desktop viewport", session.no_overflow())
 
 

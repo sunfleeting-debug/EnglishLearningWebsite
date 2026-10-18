@@ -198,7 +198,14 @@
     /** 复习队列 / 生词本分组：先把记录还原成 {w, s, m} 再解析成词条 */
     function recordsFor(src) {
       if (src === 'srs') {
-        return TW.store.srs.dueList().map(function (r) { return { w: r.w, s: r.s, m: r.m }; });
+        /* 🔴 乱序（sunfleeting：不要按「最近答错/逾期最久」的固定顺序背）：
+           Fisher-Yates 洗牌，词池在会话快照里，同一会话内顺序稳定 */
+        var due = TW.store.srs.dueList().map(function (r) { return { w: r.w, s: r.s, m: r.m }; });
+        for (var i = due.length - 1; i > 0; i--) {
+          var j = Math.floor(Math.random() * (i + 1));
+          var t = due[i]; due[i] = due[j]; due[j] = t;
+        }
+        return due;
       }
       /* status=learned（复习页「自由复习已学的词」）映射到 progressItems 的 touched 池 */
       var tab = (cfg.status === 'all' || cfg.status === 'new') ? 'wrong'
@@ -884,7 +891,7 @@
 
       function next() {
         if (!alive()) return;
-        if (st.i >= session.length - 1) { finish(); return; }
+        if (st.i >= session.length - 1) { finish(true); return; }
         st.i++;
         st.phase = 'answering';
         st.revealed = false;
@@ -896,13 +903,22 @@
         drawStage();
       }
 
-      function finish() {
+      /** record=true 才记场次：resume 快照恢复直接出完成页的那次不记（避免同轮记两次） */
+      function finish(record) {
         if (!alive()) return;
         st.phase = 'done';
         resume = null;   // 本组已完成：清掉续接快照，下次进入（学下一组/再来一轮入口）重新切词表
         drawProgress();
         TW.speech.sound.complete();
         var acc = (st.correct + st.wrong) ? Math.round((st.correct / (st.correct + st.wrong)) * 100) : 0;
+        // 场次记录：统计页展示「每次练习/复习的正确率」（纯本地，见 store.addSession）
+        if (record) try {
+          TW.store.addSession({
+            mode: cfg.mode,
+            src: cfg.src === '' ? 'book' : cfg.src,
+            total: session.length, right: st.correct, wrong: st.wrong, acc: acc
+          });
+        } catch (e) { /* 记录失败不影响完成页 */ }
         var stageEl = TW.$('#p-stage', host);
         if (!stageEl) return;
         var dueLeft = TW.store.srs.dueCount();

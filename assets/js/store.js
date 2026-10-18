@@ -31,7 +31,8 @@
     lastBook: null,
     srs: {},               // wordLower -> {w,s,m,b,d,ts,ok,bad,lapses}
     srsInit: false,        // 是否已把历史错词导入复习队列
-    recentWrong: []        // 最近答错的词 id（最新的在前），只用于错词组排序，见 noteWrong()
+    recentWrong: [],       // 最近答错的词 id（最新的在前），只用于错词组排序，见 noteWrong()
+    sessions: []           // 每轮练习/复习的场次记录（最新在前），纯本地不进同步协议，见 addSession()
   };
 
   /* ---------- 云同步的「脏标记」 ----------
@@ -58,6 +59,7 @@
         state.srs = d.srs || {};
         state.srsInit = !!d.srsInit;
         state.recentWrong = Array.isArray(d.recentWrong) ? d.recentWrong : [];
+        state.sessions = Array.isArray(d.sessions) ? d.sessions : [];
       }
     } catch (e) { /* 数据损坏时使用默认值 */ }
   }
@@ -180,6 +182,21 @@
     if (state.recentWrong.length > RECENT_WRONG_MAX) state.recentWrong.length = RECENT_WRONG_MAX;
   }
 
+  /* ---------- 每轮练习/复习的场次记录（纯本地，不参与云同步）----------
+     sunfleeting 要求统计页能看「每次复习的正确率」。daily 只按天聚合（done/right），
+     看不到单场波动，所以每轮 finish 时记一条 {t,mode,src,total,right,wrong,acc}。
+     🔴 定位与 recentWrong 相同：只影响展示，故意不进同步协议（换设备从零开始记也无所谓）。 */
+  var SESSIONS_MAX = 60;
+
+  function addSession(s) {
+    s.t = s.t || Date.now();
+    state.sessions.unshift(s);
+    if (state.sessions.length > SESSIONS_MAX) state.sessions.length = SESSIONS_MAX;
+    save();
+  }
+
+  function sessions() { return state.sessions.slice(); }
+
   function markWrong(id) {
     var r = rec(id);
     r.w++; r.seen++; r.ts = Date.now();
@@ -233,7 +250,7 @@
       🔴 同步协议：清空必须走 clear（worker 按类型删服务端记录），否则下次同步
       服务端的旧进度会原样拉回来，用户看到「清空了又回来了」。 */
   function resetAll() {
-    state.progress = {}; state.daily = {}; state.recentWrong = [];
+    state.progress = {}; state.daily = {}; state.recentWrong = []; state.sessions = [];
     var keepSrs = dirty.srs, keepDelSrs = dirty.delSrs;   // 复习队列保留 ⇒ 它的待传标记也保留
     dirty = newDirty();
     dirty.srs = keepSrs; dirty.delSrs = keepDelSrs;
@@ -490,6 +507,7 @@
     resetWord: resetWord, resetAll: resetAll, onReset: onReset,
     saveNote: saveNote,
     recentWrong: function () { return state.recentWrong.slice(); },
+    addSession: addSession, sessions: sessions,
     setSetting: setSetting, counts: counts, srcStats: srcStats, today: today,
     addDays: addDays, diffDays: diffDays,
     applyRemote: applyRemote,

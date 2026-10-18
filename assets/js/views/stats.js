@@ -31,12 +31,47 @@
       maxDone = Math.max(maxDone, rec.done);
       return { label: d.label, done: rec.done, right: rec.right };
     });
+    var sumDone = 0, sumRight = 0;
+    chartData.forEach(function (d) { sumDone += d.done; sumRight += d.right; });
+    var periodAcc = sumDone ? Math.round((sumRight / sumDone) * 100) : 0;   // 近 14 天整体正确率
     var bars = chartData.map(function (d) {
+      var dayAcc = d.done ? Math.round((d.right / d.done) * 100) : -1;
       var h = Math.round((d.done / maxDone) * 100);
-      return '<div class="bar-col" title="' + d.label + '：' + d.done + ' 题 / 对 ' + d.right + '">' +
+      return '<div class="bar-col" title="' + d.label + '：' + d.done + ' 题 / 对 ' + d.right +
+        (dayAcc >= 0 ? '（正确率 ' + dayAcc + '%）' : '') + '">' +
         '<div class="bar-fill" style="height:' + Math.max(d.done ? 4 : 0, h) + '%"></div>' +
         '<div class="bar-label">' + d.label + '</div></div>';
     }).join('');
+
+    /* 近期场次正确率（每轮练习/复习 finish 时记一条，见 practice.js → store.addSession） */
+    var MODE_NAMES = { type: '看词打字', recall: '看中文拼写', listen: '听音写词', card: '翻卡记忆' };
+    var SRC_NAMES = { book: '词书', srs: '复习队列', collection: '生词本' };
+    var sessList = TW.store.sessions();
+    function relTime(t) {
+      var d = new Date(t), now = new Date();
+      var hm = function (x) { return x.getHours() + ':' + (x.getMinutes() < 10 ? '0' : '') + x.getMinutes(); };
+      var same = function (a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); };
+      if (same(d, now)) return '今天 ' + hm(d);
+      var yd = new Date(now); yd.setDate(now.getDate() - 1);
+      if (same(d, yd)) return '昨天 ' + hm(d);
+      return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm(d);
+    }
+    var sessHtml = sessList.length
+      ? '<div class="sess-list">' + sessList.slice(0, 10).map(function (s) {
+          var cls = s.acc >= 80 ? 'ok' : s.acc >= 60 ? '' : 'err';   // ≥80 绿 / 60~79 主题色 / <60 红
+          var srcName = SRC_NAMES[s.src] || '';
+          return '<div class="sess-row">' +
+            '<div class="sess-meta">' +
+              '<span class="sess-mode">' + TW.esc(MODE_NAMES[s.mode] || s.mode || '练习') + '</span>' +
+              '<span class="small muted">' + (srcName ? TW.esc(srcName) + ' · ' : '') + relTime(s.t) + ' · ' + s.total + ' 题</span>' +
+            '</div>' +
+            '<div class="sess-bar">' +
+              '<div class="progress-line ' + cls + '"><i style="width:' + Math.max(2, s.acc) + '%"></i></div>' +
+              '<span class="sess-acc ' + cls + '">' + s.acc + '%</span>' +
+            '</div></div>';
+        }).join('') + '</div>' +
+        (sessList.length > 10 ? '<div class="small muted" style="margin-top:.5rem">更早的场次不再展示</div>' : '')
+      : TW.ui.empty('完成一轮练习或复习后，这里会记录每场的正确率', '📈');
 
     // 连续学习天数
     var streak = 0;
@@ -103,9 +138,18 @@
         '<div class="card card-pad" style="margin-bottom:1.2rem">' +
           '<div class="row" style="justify-content:space-between;margin-bottom:.4rem">' +
             '<div class="card-title">近 14 天练习量</div>' +
-            '<div class="bar-legend"><span><i class="dot" style="background:var(--accent)"></i>题目数</span></div>' +
+            '<div class="bar-legend"><span><i class="dot" style="background:var(--accent)"></i>题目数</span>' +
+              (sumDone ? '<span>正确率 <b style="color:' + (periodAcc >= 80 ? 'var(--ok)' : 'var(--text-1)') + '">' + periodAcc + '%</b></span>' : '') + '</div>' +
           '</div>' +
           '<div class="bar-chart">' + bars + '</div>' +
+        '</div>' +
+
+        '<div class="card card-pad" style="margin-bottom:1.2rem">' +
+          '<div class="row" style="justify-content:space-between;margin-bottom:.6rem">' +
+            '<div class="card-title">近期场次正确率</div>' +
+            (sessList.length ? '<span class="small muted">最近 ' + sessList.length + ' 轮 · 仅保存在本机</span>' : '') +
+          '</div>' +
+          sessHtml +
         '</div>' +
 
         '<div class="card card-pad" style="margin-bottom:1.2rem">' +

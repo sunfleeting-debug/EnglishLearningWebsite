@@ -334,7 +334,8 @@
   }
 
   function onlineLookup(term, cb) {
-    var key = String(term || '').toLowerCase().replace(/[^a-z'\-]/g, '');
+    // 允许空格：语料搭配是两词短语（如 "drastic measures"），逐词匹配会把它拼成乱码
+    var key = String(term || '').toLowerCase().replace(/[^a-z'\- ]/g, '').replace(/\s+/g, ' ').trim();
     if (!key) { cb(null); return; }
     var cache = onlineCacheRead();
     if (cache[key]) { cb(cache[key].r); return; }

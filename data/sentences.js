@@ -441,6 +441,249 @@
           ]
         }
       ]
+    },
+    {
+      id: 'quotes',
+      title: '英语名句，跟着经典学表达',
+      level: 'B2',
+      category: '名句',
+      description: '39 句英美文学与名人名言：读懂一句经典，记住一辈子的表达。单句成单元，打字背诵双语对照。',
+      units: [
+        {
+          id: 'quote-01', title: 'F. Scott Fitzgerald《了不起的盖茨比》',
+          steps: [
+            { en: 'So we beat on, boats against the current, borne back ceaselessly into the past.', zh: '于是我们奋力前行，如逆水行舟，却不断被浪潮推回过去。' }
+          ]
+        },
+        {
+          id: 'quote-02', title: 'Charles Dickens《双城记》',
+          steps: [
+            { en: 'It was the best of times, it was the worst of times.', zh: '那是最美好的时代，也是最糟糕的时代。' }
+          ]
+        },
+        {
+          id: 'quote-03', title: 'Jane Austen《傲慢与偏见》',
+          steps: [
+            { en: 'It is a truth universally acknowledged, that a single man in possession of a good fortune, must be in want of a wife.', zh: '凡是有钱的单身汉，总想娶位太太，这已经成了一条举世公认的真理。' }
+          ]
+        },
+        {
+          id: 'quote-04', title: 'Shakespeare《哈姆雷特》',
+          steps: [
+            { en: 'To be, or not to be, that is the question.', zh: '生存还是毁灭，这是一个问题。' }
+          ]
+        },
+        {
+          id: 'quote-05', title: 'Shakespeare《皆大欢喜》',
+          steps: [
+            { en: 'All the world\'s a stage, and all the men and women merely players.', zh: '全世界是一个舞台，所有的男男女女不过是一些演员。' }
+          ]
+        },
+        {
+          id: 'quote-06', title: 'Herman Melville《白鲸》',
+          steps: [
+            { en: 'Call me Ishmael.', zh: '叫我以实玛利吧。' }
+          ]
+        },
+        {
+          id: 'quote-07', title: 'Tolstoy《安娜·卡列尼娜》',
+          steps: [
+            { en: 'Happy families are all alike; every unhappy family is unhappy in its own way.', zh: '幸福的家庭都是相似的，不幸的家庭各有各的不幸。' }
+          ]
+        },
+        {
+          id: 'quote-08', title: 'George Orwell《一九八四》',
+          steps: [
+            { en: 'It was a bright cold day in April, and the clocks were striking thirteen.', zh: '四月间，天气寒冷晴朗，钟敲了十三下。' }
+          ]
+        },
+        {
+          id: 'quote-09', title: 'J.R.R. Tolkien《魔戒》',
+          steps: [
+            { en: 'Not all those who wander are lost.', zh: '并非所有流浪者都迷失了方向。' }
+          ]
+        },
+        {
+          id: 'quote-10', title: 'Franklin D. Roosevelt',
+          steps: [
+            { en: 'The only thing we have to fear is fear itself.', zh: '我们唯一需要恐惧的，就是恐惧本身。' }
+          ]
+        },
+        {
+          id: 'quote-11', title: 'Louisa May Alcott',
+          steps: [
+            { en: 'That is a good book which is opened with expectation and closed with profit.', zh: '好书让人满怀期待地翻开，又满载收获地合上。' }
+          ]
+        },
+        {
+          id: 'quote-12', title: 'George R. R. Martin',
+          steps: [
+            { en: 'A reader lives a thousand lives before he dies. The man who never reads lives only one.', zh: '读书的人在离世前已活过一千种人生；从不读书的人只活了一次。' }
+          ]
+        },
+        {
+          id: 'quote-13', title: 'J.R.R. Tolkien《魔戒二部曲》',
+          steps: [
+            { en: 'There is some good in this world, and it\'s worth fighting for.', zh: '这个世界上仍有美好，值得我们为之奋战。' }
+          ]
+        },
+        {
+          id: 'quote-14', title: 'J.K. Rowling',
+          steps: [
+            { en: 'It is our choices that show what we truly are, far more than our abilities.', zh: '决定我们真正是什么样人的，是我们的选择，而远非我们的能力。' }
+          ]
+        },
+        {
+          id: 'quote-15', title: 'F. Scott Fitzgerald《了不起的盖茨比》',
+          steps: [
+            { en: 'Whenever you feel like criticizing anyone, just remember that all the people in this world haven\'t had the advantages that you\'ve had.', zh: '每当你想批评别人时，要记住，这世上并不是所有人都有你拥有的那些优越条件。' }
+          ]
+        },
+        {
+          id: 'quote-16', title: 'Sylvia Plath《钟形罩》',
+          steps: [
+            { en: 'I took a deep breath and listened to the old brag of my heart: I am, I am, I am.', zh: '我深吸一口气，听着心脏那古老的呐喊：我在，我在，我在。' }
+          ]
+        },
+        {
+          id: 'quote-17', title: 'Oscar Wilde',
+          steps: [
+            { en: 'We are all in the gutter, but some of us are looking at the stars.', zh: '我们都身在阴沟，但仍有人仰望星空。' }
+          ]
+        },
+        {
+          id: 'quote-18', title: 'Mark Twain',
+          steps: [
+            { en: 'The man who does not read has no advantage over the man who cannot read.', zh: '不读书的人，比起不识字的人并没有任何优势。' }
+          ]
+        },
+        {
+          id: 'quote-19', title: 'J.K. Rowling',
+          steps: [
+            { en: 'It matters not what someone is born, but what they grow to be.', zh: '人的出身并不重要，重要的是他成长为什么样的人。' }
+          ]
+        },
+        {
+          id: 'quote-20', title: 'Harper Lee《杀死一只知更鸟》',
+          steps: [
+            { en: 'Real courage is when you know you\'re licked before you begin, but you begin anyway and see it through no matter what.', zh: '真正的勇气是：明知一开始就会输，却依然开始，并无论如何坚持到底。' }
+          ]
+        },
+        {
+          id: 'quote-21', title: 'Harper Lee《杀死一只知更鸟》',
+          steps: [
+            { en: 'You never really understand a person until you consider things from his point of view.', zh: '除非你站在对方的角度看问题，否则你永远无法真正了解一个人。' }
+          ]
+        },
+        {
+          id: 'quote-22', title: 'Marie Curie',
+          steps: [
+            { en: 'Nothing in life is to be feared, it is only to be understood.', zh: '生活中没有什么可怕的，只需要去理解。' }
+          ]
+        },
+        {
+          id: 'quote-23', title: 'Ernest Hemingway《永别了，武器》',
+          steps: [
+            { en: 'The world breaks everyone, and afterward, some are strong at the broken places.', zh: '这个世界会打击每一个人，但此后，有些人在破碎处变得更强壮。' }
+          ]
+        },
+        {
+          id: 'quote-24', title: 'Ernest Hemingway《老人与海》',
+          steps: [
+            { en: 'But man is not made for defeat. A man can be destroyed but not defeated.', zh: '但人不是为失败而生的。一个人可以被毁灭，但不能被打败。' }
+          ]
+        },
+        {
+          id: 'quote-25', title: 'John Lennon',
+          steps: [
+            { en: 'Life is what happens to you while you are busy making other plans.', zh: '生活就是在你忙着制定其他计划时，发生在你身上的事。' }
+          ]
+        },
+        {
+          id: 'quote-26', title: 'Robert Frost《未选择的路》',
+          steps: [
+            { en: 'Two roads diverged in a wood, and I took the one less traveled by, and that has made all the difference.', zh: '林中有两条岔路，而我选了人迹更少的一条，从此决定了一切。' }
+          ]
+        },
+        {
+          id: 'quote-27', title: 'Francis Bacon',
+          steps: [
+            { en: 'Hope is a good breakfast, but it is a bad supper.', zh: '希望是顿好早餐，却是顿糟糕的晚餐。' }
+          ]
+        },
+        {
+          id: 'quote-28', title: 'Stephen King《肖申克的救赎》',
+          steps: [
+            { en: 'Some birds aren\'t meant to be caged. Their feathers are just too bright.', zh: '有些鸟儿注定是关不住的，它们的每一片羽毛都闪耀着自由的光辉。' }
+          ]
+        },
+        {
+          id: 'quote-29', title: 'Stephen King《肖申克的救赎》',
+          steps: [
+            { en: 'Get busy living, or get busy dying.', zh: '要么忙着活，要么忙着死。' }
+          ]
+        },
+        {
+          id: 'quote-30', title: 'Margaret Mitchell《飘》',
+          steps: [
+            { en: 'After all, tomorrow is another day!', zh: '毕竟，明天又是新的一天！' }
+          ]
+        },
+        {
+          id: 'quote-31', title: 'Emily Brontë《呼啸山庄》',
+          steps: [
+            { en: 'Whatever our souls are made of, his and mine are the same.', zh: '无论我们的灵魂由什么构成，他的和我的都是同一种。' }
+          ]
+        },
+        {
+          id: 'quote-32', title: 'Henry David Thoreau《瓦尔登湖》',
+          steps: [
+            { en: 'If you have built castles in the air, your work need not be lost; that is where they should be. Now put the foundations under them.', zh: '如果你造了空中楼阁，你的劳动并不会白费：楼阁本该造在空中，现在要做的，是在它们下面打好地基。' }
+          ]
+        },
+        {
+          id: 'quote-33', title: 'Louisa May Alcott《小妇人》',
+          steps: [
+            { en: 'I am not afraid of storms, for I am learning how to sail my ship.', zh: '我不惧怕风暴，因为我正在学习如何驾驭我的船。' }
+          ]
+        },
+        {
+          id: 'quote-34', title: 'Audrey Hepburn',
+          steps: [
+            { en: 'Nothing is impossible; the word itself says \'I\'m possible\'!', zh: '没有什么是不可能的，“不可能”这个词本身就在说“我可能”！' }
+          ]
+        },
+        {
+          id: 'quote-35', title: 'Dylan Thomas',
+          steps: [
+            { en: 'Do not go gentle into that good night. Rage, rage against the dying of the light.', zh: '不要温和地走进那个良夜。怒斥吧，怒斥光明的消逝。' }
+          ]
+        },
+        {
+          id: 'quote-36', title: 'Albert Camus',
+          steps: [
+            { en: 'In the middle of winter, I at last discovered that there was in me an invincible summer.', zh: '在隆冬，我终于知道，我身上有一个不可战胜的夏天。' }
+          ]
+        },
+        {
+          id: 'quote-37', title: 'Walt Whitman',
+          steps: [
+            { en: 'Keep your face always toward the sunshine, and shadows will fall behind you.', zh: '永远面向阳光，阴影就会落在你身后。' }
+          ]
+        },
+        {
+          id: 'quote-38', title: 'Eleanor Roosevelt',
+          steps: [
+            { en: 'The future belongs to those who believe in the beauty of their dreams.', zh: '未来属于那些相信梦想之美的人。' }
+          ]
+        },
+        {
+          id: 'quote-39', title: 'Nelson Mandela',
+          steps: [
+            { en: 'It always seems impossible until it\'s done.', zh: '在做成之前，一切看上去都不可能。' }
+          ]
+        }
+      ]
     }
   ];
 })();

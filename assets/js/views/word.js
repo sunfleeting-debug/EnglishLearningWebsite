@@ -90,6 +90,7 @@
     if (Q.length && (!I.length || Math.random() < 0.55)) {
       var q = Q[Math.floor(Math.random() * Q.length)];
       inner = '<div class="lq-text">' + TW.esc(q.t) + '</div>' +
+              (q.zh ? '<div class="lq-zh">' + TW.esc(q.zh) + '</div>' : '') +
               '<div class="lq-src">—— ' + TW.esc(q.s) + '</div>';
     } else if (I.length) {
       var it = I[Math.floor(Math.random() * I.length)];
@@ -244,10 +245,28 @@
           (c.zh ? '<span class="dc-zh">' + TW.esc(c.zh) + '</span>' : '') + '</li>';
       }).join('') + '</ul>');
     } else if (card.colloc_raw && card.colloc_raw.length) {
-      secs += sec('语料搭配', 'shuffle', '<div class="muted small" style="margin-bottom:.35rem">以下为例句中与该词高频共现的搭配</div>' +
+      secs += sec('语料搭配', 'shuffle', '<div class="muted small" style="margin-bottom:.35rem">以下为例句中与该词高频共现的搭配（译文为在线简释，仅供参考）</div>' +
         '<div class="dc-chips">' + card.colloc_raw.map(function (c) {
-          return '<span class="dc-chip">' + TW.ui.linkify(c, { self: w.word }) + '</span>';
+          return '<span class="dc-chip" data-cp="' + TW.esc(c) + '">' + TW.ui.linkify(c, { self: w.word }) +
+            '<button class="dc-phon dc-speak-sm" data-act="speak" data-say="' + TW.esc(c) + '" title="朗读搭配">' + TW.icon('volume', 12) + '</button></span>';
         }).join('') + '</div>');
+      /* 搭配是构建期从例句挖的词组（量大没法人工翻）⇒ 运行时走有道 suggest
+         懒加载中文简释（复用 tw.onlineDict 缓存；查不到就不显示，不硬凑） */
+      card.colloc_raw.forEach(function (c) {
+        TW.data.onlineLookup(c, function (res) {
+          if (alive && !alive()) return;
+          if (!res || !res.ms || !res.ms.length || !res.ms[0].defs || !res.ms[0].defs.length) return;
+          var chips = host.querySelectorAll('.dc-chip[data-cp]');
+          for (var i = 0; i < chips.length; i++) {
+            if (chips[i].getAttribute('data-cp') !== c || chips[i].querySelector('.dc-chip-zh')) continue;
+            var el = document.createElement('span');
+            el.className = 'dc-chip-zh';
+            el.textContent = res.ms[0].defs[0];
+            chips[i].appendChild(el);
+            break;
+          }
+        });
+      });
     }
 
     // 派生词
@@ -286,7 +305,8 @@
     // 经典例句
     if (card.ex && card.ex.length) {
       secs += sec('经典例句', 'file', '<ol class="dc-ex">' + card.ex.map(function (e) {
-        return '<li><div class="dc-ex-en">' + TW.ui.linkify(e.en, { self: w.word }) + '</div>' +
+        return '<li><div class="dc-ex-en">' + TW.ui.linkify(e.en, { self: w.word }) +
+          '<button class="dc-phon dc-speak-sm" data-act="speak" data-say="' + TW.esc(e.en) + '" title="朗读例句">' + TW.icon('volume', 13) + '</button></div>' +
           (e.zh ? '<div class="dc-ex-zh">' + TW.esc(e.zh) + '</div>' : '') + '</li>';
       }).join('') + '</ol>');
     }
