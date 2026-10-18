@@ -13,7 +13,7 @@
  * 路由
  *   GET  /api/health
  *   POST /api/register          {email, password, name?}      -> {token, user}   （未配邮件服务时的免码注册）
- *   POST /api/register/start    {email}                       -> {ok, ttl}       （发注册验证码，需 SMTP_USER/SMTP_PASS=QQ 邮箱授权码）
+ *   POST /api/register/start    {email}                       -> {ok, ttl}       （发注册验证码，需 RESEND_API_KEY 或 QQ SMTP 凭据）
  *   POST /api/register/verify   {email, code, password, name?}-> {token, user}
  *   POST /api/reset/start       {email}                       -> {ok}            （找回密码验证码）
  *   POST /api/reset/verify      {email, code, password}       -> {ok}
@@ -354,10 +354,15 @@ async function applySync(env, userId, body) {
 
 /* ------------------------------------------------------------- 路由处理 */
 
+/* 邮箱验证是否启用：Resend API（首选，2026-10-18 起）或 QQ SMTP 直连（兜底）任一配置即可 */
+function mailEnabled(env) {
+  return !!env.RESEND_API_KEY || !!(env.SMTP_USER && env.SMTP_PASS);
+}
+
 async function handleRegister(req, env) {
   const body = await readJson(req);
   // 配了邮件服务就强制走验证码注册，防止裸接口绕过邮箱验证
-  if (env.SMTP_USER && env.SMTP_PASS) {
+  if (mailEnabled(env)) {
     return fail('该后端已开启邮箱验证，请先获取验证码再注册', 400);
   }
   const email = normEmail(body.email);
@@ -409,11 +414,12 @@ async function handleLogin(req, env) {
 }
 
 /* ------------------------------------------------------------- 邮箱验证码
- * 注册验证码流程（QQ 邮箱 SMTP 直连发信，国内、无注册审核、无需域名）。设计：
+ * 注册验证码流程（发信首选 Resend API——域名 sunfleeting.website 已验证，发件人 noreply@；
+ * Resend 未配置或调用失败时降级 QQ 邮箱 SMTP 直连）。设计：
  *  - 验证码不落明文：存 sha256(code + email)，泄露库也推不回码
  *  - 10 分钟有效、同一邮箱 60 秒一次、最多校验 5 次（防爆破）
- *  - env.SMTP_USER/SMTP_PASS 未配置时此流程关闭，/api/register（免码注册）照常可用，
- *    /api/register/start 明确报「未启用」——前端据此回退到免码注册。
+ *  - RESEND_API_KEY 与 SMTP_USER/SMTP_PASS 都未配置时此流程关闭，/api/register（免码注册）
+ *    照常可用，/api/register/start 明确报「未启用」——前端据此回退到免码注册。
  *  - purpose: 'register' 注册 / 'reset' 找回密码（同一张表，互不混用）
  */
 const CODE_TTL_MS = 10 * 60 * 1000;
@@ -432,13 +438,42 @@ function genCode() {
 }
 
 async function sendMail(env, toEmail, subject, text) {
-  /* QQ 邮箱 SMTP 直连（国内、免注册第三方、无需域名）。
+  /* 2026-10-18 起首选 Resend API（域名 sunfleeting.website 已验证，发件人 noreply@）：
+   * 一次普通 fetch，免 SMTP 协议；失败时降级走 QQ SMTP 直连（凭据仍在 secrets 里）。
+   * Resend 免费额度 3000 封/月；from 必须是已验证域名下的地址。 */
+  if (env.RESEND_API_KEY) {
+    try {
+      const resp = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + env.RESEND_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: env.MAIL_FROM || '英语学习站 <noreply@sunfleeting.website>',
+          to: [toEmail],
+          subject: subject,
+          text: text,
+        }),
+      });
+      if (resp.ok) return;
+      // 非 2xx：读出错误体进日志，然后落到底部 SMTP 兜底
+      console.error('Resend 发信失败 ' + resp.status + ': ' + (await resp.text()).slice(0, 300));
+    } catch (e) {
+      console.error('Resend 请求异常: ' + (e && e.message));
+    }
+  }
+  await sendMailSmtp(env, toEmail, subject, text);
+}
+
+/* QQ 邮箱 SMTP 直连（兜底通道，国内、免第三方注册、无需域名）。
    * 路线：587 明文连入 -> STARTTLS 升级（connect 第二参数 secureTransport:'starttls'，
    * 升级用 startTls()，它返回「新 socket」——注意不能写进第一个参数，否则被静默忽略）。
    * 465 隐式 TLS 在 Workers 上实测不通（同样原因），别改回去。
    * 凭据：SMTP_USER = 发件邮箱；SMTP_PASS = 邮箱「授权码」（QQ：设置→账号→开 IMAP/SMTP
    * 服务→手机短信验证后给 16 位授权码；不是 QQ 密码）。SMTP_HOST 可换 smtp.163.com。
    * QQ 的 From 头要求严格（RFC5322/2047）：显示名必须单独编码，<邮箱> 不能编进去。 */
+async function sendMailSmtp(env, toEmail, subject, text) {
   const user = env.SMTP_USER;
   const pass = env.SMTP_PASS;
   const host = env.SMTP_HOST || 'smtp.qq.com';
@@ -520,7 +555,7 @@ async function sendMail(env, toEmail, subject, text) {
 
 /* 发码公共体：限流 + 存哈希 + 发信。返回 null=成功，string=错误文案 */
 async function issueCode(env, email, purpose) {
-  if (!env.SMTP_USER || !env.SMTP_PASS) return '邮箱验证未启用';
+  if (!mailEnabled(env)) return '邮箱验证未启用';
   const now = Date.now();
   const row = await env.DB.prepare('SELECT * FROM email_codes WHERE email = ? AND purpose = ?')
     .bind(email, purpose).first();
@@ -749,7 +784,7 @@ function landingPage(host) {
     + '<table>\n'
     + '<tr><td><code>GET /api/health</code></td><td>健康检查，无需登录</td></tr>\n'
     + '<tr><td><code>POST /api/register</code></td><td>注册（未配置邮件服务时的免码通道）</td></tr>\n'
-    + '<tr><td><code>POST /api/register/start</code></td><td>发注册验证码（需配置 SMTP_USER / SMTP_PASS，QQ 邮箱授权码）</td></tr>\n'
+    + '<tr><td><code>POST /api/register/start</code></td><td>发注册验证码（需配置 RESEND_API_KEY 或 QQ SMTP 凭据）</td></tr>\n'
     + '<tr><td><code>POST /api/register/verify</code></td><td>校验验证码并完成注册</td></tr>\n'
     + '<tr><td><code>POST /api/reset/start</code></td><td>发找回密码验证码</td></tr>\n'
     + '<tr><td><code>POST /api/reset/verify</code></td><td>校验验证码并重置密码</td></tr>\n'

@@ -42,6 +42,11 @@ database_id = "915c6388-28d2-4e6f-a394-71982baafe86"
 # 想藏起来就改用密钥：npx wrangler secret put ADMIN_EMAILS（secret 会覆盖同名 vars）。
 ADMIN_EMAILS = "2119100068@qq.com"
 
+# 发信（2026-10-18 起）：首选 Resend（RESEND_API_KEY 为 secret，不进 git），
+# 发件人默认「英语学习站 <noreply@sunfleeting.website>」，域名已在 Resend 验证。
+# Resend 失败时降级 QQ SMTP（SMTP_USER/SMTP_PASS 仍在 secrets）。改发件人显示改这里：
+MAIL_FROM = "英语学习站 <noreply@sunfleeting.website>"
+
 # 允许跨域的前端来源，逗号分隔；* 表示不限制。
 # - https://sunfleeting-debug.github.io  GitHub Pages 网页端
 # - https://sunfleeting.website          网站自定义域（绑定 Pages 后用）
