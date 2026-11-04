@@ -28,6 +28,18 @@
 
   /* ---------------- 列表页 ---------------- */
 
+  /* 卡片标题：书上只有段落匹配给了文章名，选词填空/仔细阅读只有题型。
+     直接显示「仔细阅读」等于把类型标签写两遍，所以退一步用正文首句当标题——
+     一眼能认出是哪一篇，又不至于去编一个原文没有的标题。 */
+  function preview(s) {
+    var t = String(s.heading || s.title || '').trim();
+    if (t && !/^(选词填空|段落匹配|仔细阅读|AI 出题)$/.test(t)) return t;
+    var first = (s.body && s.body[0]) || (s.paras && s.paras[0] && s.paras[0].text) || '';
+    first = String(first).replace(/【\d+】/g, ' ____ ').replace(/\s+/g, ' ').trim();
+    if (!first) return [s.topic, s.source].filter(Boolean).join(' · ') || t;
+    return first.length > 56 ? first.slice(0, 56) + '…' : first;
+  }
+
   function setCard(s) {
     var r = TW.quiz.result(s.id);
     var done = r && r.total ? Math.round(r.right / r.total * 100) : null;
@@ -42,7 +54,7 @@
         '<span class="qz-card-no">' + (s.no ? 'Passage ' + s.no : esc(s.test)) + '</span>' +
         (done !== null ? '<span class="tag ' + (done >= 60 ? 'ok' : 'err') + '">上次 ' + done + '%</span>' : '') +
       '</div>' +
-      '<div class="qz-card-t">' + esc(s.heading || s.title) + '</div>' +
+      '<div class="qz-card-t">' + esc(preview(s)) + '</div>' +
       '<div class="qz-card-m small muted">' + esc(meta.join(' · ')) + '</div>' +
     '</a>';
   }

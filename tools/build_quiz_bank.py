@@ -156,13 +156,26 @@ def split_blocks(lines):
     return pass_idx
 
 
+# 版面里刊名常常连在一起（扫描件把词间空格吃了），这里按已知刊名补回空格
+SRC_FIX = {
+    "TheNewYorkTimes": "The New York Times",
+    "NewYorkTimes": "The New York Times",
+    "TheEconomist": "The Economist",
+    "TheGuardian": "The Guardian",
+    "TheWashingtonPost": "The Washington Post",
+    "TheTelegraph": "The Telegraph",
+}
+
+
 def head_fields(lines):
     src = topic = ""
     mins = 0
     for ln in lines[:6]:
         m = re.match(r"^题源[:：]\s*(.+)$", ln)
         if m:
-            src = m.group(1).strip()
+            # 扫描件里「题源」后面常跟一个残留的冒号/间隔点（如 ":The Economist"）
+            src = re.sub(r"^[\s:：·、,，.]+", "", m.group(1).strip())
+            src = SRC_FIX.get(src.replace(" ", ""), src)
         m = re.match(r"^题材[:：]\s*(.+)$", ln)
         if m:
             topic = m.group(1).strip()

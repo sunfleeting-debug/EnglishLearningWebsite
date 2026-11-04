@@ -1692,7 +1692,7 @@ html.dark .ai-send.stop::after { background: #fff; }
 .qz-group { margin-bottom: 1.6rem; }
 .qz-group-h { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.6rem; }
 .qz-group-h h3 { font-family: var(--font-display); font-size: 1.05rem; font-weight: 500; margin: 0; }
-.qz-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.6rem; }
+.qz-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 0.6rem; }
 .qz-card {
   display: block; text-decoration: none; color: var(--text);
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
@@ -1701,7 +1701,12 @@ html.dark .ai-send.stop::after { background: #fff; }
 .qz-card:hover { border-color: var(--accent); transform: translateY(-1px); }
 .qz-card-h { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.45rem; }
 .qz-card-no { font-family: var(--mono); font-size: 11px; color: var(--text-3); }
-.qz-card-t { font-size: 14px; line-height: 1.5; margin-bottom: 0.3rem; }
+/* 标题用正文首句，长句截两行：卡片高度一致，也不会把「10 题」挤成竖排 */
+.qz-card-t {
+  font-size: 14px; line-height: 1.5; margin-bottom: 0.3rem; min-height: 2.7em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.qz-card-m { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tag.qz { background: var(--accent-2); color: var(--accent); border-color: transparent; }
 
 /* 做题页 */
