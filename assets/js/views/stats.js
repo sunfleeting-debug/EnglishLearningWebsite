@@ -44,8 +44,8 @@
     }).join('');
 
     /* 近期场次正确率（每轮练习/复习 finish 时记一条，见 practice.js → store.addSession） */
-    var MODE_NAMES = { type: '看词打字', recall: '看中文拼写', listen: '听音写词', card: '翻卡记忆' };
-    var SRC_NAMES = { book: '词书', srs: '复习队列', collection: '生词本' };
+    var MODE_NAMES = { type: '看词打字', recall: '看中文拼写', listen: '听音写词', card: '翻卡记忆', ai: 'AI 出题' };
+    var SRC_NAMES = { book: '词书', srs: '复习队列', collection: '生词本', ai: 'AI 助手' };
     var sessList = TW.store.sessions();
     function relTime(t) {
       var d = new Date(t), now = new Date();

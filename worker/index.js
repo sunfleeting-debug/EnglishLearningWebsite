@@ -22,6 +22,7 @@
  *   GET  /api/me                                               -> {user}
  *   GET  /api/me/state                                         -> {progress, daily, srs, syncedAt}
  *   POST /api/me/sync           {progress,daily,srs,deleted,mode} -> {progress,daily,srs,syncedAt}
+ *   POST /api/ai/chat           {provider,apiKey,model,messages,...} -> {text,model,usage}  （AI 助手转发，不落库）
  *   GET  /api/admin/users                                      -> {users:[...]}
  *   GET  /api/admin/users/:id                                  -> {user, progress, daily, srs}
  *   POST /api/admin/users/:id/password  {password}              -> {ok}
@@ -35,6 +36,23 @@ const PBKDF2_ITER = 100000;                  // PBKDF2 迭代次数
 const MAX_BODY = 6 * 1024 * 1024;            // 请求体上限（防误传大文件）
 const IN_CHUNK = 60;                         // 拼 IN (?,?,...) 时每批的占位符个数
 const UP_CHUNK = 40;                         // 批量 upsert 时每批的语句条数
+
+/* --------------------------------------------------- AI 英语助手：提供方表
+   浏览器直连各家大模型会被 CORS 拦住（DeepSeek / 通义 / OpenAI 都不给浏览器
+   预检响应），所以统一由 Worker 转发一次。Worker 只做「格式转换 + 错误透传」：
+   不落库、不写日志、不缓存 API Key —— key 由用户自己填，只存在于他的浏览器
+   localStorage 和这一次请求的请求体里。
+   anthropic 与 openai 兼容两套格式在这里归一，前端只按「文本进 / 文本出」用。 */
+const AI_PROVIDERS = {
+  deepseek: { base: 'https://api.deepseek.com/v1', model: 'deepseek-chat', kind: 'openai' },
+  qwen:     { base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', kind: 'openai' },
+  openai:   { base: 'https://api.openai.com/v1', model: 'gpt-4o-mini', kind: 'openai' },
+  claude:   { base: 'https://api.anthropic.com/v1', model: 'claude-3-5-sonnet-latest', kind: 'anthropic' },
+  custom:   { base: '', model: '', kind: 'openai' }
+};
+const AI_MAX_TOKENS_CAP = 4096;
+const AI_TIMEOUT_MS = 60000;
+const AI_STREAM_TIMEOUT_MS = 180000;
 
 /* ------------------------------------------------------------------ 工具 */
 
@@ -793,6 +811,7 @@ function landingPage(host) {
     + '<tr><td><code>GET /api/me</code></td><td>当前登录用户</td></tr>\n'
     + '<tr><td><code>GET /api/me/state</code></td><td>拉取全部进度（首次全量）</td></tr>\n'
     + '<tr><td><code>POST /api/me/sync</code></td><td>增量同步（含删除标记）</td></tr>\n'
+    + '<tr><td><code>POST /api/ai/chat</code></td><td>AI 助手转发（用户自带 Key，不落库）</td></tr>\n'
     + '<tr><td><code>/api/admin/*</code></td><td>管理看板，仅管理员</td></tr>\n'
     + '</table>\n'
     + '<p class="mut">其他路径返回 404 JSON，属正常现象。</p>\n'
@@ -807,6 +826,141 @@ function landingPage(host) {
     status: 200,
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }
   });
+}
+
+/* ------------------------------------------------- AI 英语助手：转发接口 */
+
+/** 只接受 https 公网地址（拒绝环回/内网，防被当成 SSRF 跳板） */
+function aiSafeBase(raw) {
+  let u;
+  try { u = new URL(String(raw || '').trim()); } catch (e) { return ''; }
+  if (u.protocol !== 'https:') return '';
+  const host = u.hostname.toLowerCase();
+  if (host === 'localhost' || host === '0.0.0.0' || host.indexOf(':') >= 0) return '';
+  if (/^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) return '';
+  if (/\.(local|internal|localhost)$/.test(host)) return '';
+  if (u.username || u.password) return '';
+  return u.href.replace(/\/+$/, '');
+}
+
+/* POST /api/ai/chat
+   {provider, apiKey, model, baseUrl?, system?, messages:[{role,content}], maxTokens?, temperature?}
+   -> {text, model, usage} */
+async function handleAiChat(request) {
+  const body = await readJson(request);
+  const provider = String(body.provider || 'deepseek').toLowerCase();
+  const conf = AI_PROVIDERS[provider];
+  if (!conf) return fail('不支持的模型提供方：' + provider);
+
+  const apiKey = String(body.apiKey || '').trim();
+  if (apiKey.length < 8) return fail('请先填写有效的 API Key');
+  const model = String(body.model || conf.model || '').trim();
+  if (!model) return fail('请填写模型名');
+
+  const base = provider === 'custom' ? aiSafeBase(body.baseUrl) : conf.base;
+  if (!base) return fail('自定义接口地址必须是 https 公网地址');
+
+  const sys = String(body.system || '').slice(0, 20000);
+  const maxTokens = Math.min(AI_MAX_TOKENS_CAP, Math.max(128, parseInt(body.maxTokens, 10) || 1600));
+  const temperature = Math.min(1.5, Math.max(0, Number(body.temperature) == null ? 0.7 : Number(body.temperature)));
+
+  const rawMsgs = Array.isArray(body.messages) ? body.messages.slice(-40) : [];
+  const msgs = [];
+  for (const m of rawMsgs) {
+    const role = String((m && m.role) || '');
+    if (role !== 'user' && role !== 'assistant' && role !== 'system') continue;
+    const content = String((m && m.content) || '').slice(0, 20000);
+    if (!content) continue;
+    msgs.push({ role, content });
+  }
+  if (!msgs.length) return fail('没有可发送的内容');
+
+  /* 流式：前端聊天界面要逐字出（ChatGPT 那种观感）。Worker 不做格式转换，
+     直接把上游 SSE 原样转发，前端同时认得 OpenAI 的 choices[].delta.content
+     和 Anthropic 的 content_block_delta —— 这样少一层解析，也少一处会写错的地方。 */
+  const wantStream = !!body.stream;
+
+  let url, init;
+  if (conf.kind === 'anthropic') {
+    /* Anthropic：system 是顶层字段；messages 里只能有 user/assistant，
+       且必须 user 开头（诊断/出题都是单轮，天然满足）。 */
+    const sysAll = [sys].concat(msgs.filter(function (m) { return m.role === 'system'; })
+      .map(function (m) { return m.content; })).filter(Boolean).join('\n\n');
+    const conv = msgs.filter(function (m) { return m.role !== 'system'; });
+    url = base + '/messages';
+    init = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: model, max_tokens: maxTokens, temperature: temperature,
+        system: sysAll || undefined, messages: conv,
+        stream: wantStream || undefined
+      })
+    };
+  } else {
+    const conv = (sys ? [{ role: 'system', content: sys }] : []).concat(msgs);
+    url = base + '/chat/completions';
+    init = {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+      body: JSON.stringify({
+        model: model, messages: conv, temperature: temperature,
+        max_tokens: maxTokens, stream: wantStream
+      })
+    };
+  }
+
+  let res;
+  try {
+    res = await fetch(url, Object.assign(init, {
+      // 流式给足时间：长回答边生成边传，总时长可能超过 60s
+      signal: AbortSignal.timeout(wantStream ? AI_STREAM_TIMEOUT_MS : AI_TIMEOUT_MS)
+    }));
+  } catch (e) {
+    return fail('连不上模型服务：' + String((e && e.message) || 'network'), 502);
+  }
+
+  if (wantStream) {
+    if (!res.ok) {
+      const errText = await res.text();
+      let errData = null;
+      try { errData = errText ? JSON.parse(errText) : null; } catch (e) {}
+      const msg = (errData && errData.error && (errData.error.message || errData.error)) || errText || ('HTTP ' + res.status);
+      return jsonBody({ error: '模型侧返回错误：' + String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 400) },
+        (res.status === 401 || res.status === 403) ? 401 : 502);
+    }
+    return new Response(res.body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no'
+      }
+    });
+  }
+
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
+
+  if (!res.ok) {
+    const msg = (data && data.error && (data.error.message || data.error)) || text || ('HTTP ' + res.status);
+    const out = String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 400);
+    return jsonBody({ error: '模型侧返回错误：' + out }, (res.status === 401 || res.status === 403) ? 401 : 502);
+  }
+  if (!data) return fail('模型返回的不是 JSON', 502);
+
+  let out = '';
+  if (conf.kind === 'anthropic') {
+    out = (data.content || []).map(function (b) { return (b && b.type === 'text') ? b.text : ''; }).join('').trim();
+  } else {
+    const ch = (data.choices && data.choices[0]) || null;
+    out = ch && ch.message ? ch.message.content : '';
+    if (Array.isArray(out)) out = out.map(function (p) { return (p && p.text) || ''; }).join('');
+    out = String(out || '').trim();
+  }
+  if (!out) return fail('模型没有返回内容（可能额度用尽或被内容策略拦截）', 502);
+  return jsonBody({ text: out, model: data.model || model, usage: data.usage || null });
 }
 
 /* --------------------------------------------------------------- 入口 */
@@ -829,6 +983,10 @@ export default {
     try {
       // 根地址 / /api：给说明页，不落到下面 404 的「接口不存在」
       if ((path === '/' || path === '/api') && method === 'GET') return withCors(landingPage(url.host));
+
+      /* AI 助手转发：不依赖 D1（用户用自己的 key，Worker 只借一次网络），
+         所以放在 DB 检查之前 —— 后端没绑库时照样能用。 */
+      if (path === '/api/ai/chat' && method === 'POST') return withCors(await handleAiChat(request));
 
       if (!env.DB) return withCors(fail('后端未绑定 D1 数据库（检查 wrangler.toml 的 d1_databases）', 500));
 

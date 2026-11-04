@@ -37,6 +37,34 @@
         '</div>' +
 
         '<div class="card card-pad" style="margin-bottom:1rem">' +
+          '<div class="card-title" style="margin-bottom:.3rem">AI 英语助手</div>' +
+          '<div class="set-hint" style="margin-bottom:.8rem">填自己的 API Key 就能用「学习诊断 / 智能出题 / 对话答疑」。' +
+            'Key 只存在这台设备的浏览器里（独立存储，<b>不参与云同步、也不会写进导出备份</b>），请求经本站 Worker 转发一次到模型官方接口。</div>' +
+          '<div class="ai-form">' +
+            '<label class="ai-fl"><span>提供方</span>' +
+              '<select class="field" id="ai-prov">' + TW.ai.PROVIDERS.map(function (p) {
+                return '<option value="' + p.id + '"' + (p.id === TW.ai.config().provider ? ' selected' : '') + '>' + TW.esc(p.name) + '</option>';
+              }).join('') + '</select></label>' +
+            '<label class="ai-fl"><span>API Key</span>' +
+              '<input class="field" id="ai-key" type="password" autocomplete="off" spellcheck="false" ' +
+                'placeholder="' + (TW.ai.config().provider === 'custom' ? '本地接口可留空' : 'sk-...') + '" ' +
+                'value="' + TW.esc(TW.ai.apiKey()) + '"></label>' +
+            '<label class="ai-fl"><span>模型</span>' +
+              '<input class="field" id="ai-model" type="text" autocomplete="off" spellcheck="false" ' +
+                'placeholder="' + TW.esc(TW.ai.provider(TW.ai.config().provider).model || 'qwen-plus') + '" ' +
+                'value="' + TW.esc(TW.ai.modelName()) + '"></label>' +
+            (TW.ai.config().provider === 'custom' ?
+              '<label class="ai-fl"><span>接口地址</span>' +
+                '<input class="field" id="ai-base" type="text" autocomplete="off" spellcheck="false" ' +
+                  'placeholder="https://xxx/v1" value="' + TW.esc(TW.ai.config().baseUrl) + '"></label>' : '') +
+          '</div>' +
+          '<div class="row" style="margin-top:.8rem">' +
+            '<a class="btn primary" href="#/ai">' + TW.icon('spark', 15) + ' 打开 AI 助手</a>' +
+            '<span class="small muted">' + (TW.ai.configured() ? '已配置：' + TW.esc(TW.ai.provider(TW.ai.config().provider).name) + ' · ' + TW.esc(TW.ai.modelName()) : '还没填 Key') + '</span>' +
+          '</div>' +
+        '</div>' +
+
+        '<div class="card card-pad" style="margin-bottom:1rem">' +
           '<div class="card-title" style="margin-bottom:.3rem">发音与音效</div>' +
           switchRow('autoPronounce', '进入新词时自动发音', '四个练习模式都会读完再出下一题；听音写词模式始终朗读') +
           switchRow('keySound', '键盘与提示音效', '打字、答对、答错时的轻提示音') +
@@ -109,6 +137,24 @@
     bindSeg('#set-accent', 'accent');
     bindSeg('#set-speakmode', 'speakMode');
     bindSeg('#set-theme', 'theme');
+
+    /* AI 助手配置：改完即存（change 触发）。Key 走 TW.ai 自己的 localStorage 键，
+       不进 store.state —— 否则「导出备份」会把 Key 一起打包出去。 */
+    var provSel = TW.$('#ai-prov', host);
+    if (provSel) provSel.addEventListener('change', function () {
+      TW.ai.setProvider(provSel.value);
+      TW.toast('已切换模型提供方');
+      TW.app.render();     // 重新渲染：换占位符、custom 才显示接口地址
+    });
+    var aiKey = TW.$('#ai-key', host);
+    if (aiKey) aiKey.addEventListener('change', function () {
+      TW.ai.setKey(aiKey.value);
+      if (aiKey.value.trim()) TW.toast('API Key 已保存（仅本机）', 'ok');
+    });
+    var aiModel = TW.$('#ai-model', host);
+    if (aiModel) aiModel.addEventListener('change', function () { TW.ai.setModel(aiModel.value); });
+    var aiBase = TW.$('#ai-base', host);
+    if (aiBase) aiBase.addEventListener('change', function () { TW.ai.save({ baseUrl: aiBase.value.trim() }); });
 
     TW.$('#set-size', host).addEventListener('change', function (e) {
       TW.store.setSetting('sessionSize', parseInt(e.target.value, 10) || 20);

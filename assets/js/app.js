@@ -11,6 +11,7 @@
     { key: 'sentences', label: '句子练习', path: '/sentences', icon: 'sentence', badge: 'sentences' },
     { key: 'srs', label: '复习', path: '/srs', icon: 'refresh', badge: 'srs' },
     { key: 'review', label: '生词本', path: '/review', icon: 'star', badge: 'review' },
+    { key: 'ai', label: 'AI 助手', path: '/ai', icon: 'spark' },
     { key: 'audio', label: '音频跟读', path: '/audio', icon: 'headphone' },
     { key: 'stats', label: '学习统计', path: '/stats', icon: 'chart' },
     { key: 'reading', label: '真题阅读', path: '/reading', icon: 'file' },
@@ -56,6 +57,7 @@
       home: TW.views.home, books: TW.views.books, word: TW.views.word,
       practice: TW.views.practice, sentences: TW.views.sentences, srs: TW.views.srs,
       review: TW.views.review, audio: TW.views.audio, stats: TW.views.stats,
+      ai: TW.views.ai,
       reading: TW.views.reading, resources: TW.views.resources, settings: TW.views.settings,
       account: TW.views.account, admin: TW.views.admin, gate: TW.views.gate
     };

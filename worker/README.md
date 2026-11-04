@@ -90,12 +90,31 @@ python tools/verify_backend.py      # 端到端核验（自己拉起 mock）
 | GET | `/api/me` | 当前用户 |
 | GET | `/api/me/state` | 云端全量进度 |
 | POST | `/api/me/sync` | 推送增量并取回合并后的全量进度 |
+| POST | `/api/ai/chat` | AI 助手转发（用户自带 Key，不落库；`stream:true` 时回 SSE） |
 | GET | `/api/admin/users` | 用户列表 + 各项统计（仅管理员） |
 | GET | `/api/admin/users/:id` | 某用户的完整进度（仅管理员） |
 | POST | `/api/admin/users/:id/password` | 重置某用户密码（仅管理员） |
 | GET | `/api/admin/users/:id/export` | 导出该用户 CSV（仅管理员） |
 
-除 `register` / `login` / `health` 外都需要请求头 `Authorization: Bearer <token>`。
+除 `register` / `login` / `health` / `ai/chat` 外都需要请求头 `Authorization: Bearer <token>`。
+
+### `/api/ai/chat` 转发
+
+浏览器直连 DeepSeek / 通义 / OpenAI 会被 CORS 拦（对方不给预检响应），所以由 Worker 转发一次：
+
+```
+POST /api/ai/chat
+{ provider: "deepseek|qwen|openai|claude|custom", apiKey, model, baseUrl?, system?,
+  messages: [{role, content}], maxTokens?, temperature?, stream? }
+→ { text, model, usage }   或   text/event-stream（stream:true，上游 SSE 原样转发）
+```
+
+- **不落库、不记日志、不缓存 key**：key 只在这一次请求的内存里。
+- 两种格式归一：OpenAI 兼容走 `POST {base}/chat/completions`，Anthropic 走 `POST {base}/messages`
+  （`system` 提到顶层、`x-api-key` + `anthropic-version`）。
+- `custom` 的 `baseUrl` 只允许 **https 公网地址**（拒绝环回/内网/`.local`，防被当 SSRF 跳板）；
+  本地 Ollama / LM Studio 由前端直接连 `http://127.0.0.1:*`，不经过 Worker。
+- 上游非 2xx 时把对方错误原文透传（401 → 401，其余 → 502），前端好据此提示「Key 无效 / 额度用尽」。
 
 ### `/api/me/sync` 的合并规则
 
@@ -115,8 +134,8 @@ python tools/verify_backend.py      # 端到端核验（自己拉起 mock）
 
 - 口令用 **PBKDF2-SHA256（10 万次迭代 + 每用户随机盐）** 存储，数据库里没有明文。
 - token 是 32 字节随机串，有效期 30 天，存 `sessions` 表；注销 / 管理员重置密码会立即失效。
-- 未做「邮箱验证」和「找回密码」——这是刻意简化（用户要求邮箱注册即可）。
-  忘记密码只能由管理员在 `/admin` 里重置。
+- 邮箱验证 / 找回密码走验证码（`RESEND_API_KEY` 优先，失败降级 QQ SMTP 直连；10 分钟过期、次数限制）。
+  邮件服务未配置时自动回退到「免验证码注册」，`/api/register/start` 会明确返回未启用。
 - 未接入验证码/限流：公网可被脚本刷注册。若要对外开放，建议加 Cloudflare Turnstile
   或 Rate Limiting 规则。
 - 前端 token 存在 localStorage（不用 cookie），因此不受 CSRF 影响；但 XSS 会拿到 token，
