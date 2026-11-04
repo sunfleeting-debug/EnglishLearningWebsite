@@ -123,7 +123,7 @@
     }).join('');
     host.innerHTML =
       '<div class="brand">' +
-        '<div class="brand-logo">A</div>' +
+        '<img class="brand-logo" src="assets/img/icon-192.png" alt="英语学习站标志">' +
         '<div class="brand-text"><span class="brand-name">英语学习站</span>' +
         '<span class="brand-sub">本地词库</span></div>' +
       '</div>' +

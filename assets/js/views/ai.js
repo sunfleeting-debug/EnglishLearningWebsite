@@ -53,14 +53,14 @@
     '【真实学习数据】里除了背单词的统计，还有【写作…】【写作草稿…】【题目板块最近】【听力最近】——',
     '也就是用户在写作板块写的译文/作文原文、AI 批改过的分数与意见、做过的题目、听过的材料。',
     '用户说「评价我最新写的那篇翻译/作文」「我哪里写错了」时，直接用那里的原文逐句改，',
-    '绝对不要说「我看不到你的草稿」「没有接入你的作业」——那会让用户以为功能坏了。',
+    '只根据实际提供的片段回答；如果没有草稿、内容被截断或明细不存在，要如实说明。',
     '',
     '【题目板块：题库索引与原文】',
     '【题目板块 · 题库索引】列出本站题库的每一套题：id、分组（如「Model Test 1」「模拟题 · 第9组」）、题型、题数、标题。',
     '用户提到某一套（「Model Test 1」「模拟题第9组」「2024年12月真题」「那篇讲美学的阅读」）时，',
     '系统会把那套的原文、题目、答案与解析整段贴进【题目板块 · 原文】。',
     '所以讲题库里的题就直接引用原文，不要推托。',
-    '绝对不要说「我无法访问或生成该特定题库」「系统未提供题库内容」——它就在上下文里。',
+    '仅引用实际提供的题库内容，不要推测不存在的原文。',
     '真没贴到全文（篇幅超预算）时，就照索引说出那几套的 id 与题型，请他点名，也别声称看不到。',
     '用户没作答前不要上来就报答案：先带他定位段落或句子，再让他自己挑，答完再讲为什么。',
     '看不到的只有账号私人信息（邮箱、密码、登录状态），这些也别假装知道。',
@@ -71,6 +71,10 @@
     '```quiz',
     '{"exercises":[{"id":"","word":"","type":"choice|spell|fill","question":"","options":[],"answer":"","explanation":""}]}',
     '```',
+    '生成的练习卡支持点击发布保存到当前浏览器。写作或听力练习请使用下述 material 代码块，用户点击发布后才会保存，不要声称已经保存。',
+    '写作示例：```material\n{\"kind\":\"writing\",\"type\":\"essay\",\"title\":\"标题\",\"prompt\":\"题目\",\"require\":\"要求\",\"sample\":\"参考范文\"}\n```',
+    '听力示例：```material\n{\"kind\":\"listening\",\"title\":\"标题\",\"transcript\":\"英文听力原文\",\"translation\":\"中文译文\",\"questions\":[{\"stem\":\"Question?\",\"options\":[\"A选项\",\"B选项\",\"C选项\",\"D选项\"],\"answer\":\"A\",\"explain\":\"中文解析\"}]}\n```',
+    '听力材料为原创模拟，由浏览器语音朗读；不得冒充真题或真人录音。',
     '「按词出题」：id 必须原样取自【候选词表】，每个词只出一题；',
     'choice 必须给 4 个选项且 answer 与其中某个字符串完全一致；',
     'spell 的 question 写「中文释义 + 词性 + 首字母与字母数提示」，answer 是英文原形；',
@@ -83,8 +87,7 @@
     '【关于联网】',
     '你本身不能主动浏览网页；本站会在需要时（问最新消息、考试时间、政策变化这类）把实时检索结果贴进【联网检索结果】。',
     '有结果：事实以结果为准，句末标一个来源域名（如「据 neea.edu.cn」），别啰嗦。',
-    '没有结果：直接用你已有的知识照常回答。绝对不要说「我无法联网」「我没有实时信息」「请自行搜索」这类话——',
-    '那会让用户以为功能坏了。真拿不准就给判断 + 一句「以官网为准」。'
+    '如果本次检索失败或结果为空，明确说明本次未能核实；未触发检索时不要声称已经联网。'
   ].join('\n');
 
   /* ---------------- 工具 ---------------- */
@@ -133,7 +136,12 @@
   function buildSystem(searchPack, userText) {
     var snap = TW.ai.snapshot();
     var pool = wordPool();
-    var L = [SYSTEM, '', '【真实学习数据】', TW.ai.briefText(snap)];
+    var L = [SYSTEM];
+    var brief = (searchPack && searchPack.results && searchPack.results.length) ? TW.ai.searchBrief(searchPack) : '';
+    if (brief) L.push('', brief);
+    else if (searchPack) L.push('', '【本次联网检索】没有获得可靠结果。');
+    L.push('', '【真实学习数据】（可能因长度限制截断）', TW.ai.briefText(snap).slice(0, 9000));
+    if (pool.length) L.push('', '【候选词表】（id | 单词 | 中文释义）', pool.join('\n'));
 
     /* 题目板块：先给索引（让模型知道「有哪些题、怎么点名」）……
        2026-11-05 补：之前只给做题记录不给题库，模型就会答「我无法访问题库」。 */
@@ -146,16 +154,7 @@
     var qctx = TW.ai.quizContext ? TW.ai.quizContext(userText || '') : '';
     if (qctx) L.push('', qctx);
 
-    var brief = (searchPack && searchPack.results && searchPack.results.length)
-      ? TW.ai.searchBrief(searchPack) : '';
-    if (brief) L.push('', brief);
-    if (pool.length) {
-      L.push('', '【候选词表】（id | 单词 | 中文释义）');
-      L.push(pool.join('\n'));
-    } else {
-      L.push('', '【候选词表】空 —— 用户还没有背单词记录，别出「按词出题」的题；'
-        + '但可以出通用选择题（word 与 id 都留空字符串），或直接讲题库里的题。');
-    }
+    if (!pool.length) L.push('', '【候选词表】空，可以出通用题或讲解现有题库。');
     return L.join('\n');
   }
 
@@ -228,15 +227,21 @@
   function parseMsg(m) {
     if (m._parsed || m.role !== 'assistant') return;
     m._parsed = true;
+    var material = /```material\s*([\s\S]*?)```/i.exec(m.content);
+    if (material) {
+      try {
+        var obj = TW.ai.parseJson(material[1]);
+        if (!obj || ['writing', 'listening'].indexOf(obj.kind) < 0) throw new Error('无效类型');
+        m.material = obj;
+        m.content = (m.content.slice(0, material.index) + m.content.slice(material.index + material[0].length)).trim();
+      } catch (e) { m.content += '\n\n（生成内容格式无效，请重新生成。）'; }
+    }
     var sp = splitQuiz(m.content);
     if (sp.raw == null) return;
     m.content = sp.text;
     var list = normalizeExercises(sp.raw);
-    if (list) {
-      m.quiz = { exercises: list, answers: {}, graded: false, items: [], right: 0, acc: 0 };
-    } else {
-      m.content += '\n\n（这组练习的格式没解析出来，可以让我重新出一遍。）';
-    }
+    if (list) m.quiz = { exercises: list, answers: {}, graded: false, items: [], right: 0, acc: 0 };
+    else m.content += '\n\n（这组练习的格式没解析出来，可以让我重新出一遍。）';
   }
 
   function answerOf(ex) {
@@ -321,6 +326,7 @@
         '<button class="btn sm ghost" data-mi="' + mi + '" data-act="publish">发布到题目板块</button>' +
         '<span class="small muted">成绩已计入学习统计</span></div>'
       : '<div class="ai-quizbox-f"><button class="btn sm primary" data-mi="' + mi + '" data-act="grade">交卷判分</button>' +
+        '<button class="btn sm ghost" data-mi="' + mi + '" data-act="publish">发布到题目板块</button>' +
         '<span class="small muted">' + hint + '</span></div>';
 
     return '<div class="ai-quizbox">' + head + body + foot + '</div>';
@@ -337,7 +343,7 @@
     }
     return '<div class="ai-row assistant" data-mi="' + mi + '">' +
       '<div class="ai-ava">A</div>' +
-      '<div class="ai-bubble"><div class="ai-md">' + TW.ai.md(m.content) + '</div>' + quizCard(m, mi) + '</div>' +
+      '<div class="ai-bubble"><div class="ai-md">' + TW.ai.md(m.content) + '</div>' + quizCard(m, mi) + (m.material ? '<div class="ai-quizbox"><div class="ai-quizbox-h">AI 原创' + (m.material.kind === 'writing' ? '写作' : '听力') + '练习 · ' + esc(m.material.title || '') + '</div><div class="ai-quizbox-f"><button class="btn sm primary" data-mi="' + mi + '" data-act="publish-material">发布到' + (m.material.kind === 'writing' ? '写作' : '听力') + '板块</button></div></div>' : '') + '</div>' +
     '</div>';
   }
 
@@ -636,6 +642,7 @@
     S.messages = (t.messages || []).map(function (m) {
       var o = { role: m.role, content: m.content };
       if (m.quiz) { o.quiz = m.quiz; o._parsed = true; }
+      if (m.material) { o.material = m.material; o._parsed = true; }
       if (m.web) o.web = m.web;
       return o;
     });
@@ -896,6 +903,12 @@
         if (btn.dataset.act === 'grade') grade(mi2);
         else if (btn.dataset.act === 'review') reviewQuiz(mi2);
         else if (btn.dataset.act === 'publish') publishQuiz(mi2, box);
+        else if (btn.dataset.act === 'publish-material') {
+          var message = S.messages[mi2];
+          if (!message || !message.material) return;
+          try { TW.aiMaterials.save(message.material); TW.toast('已保存到' + (message.material.kind === 'writing' ? '写作' : '听力') + '板块', 'ok'); btn.disabled = true; btn.textContent = '已保存'; }
+          catch (error) { TW.toast(error.message || '保存失败，请重试', 'err'); }
+        }
       });
       box.addEventListener('input', function (e) {
         var el = e.target.closest('.ai-input');
@@ -1083,6 +1096,7 @@
     var d = new Date();
     var rec = TW.quiz.publish({
       exercises: m.quiz.exercises,
+      body: String(m.content || '').slice(0, 12000).split(/\n\s*\n/).filter(Boolean),
       title: 'AI 出题 · ' + (d.getMonth() + 1) + '/' + d.getDate() + ' · ' + n + ' 题'
     });
     if (!rec) { TW.toast('这组题没有可用题目'); return; }

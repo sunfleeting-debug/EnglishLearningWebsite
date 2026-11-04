@@ -2260,3 +2260,21 @@ html.dark .ai-send.stop::after { background: #fff; }
 .bi-zh::before { content: '译 '; font-size: 11px; color: var(--text-3); letter-spacing: 0.05em; }
 .qz-tr .bi { margin-top: 0.15rem; }
 .ls-txt .bi { margin-top: 0.15rem; }
+
+/* Learning dashboard: clearer hierarchy, tactile controls and keyboard focus. */
+.st-card { border-radius: 18px; box-shadow: 0 9px 32px rgba(54, 34, 25, .055); transition: box-shadow .2s ease, transform .2s ease; }
+.st-card:hover { box-shadow: 0 14px 38px rgba(54, 34, 25, .09); }
+.st-segb, .st-chip, .st-row, .st-book { transition: background-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease; }
+.st-segb:active, .st-chip:active, .st-row:active, .st-book:active { transform: scale(.98); }
+.st-svg [data-day]:focus-visible, .st-heat [data-day]:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.st-segb:focus-visible, .st-chip:focus-visible, .st-book:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .st-card, .st-segb, .st-chip, .st-row, .st-book { transition: none; } }
+
+.dc-ai-body { max-height: 26rem; overflow-y: auto; }
+.dc-chat-message { display: flex; gap: .7rem; margin: .8rem 0; align-items: flex-start; }
+.dc-chat-message > span { flex: none; font-size: .72rem; font-weight: 700; border-radius: 50%; background: var(--accent-2); padding: .5rem; }
+.dc-chat-message > div { padding: .7rem .9rem; border-radius: 14px; background: var(--accent-2); min-width: 0; }
+.dc-chat-message.is-user { flex-direction: row-reverse; }
+.dc-chat-message.is-user > div { background: var(--accent); color: var(--on-accent); }
+.dc-chat-form { display: flex; gap: .55rem; margin-top: 1rem; }
+.dc-chat-form input { flex: 1; min-width: 0; }

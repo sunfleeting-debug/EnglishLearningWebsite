@@ -34,7 +34,7 @@
   }
   read();
 
-  function items() { return (window.TW_WRITING && window.TW_WRITING.items) || []; }
+  function items() { return ((window.TW_WRITING && window.TW_WRITING.items) || []).concat(TW.aiMaterials ? TW.aiMaterials.list('writing') : []); }
   function get(id) {
     var l = items();
     for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];

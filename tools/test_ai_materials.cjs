@@ -1,0 +1,11 @@
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const data = new Map(); const localStorage = {getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)};
+const window = {TW:{}}; vm.runInNewContext(fs.readFileSync('assets/js/ai-materials.js','utf8'), {window,localStorage,Date,Math});
+const api=window.TW.aiMaterials;
+assert.throws(()=>api.save({kind:'listening',title:'bad',transcript:'hello',questions:[]}),/题/);
+const writing=api.save({kind:'writing',title:'Practice',prompt:'Write about learning',type:'essay'});
+assert.equal(api.list('writing')[0].id,writing.id);
+const listening=api.save({kind:'listening',title:'Audio',transcript:'A useful passage.',questions:[{stem:'What?',options:['One','Two','Three','Four'],answer:'B'}]});
+assert.equal(api.list('listening')[0].segments[0].questions[0].answer,'B');
+assert.notEqual(writing.id,listening.id);
+console.log('PASS AI writing and listening validation and persistence');

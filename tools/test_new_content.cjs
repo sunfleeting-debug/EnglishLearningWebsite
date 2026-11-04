@@ -1,0 +1,10 @@
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const window = {};
+for (const f of ['data/sentences.js', 'data/classics.js', 'data/listening.js', 'data/listening-extra.js']) vm.runInNewContext(fs.readFileSync(f, 'utf8'), {window});
+const course = window.TW_SENTENCE_COURSES.find(c => c.id === 'classic-quotes');
+assert(course && course.units.length >= 15);
+assert(course.units.every(u => u.steps[0].en && u.steps[0].zh && u.title));
+const sets = window.TW_LISTENING.sets.filter(s => s.id.startsWith('original-extra-'));
+assert(sets.length >= 3);
+for (const s of sets) for (const seg of s.segments) for (const q of seg.questions) assert(q.options.some(o => o.k === q.answer));
+console.log('PASS literary translations and new original listening sets');

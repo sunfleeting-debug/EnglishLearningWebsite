@@ -580,7 +580,11 @@
       render(host);
     }
     TW.$$('[data-day]', host).forEach(function (el) {
+      el.setAttribute('tabindex', '0');
+      el.setAttribute('role', 'button');
+      el.setAttribute('aria-label', '查看 ' + el.dataset.day + ' 的练习记录');
       el.addEventListener('click', function () { pickDay(el.dataset.day); });
+      el.addEventListener('keydown', function (event) { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); pickDay(el.dataset.day); } });
     });
     TW.$$('[data-hour]', host).forEach(function (el) {
       el.addEventListener('click', function () {

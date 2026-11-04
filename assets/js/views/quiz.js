@@ -138,7 +138,7 @@
       (pub.length
         ? '<div class="qz-cards">' + pub.map(setCard).join('') + '</div>'
         : '<div class="card card-pad"><div class="small muted">' +
-            '在「<a href="#/ai">AI 助手</a>」里让它出一组题，做完点「发布到题目板块」，这里就会出现，' +
+            '在「<a href="#/ai">AI 助手</a>」里让它出一组题，点击「发布到题目板块」，这里就会出现，' +
             '以后可以反复练、离线也能用。' +
           '</div></div>') +
     '</div>';

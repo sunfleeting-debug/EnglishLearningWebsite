@@ -119,7 +119,7 @@ class Session:
             TW.store.setSetting('autoPronounce', false);
             TW.store.setSetting('keySound', false);
             TW.store.setSetting('speakMode', 'tts');
-            if (TW.sentences) TW.sentences.setSetting('autoSpeak', false);
+            if (TW.sentences) { TW.sentences.setSetting('autoSpeak', false); TW.sentences.setSetting('mode', 'build'); }
             window.__sentenceSpeech = [];
             TW.speech.speak = function (text) {
                 window.__sentenceSpeech.push(String(text));
@@ -215,9 +215,10 @@ def run_case(browser, base, name, action, mobile=False):
 def catalogue(session):
     session.courses()
     courses = session.page.evaluate("() => window.TW_SENTENCE_COURSES")
-    classic = [c for c in courses if c.get("id") != "quotes"]
+    classic = [c for c in courses if c.get("id") not in ("quotes", "classic-quotes")]
     quotes = [c for c in courses if c.get("id") == "quotes"]
-    check("Seven original courses are loaded", len(courses), 7)
+    check("Eight built-in courses are loaded", len(courses), 8)
+    check("Classic literary course has 20 translations", len(next(c for c in courses if c.get("id") == "classic-quotes")["units"]), 20)
     check("Quotes course exists", len(quotes), 1)
     if quotes:
         check("Quotes course has 39 units", len(quotes[0]["units"]), 39)
@@ -232,7 +233,7 @@ def catalogue(session):
         isinstance(step.get("en"), str) and step["en"].strip() and isinstance(step.get("zh"), str) and step["zh"].strip()
         for course in courses for unit in course["units"] for step in unit["steps"]
     ))
-    check("All built-in courses can be started", session.page.locator("[data-start]").count(), 7)
+    check("All built-in courses can be started", session.page.locator("[data-start]").count(), 8)
     check("Course catalogue fits desktop viewport", session.no_overflow())
 
 

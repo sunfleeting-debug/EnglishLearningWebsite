@@ -53,7 +53,7 @@
       return {
         id: p.id, type: 'mixed', test: 'AI 出题', no: 0,
         title: p.title || 'AI 出题', source: 'AI 教练', topic: p.word || '',
-        minutes: 0, body: [], paras: [], bank: [],
+        minutes: 0, body: Array.isArray(p.body) ? p.body : [], paras: [], bank: [],
         questions: p.questions || [], ai: true, ts: p.ts
       };
     });
@@ -125,7 +125,8 @@
   function publish(set) {
     var questions = fromExercises(set.exercises || set.questions || []);
     if (!questions.length) return null;
-    var id = 'ai-' + hash(questions.map(function (q) { return q.stem + '|' + q.answer; }).join('#'));
+    var body = Array.isArray(set.body) ? set.body.slice(0, 30).map(function (x) { return String(x || '').slice(0, 4000); }).filter(Boolean) : [];
+    var id = 'ai-' + hash(body.join('#') + questions.map(function (q) { return q.stem + '|' + q.answer; }).join('#'));
     for (var i = 0; i < S.published.length; i++) {
       if (S.published[i].id === id) return S.published[i];
     }
@@ -134,6 +135,7 @@
       title: set.title || ('AI 出题 · ' + questions.length + ' 题'),
       ts: Date.now(),
       word: set.word || '',
+      body: body,
       questions: questions
     };
     S.published.unshift(rec);

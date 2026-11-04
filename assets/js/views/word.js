@@ -10,9 +10,8 @@
      点一次美音读 N 遍（N = 本次页面加载内进过详情页的次数）、收藏反复横跳。 */
   var prevActionsCleanup = null;
 
-  /* AI 讲解缓存（2026-11-05 加）：只在本次会话内留着，刷新就重新生成 ——
-     它是一次模型调用，不该悄悄落盘占空间。 */
-  var aiCache = {};
+  // Per-view ephemeral chat: never persisted to the assistant's conversation history.
+  var wordChat = null;
   var aiBusy = false;
 
   function sec(title, icon, body, cls) {
@@ -31,82 +30,56 @@
     }).join('') + '</ul>';
   }
 
-  /* ---------------- AI 讲解 ----------------
-     用词卡里已有的事实喂给模型（释义/搭配/例句/辨析），让它补充「为什么」和「怎么考」，
-     而不是让它从头编一遍释义。流式写进 #dc-ai-body。 */
-  function aiSystem() {
-    return [
-      '你是六级词汇教练。用户在单词详解页点「AI 讲解」，你要讲清这个词「怎么用、怎么考」。',
-      '',
-      '输出格式（中文，总长 220 字以内，不要 Markdown 表格，不要重复用户已经看到的释义原文）：',
-      '1. 一句话本质：这个词到底表达什么，和中文直觉哪里不一样（用 **粗体** 标关键词）。',
-      '2. 常考搭配 2~3 个：`搭配 + 中文`，每个配半句英文语境。',
-      '3. 易混词：只挑最容易混的一个，先说「差在哪」，再各给一例。',
-      '4. 一个例句：六级作文/翻译里真能用上的，长度 12~20 词，后面括号给中文。',
-      '',
-      '要求：具体、可背，不要说「多读多练」这类空话；拿不准的用法宁可不写。'
-    ].join('\n');
+  function wordChatPanel() {
+    var aiOn = !!(TW.ai && TW.ai.configured && TW.ai.configured());
+    return '<div class="card card-pad dc-ai" id="dc-ai">' +
+      '<div class="dc-ai-h"><span class="dc-ai-t">' + TW.icon('spark', 16) + ' 单词 AI 对话</span>' +
+      '<span class="small muted dc-ai-sub">离开页面后清除，不保存到助手历史</span>' +
+      '<button class="btn sm ghost" id="dc-ai-go">讲讲这个词</button></div>' +
+      '<div class="dc-ai-body is-empty" id="dc-ai-body"><span class="muted small">' + (aiOn ? '问我这个词的用法、搭配或辨析，可以继续追问。' : '请先在 AI 助手中配置模型。') + '</span></div>' +
+      '<form class="dc-chat-form" id="dc-ai-form"><label class="sr-only" for="dc-ai-input">关于这个单词的问题</label><input class="field" id="dc-ai-input" placeholder="继续问这个词…" autocomplete="off"><button class="btn primary" type="submit">发送</button></form></div>';
+  }
+  function bindWordChat(host, word) {
+    var button = TW.$('#dc-ai-go', host), form = TW.$('#dc-ai-form', host);
+    if (button) button.addEventListener('click', function () { aiExplain(host, word, '请讲解这个单词的核心含义、常用搭配、易混词，并给一个例句。'); });
+    if (form) form.addEventListener('submit', function (event) { event.preventDefault(); aiExplain(host, word); });
   }
 
-  function aiExplain(host, w) {
+  function aiExplain(host, w, question) {
     if (aiBusy) return;
     if (!TW.ai || !TW.ai.configured || !TW.ai.configured()) {
-      TW.toast('还没配置 AI Key，去「AI 助手」填一下', 'err');
-      TW.app.go('/ai');
-      return;
+      TW.toast('请先在 AI 助手中配置模型', 'err'); return;
     }
-    var body = TW.$('#dc-ai-body', host);
-    if (!body) return;
     var token = host.dataset.owner;
+    if (!wordChat) wordChat = TW.newWordChat(w.word, TW.data.brief(w) || '');
+    var activeChat = wordChat;
+    var body = TW.$('#dc-ai-body', host), field = TW.$('#dc-ai-input', host);
+    if (!body) return;
+    var text = question || (field && field.value.trim());
+    if (!text) return;
+    if (field) field.value = '';
     aiBusy = true;
     body.className = 'dc-ai-body';
-    body.innerHTML = '<span class="muted small">正在生成…</span>';
-
-    var card = (TW.data.card && TW.data.card(w.word)) || {};
-    var ctx = ['单词：' + w.word];
-    if (w.phon) ctx.push('音标：' + w.phon);
-    var brief = TW.data.brief(w);
-    if (brief) ctx.push('词典释义：' + brief);
-    if (card && card.colloc && card.colloc.length) {
-      ctx.push('词典给的搭配：' + card.colloc.slice(0, 5).map(function (c) {
-        return (c.en || c.phrase || '') + (c.zh ? '（' + c.zh + '）' : '');
-      }).join('；'));
+    function draw(pending) {
+      if (host.dataset.owner !== token || wordChat !== activeChat) return;
+      var messages = activeChat.messages();
+      body.innerHTML = messages.map(function (m) {
+        return '<div class="dc-chat-message ' + (m.role === 'user' ? 'is-user' : 'is-assistant') + '"><span>' + (m.role === 'user' ? '你' : 'AI') + '</span><div>' + (m.role === 'user' ? TW.esc(m.content) : TW.ai.md(m.content)) + '</div></div>';
+      }).join('') + (pending ? '<div class="dc-chat-message is-user"><span>你</span><div>' + TW.esc(text) + '</div></div><p class="small muted">AI 正在思考…</p>' : '');
+      body.scrollTop = body.scrollHeight;
     }
-    if (card && card.discrim && card.discrim.items) {
-      ctx.push('词典里的辨析对象：' + card.discrim.items.slice(0, 4).map(function (it) {
-        return it.word;
-      }).join('、'));
-    }
-
-    TW.ai.streamChat({
-      system: aiSystem(),
-      messages: [{ role: 'user', content: ctx.join('\n') + '\n\n请按格式讲这个词。' }],
-      maxTokens: 900,
-      temperature: 0.5
-    }, function (sofar) {
-      if (host.dataset.owner !== token) return;   // 已经翻到别的词了
-      var b = TW.$('#dc-ai-body', host);
-      if (b) b.textContent = sofar;
-    }).then(function (r) {
-      aiBusy = false;
-      if (host.dataset.owner !== token) return;
-      aiCache[w.id] = (r && r.text) || '';
-      var b = TW.$('#dc-ai-body', host);
-      if (b) b.innerHTML = aiCache[w.id] ? TW.ai.md(aiCache[w.id]) : '<span class="muted small">模型没有返回内容，再试一次。</span>';
-      var sub = TW.$('.dc-ai-sub', host);
-      if (sub) sub.textContent = '已生成（本次会话）';
-      var btn = TW.$('#dc-ai-go', host);
-      if (btn) btn.textContent = '重新生成';
-    }, function (e) {
-      aiBusy = false;
-      if (host.dataset.owner !== token) return;
-      var b = TW.$('#dc-ai-body', host);
-      if (b) b.innerHTML = '<span class="dc-ai-err">' +
-        TW.esc((e && e.message) || '生成失败') + '（点右上按钮重试）</span>';
-    });
+    draw(true);
+    activeChat.ask(text).then(function () { draw(false); }, function (e) {
+      draw(false);
+      if (host.dataset.owner === token && wordChat === activeChat) {
+        if (field) field.value = text;
+        TW.toast((e && e.message) || '发送失败，请重试', 'err');
+      }
+    }).finally(function () { if (wordChat === activeChat) aiBusy = false; });
   }
 
   function render(host, query) {
+    wordChat = null; aiBusy = false;
     // 拆掉上一次详情页的委托监听（见 prevActionsCleanup 说明）
     if (prevActionsCleanup) { prevActionsCleanup(); prevActionsCleanup = null; }
     // 路由复用同一个 #view，用 token 认领，避免异步回调写进别的页面
@@ -191,7 +164,7 @@
       if (--pending > 0) return;
       if (w) { paintLocal(host, w, alive); return; }
       var e = TW.data.ext(term);
-      if (e) renderExt(host, term, e); else paintOnlineOnly(host, term, alive);
+      if (e) renderExt(host, term, e, alive); else paintOnlineOnly(host, term, alive);
     }
     if (w) TW.data.loadDict(ready, w.word);            // 只载这个词所在字母块（~150KB）
     TW.data.loadDictExt(ready, w ? w.word : term);
@@ -229,12 +202,13 @@
               TW.icon('volume', 16) + '</button></div></div>' +
           (res.ph ? '<div class="dc-phons"><span class="dc-phon">/' + TW.esc(res.ph) + '/</span></div>' : '') +
         '</div>' +
-        '<div class="card card-pad">' + (means || '<div class="muted">（在线词典暂无释义）</div>') + '</div>' +
+        '<div class="card card-pad">' + (means || '<div class="muted">（在线词典暂无释义）</div>') + '</div>' + wordChatPanel() +
       '</div>';
       var bb = TW.$('#dc-back', host);
       if (bb) bb.addEventListener('click', back);
       var sb = TW.$('#dc-online-speak', host);
       if (sb) sb.addEventListener('click', function () { TW.speech.speak(res.word, TW.store.settings.accent); });
+      bindWordChat(host, {word: res.word, trans: []});
     });
   }
 
@@ -399,22 +373,7 @@
     /* ---- AI 讲解（sunfleeting 2026-11-05：「在单词页面加一个 AI 助手，让 AI 来解释这个单词」）----
        放在最后一块：先把词典里已有的事实（释义/搭配/例句）看完，再决定要不要让模型补充。
        流式输出直接写进 #dc-ai-body，不整页重渲染 —— 否则每次增量都会打断朗读和输入焦点。 */
-    var aiOn = !!(TW.ai && TW.ai.configured && TW.ai.configured());
-    var cached = aiCache[w.id];
-    secs += '<div class="card card-pad dc-ai" id="dc-ai">' +
-      '<div class="dc-ai-h">' +
-        '<span class="dc-ai-t">' + TW.icon('spark', 16) + ' AI 讲解</span>' +
-        '<span class="small muted dc-ai-sub">' +
-          (cached ? '已生成（本次会话）' : aiOn ? '讲清用法、易混词和考点' : '需先在「AI 助手」里填 Key') +
-        '</span>' +
-        '<button class="btn sm ghost" id="dc-ai-go">' + (cached ? '重新生成' : '让 AI 讲这个词') + '</button>' +
-      '</div>' +
-      '<div class="dc-ai-body' + (cached ? '' : ' is-empty') + '" id="dc-ai-body">' +
-        (cached ? TW.ai.md(cached)
-          : '<span class="muted small">点右上按钮，AI 会针对这个词给：一句话本质 → 常考搭配与语境 → ' +
-            '易混词差在哪 → 一个你明天能用上的例句。结果不落盘，刷新即清。</span>') +
-      '</div>' +
-    '</div>';
+    secs += wordChatPanel();
 
     if (!card.syn && !card.ant && !card.deriv && !card.discrim && !card.colloc && !card.colloc_raw && !card.ex) {
       secs += '<div class="card card-pad muted">' + (w.deck
@@ -430,8 +389,7 @@
     var clicksCleanup = TW.ui.bindWordActions(host, w.id);
 
     /* AI 讲解按钮：没配 Key 就把人送到 AI 页；配了就流式写进面板 */
-    var aiBtn = TW.$('#dc-ai-go', host);
-    if (aiBtn) aiBtn.addEventListener('click', function () { aiExplain(host, w); });
+    bindWordChat(host, w);
 
     /* ---- 键盘快捷键（sunfleeting：详解页也要有键盘快捷键）----
        Esc 返回 · ←/→ 上/下一个词 · S 发音 · F 收藏 · M 掌握 · R 复习队列
@@ -591,7 +549,7 @@
   }
 
   /** 扩展词条（不在本地六级词库中的近义/反义词）：只展示音标 + 释义 */
-  function renderExt(host, term, e) {
+  function renderExt(host, term, e, alive) {
     var phon = '';
     if (e.u) phon += '<button class="dc-phon" data-act="speak" data-say="' + TW.esc(term) + '" data-accent="us">美 /' + TW.esc(e.u) + '/</button>';
     if (e.k) phon += '<button class="dc-phon" data-act="speak" data-say="' + TW.esc(term) + '" data-accent="uk">英 /' + TW.esc(e.k) + '/</button>';
@@ -634,10 +592,11 @@
           'placeholder="记点心得：怎么记住它、哪里容易混、例句造一个…">' + TW.esc(savedNote) + '</textarea>' +
         '<div class="dc-note-foot"><span class="muted small" id="dc-note-hint">' +
           (savedNote ? '已保存' : '自动保存 · 随进度云同步') + '</span></div>') +
-      '<div class="row" style="justify-content:center"><button class="btn" id="dc-ext-back">' + TW.icon('arrowLeft', 16) + ' 返回上一页</button></div>' +
+      wordChatPanel() + '<div class="row" style="justify-content:center"><button class="btn" id="dc-ext-back">' + TW.icon('arrowLeft', 16) + ' 返回上一页</button></div>' +
     '</div>';
 
     host.innerHTML = host_;
+    bindWordChat(host, {word: term, trans: e.t || []});
     var b1 = TW.$('#dc-back', host), b2 = TW.$('#dc-ext-back', host);
     if (b1) b1.addEventListener('click', back);
     if (b2) b2.addEventListener('click', back);
@@ -762,5 +721,6 @@
     return parsed.text || trans[0];
   }
 
+  window.addEventListener('hashchange', function () { wordChat = null; aiBusy = false; });
   TW.views.word = { render: render };
 })();

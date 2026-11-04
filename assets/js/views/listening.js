@@ -34,7 +34,7 @@
   read();
 
   function esc(s) { return TW.esc(s); }
-  function sets() { return (window.TW_LISTENING && window.TW_LISTENING.sets) || []; }
+  function sets() { return ((window.TW_LISTENING && window.TW_LISTENING.sets) || []).concat(TW.aiMaterials ? TW.aiMaterials.list('listening') : []); }
   function get(id) {
     var l = sets();
     for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];

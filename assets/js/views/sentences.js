@@ -269,6 +269,7 @@
   function renderPractice(host, session, alive) {
     var timer = null;
     var composing = false;
+    var judging = false;
     function persist() { S.saveSession(session); }
     function currentUnit() { return S.unit(session.ids[session.index]); }
     function currentStage() {
@@ -298,26 +299,44 @@
       if (mode === 'listen') say(currentStage().en);
     }
     function submit() {
-      if (composing || session.completed) return;
+      if (composing || judging || session.completed) return;
       if (session.phase === 'correct') { next(); return; }
       var input = TW.$('#sentence-input', host);
       if (!input || !input.value.trim()) { if (input) input.focus(); return; }
       session.input = input.value;
-      var stage = currentStage();
-      if (S.compare(input.value, stage.en, stage.alternatives)) {
+      var stage = currentStage(), unitId = currentUnit().id, answer = input.value, mode = session.mode;
+      function accept() {
         session.phase = 'correct'; session.checked = false;
         if (session.mode !== 'build' || session.step === currentUnit().steps.length - 1) markResult(!session.mistakes[currentUnit().id] && !session.hints[currentUnit().id]);
         persist(); sound('correct'); draw();
         if (S.settings().autoSpeak) say(stage.en);
-      } else {
+      }
+      function reject(message) {
         session.mistakes[currentUnit().id] = true; session.checked = true;
-        S.noteDifficulty(currentUnit().id);
-        persist(); sound('wrong');
+        S.noteDifficulty(currentUnit().id); persist(); sound('wrong');
         var feedback = TW.$('#sentence-feedback', host);
         feedback.className = 'sentence-feedback is-error';
-        feedback.textContent = '还有几个词需要调整。红色部分可以直接修改，正确的内容会保留。';
-        updateWords(); selectFirstError();
+        feedback.textContent = message || '再试一次，注意句意和语法。';
+        if (mode !== 'recall') { updateWords(); selectFirstError(); }
       }
+      if (S.compare(answer, stage.en, stage.alternatives)) { accept(); return; }
+      if (mode !== 'recall' || !stage.zh) { reject('还有几个词需要调整。红色部分可以直接修改。'); return; }
+      judging = true;
+      var button = TW.$('#sentence-submit', host), feedback = TW.$('#sentence-feedback', host);
+      if (button) button.disabled = true;
+      feedback.className = 'sentence-feedback'; feedback.textContent = 'AI 正在判断翻译的意思…';
+      S.judgeTranslation(answer, stage).then(function (verdict) {
+        if (!alive() || currentUnit().id !== unitId || session.mode !== mode || !TW.$('#sentence-input', host) || TW.$('#sentence-input', host).value !== answer) return;
+        if (verdict.correct) accept(); else reject(verdict.feedback);
+      }).catch(function (error) {
+        if (!alive()) return;
+        var target = TW.$('#sentence-feedback', host);
+        if (target) { target.className = 'sentence-feedback is-error'; target.textContent = 'AI 判定未完成：' + (error.message || '请重试'); }
+      }).finally(function () {
+        judging = false;
+        var currentButton = TW.$('#sentence-submit', host);
+        if (currentButton) currentButton.disabled = false;
+      });
     }
     function hint() {
       if (session.phase === 'correct') return;
@@ -438,7 +457,7 @@
         '<div class="sentence-submit-row"><div class="row"><button class="btn" id="sentence-speak">' + TW.icon('volume', 17) + ' ' + (session.mode === 'listen' ? '播放 / 重听' : '朗读') + '<kbd>Alt S</kbd></button><button class="btn ghost" id="sentence-hint"' + (correct ? ' disabled' : '') + '>' + (revealed ? '收起答案' : '查看答案') + '<kbd>Alt H</kbd></button></div>' +
           (correct ? '<button class="btn primary" id="sentence-next">' + (finalStep ? session.index === session.ids.length - 1 ? '查看本轮结果' : '下一组句子' : '下一小步') + TW.icon('arrowRight', 17) + '<kbd>Enter</kbd></button>' : '<button class="btn primary" id="sentence-submit">检查答案 ' + TW.icon('check', 17) + '<kbd>Enter</kbd></button>') + '</div>' +
         '<div class="sentence-bottom-tools"><button class="btn ghost sm" id="sentence-prev"' + (session.index === 0 && session.step === 0 ? ' disabled' : '') + '>上一小步</button><span class="small muted">' + (session.hints[unit.id] || session.mistakes[unit.id] ? '本组将加入错句复习' : 'Alt F 收藏 · Esc 暂停并返回') + '</span>' + (correct ? '<button class="btn ghost sm" id="sentence-retry">同句再练</button>' : '<button class="btn ghost sm" id="sentence-skip">先跳过这组</button>') + '</div></section>' +
-        '<p class="sentence-practice-note">' + (session.mode === 'build' ? '每一组从简短表达开始。你只需要专注眼前这一步。' : '翻译可能有多种表达；本练习按课程目标句及预设等价答案判题。') + '</p></div>';
+        '<p class="sentence-practice-note">' + (session.mode === 'build' ? '每一组从简短表达开始。你只需要专注眼前这一步。' : '整句翻译接受意思正确的不同表达；非标准答案由已配置的 AI 判断。') + '</p></div>';
       var input = TW.$('#sentence-input', host);
       input.oncompositionstart = function () { composing = true; };
       input.oncompositionend = function () { composing = false; session.input = input.value; guarded(persist)(); updateWords(); };

@@ -4,7 +4,7 @@
   var TW = window.TW = window.TW || {};
   var KEY = 'typingcet.sentences.v1';
   var INTERVALS = [1, 2, 4, 7, 15, 30, 60];
-  var DEFAULTS = { mode: 'build', autoSpeak: true, size: 8, order: 'seq' };
+  var DEFAULTS = { mode: 'recall', autoSpeak: true, size: 8, order: 'seq' };
   var LIMITS = { bytes: 1024 * 1024, courses: 50, units: 300, totalUnits: 2000, steps: 15, stateBytes: 5 * 1024 * 1024 };
   var listeners = [], loadError = null;
 
@@ -475,11 +475,25 @@
   function clearSession() { if (!state.session) return; var next = copy(state); next.session = null; commit(next); }
   function subscribe(fn) { if (typeof fn !== 'function') throw new Error('订阅者必须是函数'); listeners.push(fn); return function () { var i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }; }
 
+  function judgeTranslation(answer, stage) {
+    if (!TW.ai || !TW.ai.chat) return Promise.reject(new Error('AI 判定不可用，请先配置 AI 助手'));
+    return TW.ai.chat({
+      system: '你是英文翻译评阅老师。判断学生英文是否忠实表达中文原意、语法是否基本正确，允许自然的同义表达和合理的时态差异。不要要求与参考句逐字一致。仅返回 JSON：{"correct":true或false,"feedback":"一句简短中文说明"}。',
+      messages: [{ role: 'user', content: JSON.stringify({ chinese: stage.zh, reference: stage.en, student: answer }) }],
+      maxTokens: 200, temperature: 0
+    }).then(function (result) {
+      var verdict;
+      try { verdict = TW.ai.parseJson(result.text); } catch (e) { throw new Error('AI 判定结果格式不正确，请重试'); }
+      if (!verdict || typeof verdict.correct !== 'boolean') throw new Error('AI 判定结果格式不正确，请重试');
+      return { correct: verdict.correct, feedback: String(verdict.feedback || '').slice(0, 240) };
+    });
+  }
+
   TW.sentences = {
     courses: courses, course: course, units: units, unit: unit, progress: progress, summary: summary,
     recordResult: recordResult, toggleFavorite: toggleFavorite, noteDifficulty: noteDifficulty, enroll: enroll, removeReview: removeReview, reviewList: reviewList,
     getSession: function () { return state.session ? copy(state.session) : null; }, saveSession: saveSession, clearSession: clearSession,
-    settings: settings, setSetting: setSetting, normalize: normalize, compare: compare,
+    settings: settings, setSetting: setSetting, normalize: normalize, compare: compare, judgeTranslation: judgeTranslation,
     parseImport: parseImport, importCourse: importCourse, deleteCourse: deleteCourse, exportCourse: exportCourse,
     exportState: exportState, importState: importState, resetProgress: resetProgress, subscribe: subscribe,
     storageKey: KEY, intervals: INTERVALS.slice(), storageError: function () { return loadError; }

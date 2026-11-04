@@ -325,13 +325,13 @@ def main():
             empty = pg.evaluate("() => TW.ai.searchBrief({ results: [] })")
             check("没有结果时不给空段落", empty, "")
 
-            # 系统提示词里必须有「不许说无法联网」的约束
+            # 检索失败时不得假装已核实实时信息
             sys_txt = pg.evaluate("""() => {
                 // 从视图模块外部拿不到 SYSTEM，这里改为检查源码里有没有那句约束
                 return fetch('assets/js/views/ai.js').then(r => r.text());
             }""")
-            check("system 里有「不要说无法联网」的硬约束",
-                  "绝对不要说「我无法联网」" in sys_txt, True)
+            check("system 要求搜索失败时如实说明",
+                  "本次检索失败或结果为空" in sys_txt, True)
             check("system 要求标注来源域名", "句末标一个来源域名" in sys_txt, True)
 
             # ---------------- G. 做题计时器（2026-11-05 新增） ----------------

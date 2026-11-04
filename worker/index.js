@@ -1114,30 +1114,31 @@ async function handleAiSearch(request) {
     { name: 'ddg', url: 'https://html.duckduckgo.com/html/?kl=cn-zh&q=' + qs,
       parse: function (t) { return parseDdg(t); } }
   ];
-  const dbg = [];      // 每次请求都带上（很小）：出问题时不用再猜是哪一路挂的
-  for (const e of engines) {
+  // Query independently: one successful news feed must not hide ordinary web results.
+  const batches = await Promise.all(engines.map(async function (e) {
     try {
       const res = await fetch(e.url, {
-        headers: {
-          'User-Agent': SEARCH_UA,
-          'Accept': e.name === 'ddg' ? 'text/html,application/xhtml+xml' : 'application/rss+xml, application/xml, text/xml',
-          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-          'Referer': 'https://' + (e.name === 'ddg' ? 'duckduckgo.com/' : 'www.bing.com/')
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(12000)
+        headers: { 'User-Agent': SEARCH_UA, 'Accept': e.name === 'ddg' ? 'text/html' : 'application/rss+xml, application/xml, text/xml', 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8' },
+        redirect: 'follow', signal: AbortSignal.timeout(10000)
       });
-      if (!res.ok) { dbg.push(e.name + ':' + res.status); continue; }
-      const txt = await res.text();
-      const items = e.parse(txt);
-      if (!items.length) { dbg.push(e.name + ':0items/' + txt.length + 'B'); continue; }
-      const rel = relevantOnly(items, q);
-      dbg.push(e.name + ':' + items.length + '→' + rel.length);
-      /* 一条都不相关就换下一路：把「热门话题」当检索结果喂给模型，比不喂更糟 */
-      if (rel.length) return jsonBody({ results: rel.slice(0, want), engine: e.name, q: q, dbg: dbg });
-    } catch (err) { dbg.push(e.name + ':ERR ' + String(err && err.message || err).slice(0, 60)); }
+      if (!res.ok) return { name: e.name, items: [], debug: e.name + ':' + res.status };
+      const items = e.parse(await res.text());
+      const relevant = relevantOnly(items, q);
+      return { name: e.name, items: relevant, debug: e.name + ':' + items.length + '→' + relevant.length };
+    } catch (err) { return { name: e.name, items: [], debug: e.name + ':ERR' }; }
+  }));
+  const results = [], seen = new Set(), used = new Set();
+  // Round-robin prevents one engine from consuming the entire result budget.
+  for (let i = 0; i < want && results.length < want; i++) {
+    for (const batch of batches) {
+      const item = batch.items[i];
+      if (!item || seen.has(item.url)) continue;
+      seen.add(item.url); used.add(batch.name); results.push(item);
+      if (results.length >= want) break;
+    }
   }
-  return jsonBody({ results: [], engine: '', q: q, dbg: dbg, error: '检索服务暂时没有返回结果' });
+  return jsonBody({ results, engine: Array.from(used).join(', '), q, dbg: batches.map(b => b.debug),
+    ...(results.length ? {} : { error: '检索服务暂时没有返回结果' }) });
 }
 
 /* POST /api/ai/chat
