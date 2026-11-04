@@ -178,6 +178,26 @@ def main():
         check("线上复习页可打开", ("今日待复习" in srs_txt) or ("复习队列" in srs_txt), True)
         pg.screenshot(path=str(SHOTS / "31-live-srs.png"))
 
+        # 2026-11-05 新增的三块：听力 / 做题计时 / 逐句对照译文
+        pg.set_viewport_size({"width": 1440, "height": 900})
+        pg.goto(URL + "#/listening", wait_until="load", timeout=60000)
+        pg.wait_for_timeout(1000)
+        check("线上听力板块可打开（3 套）", pg.locator(".ls-card").count(), 3)
+        # 导航是 <button class="nav-item" data-path="/listening">，不是 <a href>
+        check("线上导航有「听力」",
+              pg.locator('button.nav-item[data-path="/listening"]').count() >= 1, True)
+
+        pg.goto(URL + "#/quiz?set=z202412-p2", wait_until="load", timeout=60000)
+        try:
+            pg.wait_for_selector("#qz-timer", timeout=15000)
+        except Exception:
+            pass
+        check("线上做题页有计时条", pg.locator("#qz-timer").count(), 1)
+        pg.click("#qz-toggle-tr")
+        pg.wait_for_timeout(500)
+        check("线上译文逐句对照（多行英中）", pg.locator(".qz-tr .bi-row").count() >= 12, True)
+        check("线上题库 13 套", pg.evaluate("() => TW.quiz.bank().length"), 13)
+
         # 移动端
         pg.set_viewport_size({"width": 390, "height": 844})
         pg.goto(URL, wait_until="load", timeout=60000)
