@@ -589,6 +589,106 @@ kbd {
 .sess-acc.err { color: var(--err); }
 .progress-line.err > i { background: var(--err); }
 
+/* ===== 统计页图表（2026-11-04：多图表 + 多指标 + 可点） =====
+   图表全是手写 SVG：颜色只走 CSS 变量，深色主题下自动跟着变；
+   交互状态用 .sel / .active 表达，点击逻辑在 views/stats.js 里（改 S 后重渲染）。 */
+.st-kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; margin-bottom: 1.2rem; }
+.st-kpi .stat-card { position: relative; }
+.st-kpi-go { position: absolute; top: 8px; right: 8px; color: var(--text-3); opacity: 0; transition: opacity .15s, transform .15s; }
+.st-kpi .has-go:hover .st-kpi-go { opacity: 1; transform: translateX(2px); }
+
+.st-two { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+.st-card + .st-card, .st-two + .st-card, .st-card + .st-two { margin-top: 0.9rem; }
+.st-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.8rem; margin-bottom: 0.7rem; flex-wrap: wrap; }
+.st-head .small a { color: var(--text-3); text-decoration: none; }
+.st-head .small a:hover { color: var(--accent); }
+
+/* 时间窗 / 排序切换 */
+.st-segbtns { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.st-segb { background: transparent; border: none; padding: 4px 11px; font-size: 12px; color: var(--text-2); cursor: pointer; font-family: inherit; }
+.st-segb + .st-segb { border-left: 1px solid var(--line); }
+.st-segb:hover { background: var(--accent-2); color: var(--text); }
+.st-segb.active { background: var(--accent); color: var(--on-accent); }
+
+/* 通用 SVG 图表 */
+.st-svg { display: block; width: 100%; height: auto; overflow: visible; }
+.st-grid { stroke: var(--line-soft); stroke-width: 1; stroke-dasharray: 3 4; }
+.st-tick { font-family: var(--mono); font-size: 10px; fill: var(--text-3); }
+.st-bar { fill: var(--accent); opacity: 0.82; cursor: pointer; transition: opacity .15s; }
+.st-bar:hover { opacity: 1; }
+.st-bar.sel { opacity: 1; fill: var(--ok); }
+.st-bar.sm { opacity: 0.7; }
+.st-line { fill: none; stroke: var(--warn); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
+.st-dot { fill: var(--warn); stroke: var(--card); stroke-width: 1.4; cursor: pointer; }
+.st-dot.sel { fill: var(--ok); r: 4.2; }
+
+/* 掌握构成环形 */
+.st-donut-wrap { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.st-donut { width: 168px; max-width: 45%; flex: 0 0 auto; }
+.st-seg { cursor: pointer; transition: stroke-width .15s, opacity .15s; }
+.st-seg:hover { stroke-width: 22; }
+/* 环形中心文字不吃鼠标事件，否则点在正中间会挡住扇形的点击 */
+.st-donut-num { font-family: var(--font-display); font-size: 22px; fill: var(--text); pointer-events: none; }
+.st-donut-cap { font-size: 10.5px; fill: var(--text-3); pointer-events: none; }
+.st-legend { display: flex; flex-direction: column; gap: 0.3rem; font-size: 12.5px; color: var(--text-2); }
+.st-legend-row b { font-family: var(--mono); color: var(--text); margin-left: 0.25rem; }
+
+/* 复习档位 / 练习方式 的横向条 */
+.st-lv, .st-rows { display: flex; flex-direction: column; gap: 0.32rem; }
+.st-lv-row, .st-row { display: flex; align-items: center; gap: 0.5rem; font-size: 12.5px; }
+.st-row { cursor: pointer; padding: 2px 4px; margin: 0 -4px; border-radius: 3px; }
+.st-row:hover { background: var(--accent-2); }
+.st-row.sel { background: var(--accent); color: var(--on-accent); }
+.st-row.sel .st-row-n { color: var(--on-accent); opacity: .85; }
+.st-lv-l { flex: 0 0 5.4em; color: var(--text-2); }
+.st-row-l { flex: 0 0 6.4em; color: var(--text-2); }
+.st-row.sel .st-row-l { color: var(--on-accent); }
+.st-lv-bar, .st-row-bar { flex: 1; height: 8px; background: var(--accent-2); border-radius: 999px; overflow: hidden; }
+.st-lv-bar > i, .st-row-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s ease; }
+.st-lv-n, .st-row-n { flex: 0 0 auto; font-family: var(--mono); font-size: 11.5px; color: var(--text-3); min-width: 3.2em; text-align: right; }
+
+/* 近 12 周热力：固定像素宽（.st-svg 默认 width:100%，热力图铺满会把格子拉到 40px+，像一堆大按钮） */
+.st-heat-wrap { overflow-x: auto; padding-bottom: 2px; }
+.st-heat { width: 236px; height: auto; max-width: 100%; }
+.st-cell { cursor: pointer; transition: opacity .12s; }
+.st-cell:hover { opacity: 0.75; }
+.st-cell.lv0 { fill: var(--accent-2); }
+.st-cell.lv1 { fill: rgba(38, 16, 13, 0.28); }
+.st-cell.lv2 { fill: rgba(38, 16, 13, 0.5); }
+.st-cell.lv3 { fill: rgba(38, 16, 13, 0.72); }
+.st-cell.lv4 { fill: var(--accent); }
+.st-cell.sel { stroke: var(--ok); stroke-width: 1.6; }
+
+/* 筛选 chips */
+.st-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.st-chip { border: 1px solid var(--line); background: var(--accent-2); color: var(--text); border-radius: 999px;
+  padding: 3px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+.st-chip:hover { border-color: var(--accent); }
+.st-chip.ghost { background: transparent; color: var(--text-2); }
+
+/* 分书进度：整行可点进词库 */
+.st-book { display: block; text-decoration: none; color: var(--text); margin-bottom: 0.85rem; padding: 2px 4px; margin-left: -4px; border-radius: 3px; }
+.st-book:hover { background: var(--accent-2); }
+
+/* 错词条的小条 + 右侧「详解」 */
+.st-wbar { height: 4px; background: var(--accent-2); border-radius: 999px; margin-top: 0.3rem; max-width: 220px; overflow: hidden; }
+.st-wbar > i { display: block; height: 100%; background: var(--err); border-radius: 999px; }
+.st-wgo { flex: 0 0 auto; color: var(--text-3); display: inline-flex; align-items: center; padding: 0 0.2rem; }
+.st-wgo:hover { color: var(--accent); }
+
+/* 统一悬浮提示（跟随鼠标，贴边时自动翻到另一侧） */
+.st-tip { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; opacity: 0;
+  background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 6px 9px; font-size: 12px; line-height: 1.55; box-shadow: var(--shadow); max-width: 260px; }
+.st-tip.show { opacity: 1; }
+.st-tip b { font-weight: 600; }
+
+@media (max-width: 860px) {
+  .st-two { grid-template-columns: 1fr; }
+  .st-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .st-donut { width: 132px; }
+}
+
 /* 设置 */
 .set-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.85rem 0; border-bottom: 1px solid var(--line-soft); }
 .set-row:last-child { border-bottom: none; }

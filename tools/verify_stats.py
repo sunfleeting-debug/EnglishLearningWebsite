@@ -289,6 +289,128 @@ def main():
             check("第 3 次答对 → 第 3 档、更远",
                   res2["b3"] == 3 and res2["d3"] > res2["d2"], extra=res2)
 
+            # ---------- E. 统计页图表 / 指标 / 交互（2026-11-04 加） ----------
+            log("E) 统计页：多图表 + 多指标 + 图表可点")
+            pg.evaluate("""() => {
+                const S = TW.store;
+                S.resetAll();
+                S.state.sessions = [];
+                const now = Date.now();
+                const d = S.state.daily;
+                const t = S.today();
+                d[t] = { done: 60, right: 45 };
+                const y = new Date(); y.setDate(y.getDate() - 1);
+                const m = y.getMonth() + 1, dd = y.getDate();
+                d[y.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (dd < 10 ? '0' : '') + dd] = { done: 30, right: 30 };
+                S.addSession({ t: now - 3600e3, mode: 'type', src: 'book', total: 20, right: 15, wrong: 5, acc: 75 });
+                S.addSession({ t: now - 7200e3, mode: 'recall', src: 'srs', total: 10, right: 10, wrong: 0, acc: 100 });
+                S.addSession({ t: now - 86400e3, mode: 'type', src: 'book', total: 15, right: 6, wrong: 9, acc: 40 });
+                S.addSession({ t: now - 90000e3, mode: 'listen', src: 'srs', total: 5, right: 4, wrong: 1, acc: 80 });
+                // 造 3 个练过的词，其中 2 个已掌握 —— 环形图三段才都有长度、可点
+                const ws = TW.data.words.slice(0, 3);
+                ws.forEach((w, i) => {
+                    S.state.progress[w.id] = { w: 0, r: 3, seen: 5, fav: false, master: i < 2,
+                        ts: now, word: w.word, src: w.book || '', brief: TW.data.brief(w), streak: 0 };
+                });
+                S.save();
+            }""")
+            pg.goto(BASE + "#/stats", wait_until="domcontentloaded")
+            pg.wait_for_selector(".st-kpi", timeout=8000)
+            pg.wait_for_timeout(400)
+
+            check("指标卡 8 张", pg.locator(".st-kpi .stat-card").count(), 8)
+            check("趋势图默认 14 根柱子", pg.locator(".st-bar[data-day]").count(), 14)
+            check("正确率折线画出来了", pg.locator(".st-line").count() >= 1)
+            check("环形图 3 段", pg.locator(".st-seg").count(), 3)
+            check("热力图格子 > 60", pg.locator(".st-cell").count() > 60, True,
+                  extra=pg.locator(".st-cell").count())
+            check("练习方式 3 种", pg.locator(".st-row[data-mode]").count(), 3)
+            check("时段图 24 根柱子", pg.locator(".st-bar[data-hour]").count(), 24)
+
+            # 时间窗切换
+            pg.click(".st-segb[data-range='7']")
+            pg.wait_for_timeout(250)
+            check("切到近 7 天 = 7 根柱子", pg.locator(".st-bar[data-day]").count(), 7)
+            pg.click(".st-segb[data-range='30']")
+            pg.wait_for_timeout(250)
+            check("切到近 30 天 = 30 根柱子", pg.locator(".st-bar[data-day]").count(), 30)
+            pg.click(".st-segb[data-range='14']")
+            pg.wait_for_timeout(250)
+
+            # 悬停出数值浮层
+            pg.hover(".st-bar[data-day]:last-of-type")
+            pg.wait_for_timeout(200)
+            check("悬停柱子出现数值浮层",
+                  pg.locator(".st-tip.show").count() == 1
+                  and pg.evaluate("() => (document.querySelector('.st-tip') || {}).textContent || ''") != "",
+                  True, extra=pg.evaluate("() => (document.querySelector('.st-tip') || {}).textContent || ''"))
+
+            # 点今天的柱子 → 场次只剩今天的 2 场 + 出现筛选 chip
+            pg.evaluate("""() => {
+                const t = TW.store.today();
+                const el = [...document.querySelectorAll('.st-bar[data-day]')].find(x => x.dataset.day === t);
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }""")
+            pg.wait_for_timeout(300)
+            check("点某天 → 场次只剩那天", pg.locator(".sess-row").count(), 2)
+            check("出现筛选 chip", pg.locator(".st-chip[data-clear='day']").count(), 1)
+            pg.click(".st-chip[data-clear='day']")
+            pg.wait_for_timeout(300)
+            check("清掉筛选后场次恢复 4 场", pg.locator(".sess-row").count(), 4)
+
+            # 点练习方式 → 过滤
+            pg.click(".st-row[data-mode='recall']")
+            pg.wait_for_timeout(300)
+            check("点「看中文拼写」只剩 1 场", pg.locator(".sess-row").count(), 1)
+            check("模式 chip 出现", pg.locator(".st-chip[data-clear='mode']").count(), 1)
+            pg.click(".st-chip[data-clear='mode']")
+            pg.wait_for_timeout(300)
+
+            # 点时段 → 过滤
+            pg.evaluate("""() => {
+                const el = document.querySelector('.st-bar[data-hour]');
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }""")
+            pg.wait_for_timeout(300)
+            check("点时段出现小时 chip", pg.locator(".st-chip[data-clear='hour']").count(), 1)
+            pg.click(".st-chip[data-clear='hour']")
+            pg.wait_for_timeout(300)
+
+            # 环形图分段点进生词本（扇形是描边圆环，中心不是可点区域，用事件直接触发）
+            pg.evaluate("""() => {
+                const el = document.querySelector(".st-seg[data-go='#/review?tab=master']");
+                el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }""")
+            pg.wait_for_timeout(600)
+            check("点环形图「已掌握」进生词本对应分组",
+                  "review?tab=master" in pg.evaluate("() => location.hash"), True,
+                  extra=pg.evaluate("() => location.hash"))
+
+            # 指标卡可点
+            pg.goto(BASE + "#/stats", wait_until="domcontentloaded")
+            pg.wait_for_selector(".st-kpi", timeout=8000)
+            pg.wait_for_timeout(300)
+            pg.click(".st-kpi .stat-card[data-go='#/review?tab=wrong']")
+            pg.wait_for_timeout(600)
+            check("点指标卡「待攻克错词」跳生词本",
+                  "review?tab=wrong" in pg.evaluate("() => location.hash"), True,
+                  extra=pg.evaluate("() => location.hash"))
+
+            # 分书权重排序 + 点整行进词库
+            pg.goto(BASE + "#/stats", wait_until="domcontentloaded")
+            pg.wait_for_selector(".st-book", timeout=8000)
+            pg.wait_for_timeout(300)
+            first_by_master = pg.evaluate("() => document.querySelector('.st-book').textContent.trim().slice(0, 12)")
+            pg.click(".st-segb[data-sort='name']")
+            pg.wait_for_timeout(300)
+            first_by_name = pg.evaluate("() => document.querySelector('.st-book').textContent.trim().slice(0, 12)")
+            check("按名称排序会改变顺序", first_by_master != first_by_name, True,
+                  extra=[first_by_master, first_by_name])
+            pg.click(".st-book")
+            pg.wait_for_timeout(600)
+            check("点分书整行进词库", "#/books" in pg.evaluate("() => location.hash"), True,
+                  extra=pg.evaluate("() => location.hash"))
+
             check("无 JS 报错", len(errors) == 0, extra=errors[:3])
             browser.close()
     finally:

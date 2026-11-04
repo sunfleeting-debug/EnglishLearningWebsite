@@ -835,9 +835,9 @@ def main():
         # 不锁死回退目标（同文档 hash 导航的 history 条目顺序不稳定），只验证「Esc 会返回」
         check("统计页按 Esc 返回上一页", pg.evaluate("() => location.hash") != h_s, True)
 
-        # 近 14 天练习量柱状图：daily 数据非零时柱子必须真的画出来（回归：
-        # .bar-fill 的百分比高度曾因 .bar-col 高度不定而塌成 3px 矮桩，
-        # 数据全对但图面像「练习量为零」）
+        # 练习趋势图（2026-11-04 换成 SVG）：daily 数据非零时柱子必须真的画出来
+        # （回归：老版 .bar-fill 的百分比高度曾因父级高度不定塌成 3px 矮桩 ——
+        #  数据全对但图面像「练习量为零」；换 SVG 后仍要守住「今天最高」）
         pg.evaluate("""() => {
             const t = TW.store.today();
             const d = TW.store.state.daily;
@@ -850,13 +850,15 @@ def main():
         goto("#/stats")
         pg.wait_for_timeout(700)
         bar_info = pg.evaluate("""() => {
-            const fills = [...document.querySelectorAll('.bar-fill')];
-            const hs = fills.map(el => el.getBoundingClientRect().height);
-            return { n: fills.length, max: Math.max.apply(null, hs),
-                     today: fills[fills.length - 1] ? fills[fills.length - 1].getBoundingClientRect().height : 0 };
+            const rects = [...document.querySelectorAll('.st-bar[data-day]')];
+            const t = TW.store.today();
+            const hs = rects.map(el => el.getBoundingClientRect().height);
+            const todayEl = rects.find(el => el.dataset.day === t);
+            return { n: rects.length, max: Math.max.apply(null, hs),
+                     today: todayEl ? todayEl.getBoundingClientRect().height : 0 };
         }""")
-        check("柱状图柱子真的画出来了（不是 3px 矮桩）", bar_info["max"] > 30, True, extra=str(bar_info))
-        check("今天（数据最大那天）柱子最高", bar_info["today"] == bar_info["max"], True)
+        check("趋势图柱子真的画出来了（不是 3px 矮桩）", bar_info["max"] > 30, True, extra=str(bar_info))
+        check("今天（数据最大那天）柱子最高", abs(bar_info["today"] - bar_info["max"]) < 1.5, True)
         pg.evaluate("""() => {
             const d = TW.store.state.daily;
             delete d[TW.store.today()];
