@@ -138,6 +138,14 @@ def main():
             kw["executable_path"] = str(EXE)
         browser = p.chromium.launch(**kw)
 
+        # 首次进入（没填 Key）的接入卡
+        fresh = browser.new_page(viewport={"width": 1280, "height": 900})
+        fresh.add_init_script("try{localStorage.setItem('typingcet.guest','1');localStorage.removeItem('typingcet.ai.v1')}catch(e){}")
+        fresh.goto(BASE + "#/ai", wait_until="domcontentloaded")
+        fresh.wait_for_function("() => window.TW && window.TW.ai")
+        fresh.wait_for_timeout(600)
+        fresh.screenshot(path=str(OUT / "ai-00-setup.png"), full_page=True)
+
         pg = browser.new_page(viewport={"width": 1280, "height": 900})
         setup(pg)
         pg.wait_for_timeout(700)

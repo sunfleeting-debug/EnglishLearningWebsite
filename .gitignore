@@ -5,7 +5,8 @@
 # ---------- 构建缓存与临时目录 ----------
 tools/.cache/
 tools/__pycache__/
-tools/_shots/          # 视觉核验截图（tools/shot_ai.py 产出，不入库）
+# 视觉核验截图（tools/shot_ai.py 产出，不入库）
+tools/_shots/
 __pycache__/
 *.pyc
 node_modules/
