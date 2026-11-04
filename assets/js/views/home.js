@@ -129,6 +129,8 @@
     var input = TW.$('#hs-input', host);
     var resBox = TW.$('#hs-res', host);
     var hsTimer = null;
+    var hsAiTimer = null;
+    var hsAiCache = Object.create(null);
 
     /* ---- 搜索记录（sunfleeting：加一下搜索记录，最近 50 条，本地存储不进同步）---- */
     function shList() {
@@ -169,7 +171,7 @@
       });
     }
 
-    function hsHide() { resBox.hidden = true; resBox.innerHTML = ''; }
+    function hsHide() { clearTimeout(hsAiTimer); resBox.hidden = true; resBox.innerHTML = ''; }
 
     function hsGo(word) {
       hsHide();
@@ -202,6 +204,42 @@
       TW.$$('.hs-item', resBox).forEach(function (el) {
         el.addEventListener('click', function () { hsGo(el.dataset.w); });
       });
+    }
+
+    // AI is a last resort, scoped to the current search and never saved in chat history.
+    function hsShowAi(q, retry) {
+      clearTimeout(hsAiTimer);
+      if (input.value.trim() !== q || !resBox.isConnected) return;
+      if (q.length > 120) { hsShow([], q); return; }
+      resBox.hidden = false;
+      if (!TW.ai || !TW.ai.configured || !TW.ai.configured()) {
+        resBox.innerHTML = '<div class="hs-empty">词典没有找到「' + TW.esc(q) + '」。<a href="#/ai">配置 AI 助手</a> 后可自动解释。</div>';
+        return;
+      }
+      var entry = hsAiCache[q];
+      if (retry || !entry || entry.status === 'waiting') {
+        entry = hsAiCache[q] = { status: 'waiting' };
+        hsAiTimer = setTimeout(function () {
+          if (input.value.trim() !== q || !resBox.isConnected || resBox.hidden || hsAiCache[q] !== entry) return;
+          entry.status = 'pending';
+          TW.ai.chat({
+            system: '你是英语词汇老师。解释用户输入的单词、短语或中文释义，优先给出中文含义、词性、常见用法及中英例句。若输入可能拼错或含义不确定，请明确说明，不要编造。简明回答。',
+            messages: [{role: 'user', content: q}], maxTokens: 650, temperature: 0.3
+          }).then(function (result) {
+            entry.status = 'done'; entry.text = result.text;
+            if (input.value.trim() === q && resBox.isConnected && !resBox.hidden && hsAiCache[q] === entry) hsShowAi(q);
+          }, function (error) {
+            entry.status = 'error'; entry.error = (error && error.message) || '请稍后重试';
+            if (input.value.trim() === q && resBox.isConnected && !resBox.hidden && hsAiCache[q] === entry) hsShowAi(q);
+          });
+        }, 600);
+      }
+      if (entry.status === 'done') {
+        resBox.innerHTML = '<div class="hs-ai"><div class="hs-ai-head">AI 解释 · ' + TW.esc(q) + '</div><div class="ai-md">' + TW.ai.md(entry.text) + '</div></div>';
+      } else if (entry.status === 'error') {
+        resBox.innerHTML = '<div class="hs-ai"><div class="hs-ai-head">AI 解释暂时不可用</div><p>' + TW.esc(entry.error) + '</p><button type="button" class="btn sm" id="hs-ai-retry">重试</button></div>';
+        TW.$('#hs-ai-retry', resBox).addEventListener('click', function () { hsShowAi(q, true); });
+      } else resBox.innerHTML = '<div class="hs-empty" role="status">词典没有找到「' + TW.esc(q) + '」，AI 正在解释…</div>';
     }
 
     /* 兜底链结果①：未加载词典里的词（词面索引）——点击进详解，详解页会自动加载那本词典 */
@@ -267,11 +305,13 @@
        dict.js（4MB）带宽抢光，慢网下整个搜索+点词都卡死（实测教训）。 */
     var SEARCH_CAP = 100;        // 最多展示 100 条：够翻，又不至于把首页拖垮
     var prefetchStarted = false; // 预取每页只发起一次（loadBook 幂等，重渲染无害）
+    var prefetchFinished = false;
 
     function startPrefetch() {
       if (prefetchStarted) return;
       prefetchStarted = true;
-      TW.data.preloadDecks(function () {
+      TW.data.preloadDecks(function (done, total) {
+        if (done >= total) prefetchFinished = true;
         var v = input.value.trim();
         if (v) hsRun(v);         // 每载完一本就按当前输入补全一次结果
       });
@@ -284,19 +324,19 @@
       var full = TW.data.allDecksReady();
       var list = TW.data.searchAll(q, SEARCH_CAP);
       if (list.length) { hsShow(list, q, !full); return; }
-      if (!full) {                           // 还有词典在路上：先别判「没有」，载完回调会重查
+      if (!full && !prefetchFinished) {       // 还有词典在路上；失败结束后继续在线/AI 兜底
         resBox.innerHTML = '<div class="hs-empty">正在载入词典（' +
           TW.data.decksLoaded().length + '/' + TW.data.decks.length + '）…结果会自动补全</div>';
         resBox.hidden = false;
         return;
       }
       // 只对「像英文单词的输入」走兜底链（中文释义搜不了词面索引/在线词典）
-      if (!/^[a-zA-Z][a-zA-Z' -]*$/.test(q)) { hsShow([], q); return; }
+      if (!/^[a-zA-Z][a-zA-Z' -]*$/.test(q)) { hsShowAi(q); return; }
       resBox.innerHTML = '<div class="hs-empty">正在查询…</div>';
       resBox.hidden = false;
       TW.data.lookupChain(q, function (res) {
         if (input.value.trim() !== q) return;    // 查询期间用户已改输入
-        if (!res) { hsShow([], q); return; }
+        if (!res) { hsShowAi(q); return; }
         if (res.type === 'deck') hsShowDeckHits(res.hits);
         else if (res.type === 'ext') hsShow([{ word: res.word, raw: res.word, us: res.e.u || '', trans: res.e.t || [], deck: true }], q);
         else hsShowOnline(res.res, q);
@@ -304,7 +344,7 @@
     }
 
     input.addEventListener('input', function () {
-      clearTimeout(hsTimer);
+      clearTimeout(hsTimer); clearTimeout(hsAiTimer);
       hsTimer = setTimeout(function () { hsRun(input.value); }, 220);
     });
     input.addEventListener('focus', function () {

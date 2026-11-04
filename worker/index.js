@@ -1227,7 +1227,7 @@ async function handleAiChat(request) {
     const text = String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 300);
     let hint = '';
     if (/1015|1020|1010/.test(text)) {
-      hint = '（上游 Cloudflare 限流/拦截：多为出口 IP 被限，稍后重试；本站前端会改用浏览器直连再试一次）';
+      hint = '（模型服务的 Cloudflare 限流或拦截；请稍后重试，持续出现可联系模型服务商或更换可用接口）';
     } else if (res.status === 404) {
       hint = '（路径不对：多数接口的地址要以 /v1 结尾）';
     } else if (res.status === 429) {

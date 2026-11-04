@@ -2278,3 +2278,8 @@ html.dark .ai-send.stop::after { background: #fff; }
 .dc-chat-message.is-user > div { background: var(--accent); color: var(--on-accent); }
 .dc-chat-form { display: flex; gap: .55rem; margin-top: 1rem; }
 .dc-chat-form input { flex: 1; min-width: 0; }
+
+.hs-ai { padding: .85rem 1rem; border-radius: 12px; background: var(--accent-2); line-height: 1.6; }
+.hs-ai-head { font-weight: 700; color: var(--text); margin-bottom: .35rem; }
+.hs-ai .ai-md p { margin: .35rem 0; }
+.hs-ai p { overflow-wrap: anywhere; }

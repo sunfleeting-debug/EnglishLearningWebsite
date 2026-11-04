@@ -268,9 +268,11 @@
       (S.busy || S.streamText ? '<div class="card card-pad" id="wr-stream-box"><div class="wr-h">批改中…</div>' +
         '<div class="wr-rewrite" id="wr-stream">' + esc(S.streamText) + '</div></div>' : '') +
       (res && !S.busy ? resultHtml(res) : '') +
+      '<div id="study-chat"></div>' +
     '</div>';
 
     bindItem(host, it);
+    if (TW.studyChat) TW.studyChat.mount(host, function () { return {type: it.type, title: it.title, prompt: it.prompt, require: it.require, draft: DB.drafts[it.id] || '', previousResult: DB.results[it.id] || null}; }, it.type === 'trans' ? '翻译' : '作文');
   }
 
   function bindItem(host, it) {

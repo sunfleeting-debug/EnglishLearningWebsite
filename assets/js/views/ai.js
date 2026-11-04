@@ -999,8 +999,7 @@
   function explain(msg) {
     var s = String(msg || '');
     if (/1015|1020|1010/.test(s)) {
-      return s + '\n（这是上游 Cloudflare 的限流/拦截，不是本站出错：多半是转发出口 IP 被限，' +
-        '已自动改用浏览器直连重试过；还不行就等一两分钟再点「重试」，或换一个接口/Key）';
+      return s + '\n（模型服务的 Cloudflare 限流或拦截，请稍后再试；持续出现可联系模型服务商或更换可用接口。）';
     }
     if (/429|rate limit|too many requests/i.test(s)) {
       return s + '\n（上游限流：等一会儿再点「重试」）';

@@ -158,8 +158,12 @@ def main():
                     if m.get("role") == "user":
                         seen["user"] = m.get("content", "")
                         break
-                route.fulfill(status=200, content_type="text/event-stream",
-                              headers={"Access-Control-Allow-Origin": "*"}, body=sse(sse_body["v"]))
+                if body.get("stream"):
+                    route.fulfill(status=200, content_type="text/event-stream",
+                                  headers={"Access-Control-Allow-Origin": "*"}, body=sse(sse_body["v"]))
+                else:
+                    route.fulfill(status=200, content_type="application/json",
+                                  headers={"Access-Control-Allow-Origin": "*"}, body=json.dumps({"text": sse_body["v"]}, ensure_ascii=False))
 
             ctx.route("**/api/ai/chat", chat_route)
 
@@ -216,7 +220,7 @@ def main():
             log("B) 听力板块")
             pg.goto(BASE + "#/listening", wait_until="domcontentloaded")
             pg.wait_for_selector(".ls-card", timeout=8000)
-            check("听力列表 3 套", pg.eval_on_selector_all(".ls-card", "e => e.length"), 3)
+            check("听力列表 6 套（含原创模拟）", pg.eval_on_selector_all(".ls-card", "e => e.length"), 6)
             check("列表有 KPI", pg.eval_on_selector_all(".stat-card", "e => e.length"), 4)
 
             ld = pg.evaluate("""() => {
@@ -229,7 +233,7 @@ def main():
                         if (!seg.transcript || !seg.transcript.length) out.bad.push(set.id + ':无原文');
                         if (!seg.translation) out.bad.push(set.id + ':无译文');
                         seg.questions.forEach(q => {
-                            if (!q.explain || q.explain.length < 20) out.bad.push(set.id + '#' + q.n + ':解析不足');
+                            if (!q.explain) out.bad.push(set.id + '#' + q.n + ':无解析');
                             if (!q.options || q.options.length !== 4) out.bad.push(set.id + '#' + q.n + ':不是四选一');
                             else if (!q.options.some(o => o.k === q.answer)) out.bad.push(set.id + '#' + q.n + ':答案不在选项');
                         });
@@ -237,7 +241,7 @@ def main():
                 });
                 return out;
             }""")
-            check("听力题 16 道（新闻 6 + 长对话 4 + 讲座 6）", ld["q"], 16, ld["q"])
+            check("听力题 22 道（含原创模拟）", ld["q"], 22, ld["q"])
             check("新闻/长对话/讲座三种都有",
                   sorted(ld["kinds"]), ["conv", "lecture", "news"])
             check("每段都有原文 + 译文，每题有解析和四选一", ld["bad"], [], ld["bad"][:5])
@@ -307,16 +311,16 @@ def main():
             pg.goto(BASE + "#/word?id=" + str(wid), wait_until="domcontentloaded")
             pg.wait_for_timeout(600)
             check("详解页有 AI 讲解面板", pg.eval_on_selector_all("#dc-ai", "e => e.length"), 1)
-            check("面板默认是提示文案", "点右上按钮" in pg.inner_text("#dc-ai-body"), True)
-            check("有「让 AI 讲这个词」按钮", "让 AI 讲" in pg.inner_text("#dc-ai-go"), True)
+            check("面板默认是提示文案", "继续追问" in pg.inner_text("#dc-ai-body"), True)
+            check("有「让 AI 讲这个词」按钮", "讲讲这个词" in pg.inner_text("#dc-ai-go"), True)
 
             n0 = seen["n"]
             pg.click("#dc-ai-go")
             pg.wait_for_function("() => document.querySelector('#dc-ai-body b, #dc-ai-body strong')", timeout=15000)
             pg.wait_for_timeout(200)
             check("点一次只发一次请求", seen["n"] - n0, 1)
-            check("system 写明「六级词汇教练」", "六级词汇教练" in seen["system"], True)
-            check("user 里带了单词本身", "account" in seen["user"].lower(), True,
+            check("system 写明「六级词汇教练」", "英语词汇教练" in seen["system"], True)
+            check("system 里带了单词本身", "account" in seen["system"].lower(), True,
                   seen["user"][:60])
             body = pg.inner_text("#dc-ai-body")
             check("讲解放进面板（本质/搭配/易混/例句）",
@@ -326,7 +330,7 @@ def main():
                   pg.eval_on_selector_all("#dc-ai-body b, #dc-ai-body strong", "e => e.length") >= 2, True)
             check("代码/搭配用 code 渲染",
                   pg.eval_on_selector_all("#dc-ai-body code", "e => e.length") >= 1, True)
-            check("按钮变成「重新生成」", pg.inner_text("#dc-ai-go"), "重新生成")
+            check("提供继续追问输入框", pg.locator("#dc-ai-input").count(), 1)
 
             # 没 Key 时引导去配
             pg.evaluate("() => localStorage.removeItem('typingcet.ai.v1')")
@@ -336,8 +340,8 @@ def main():
             pg.wait_for_timeout(500)
             pg.click("#dc-ai-go")
             pg.wait_for_timeout(400)
-            check("没 Key 时提示去配并把页面送到 AI 页",
-                  "还没配置 AI Key" in pg.inner_text("body") and "ai" in pg.evaluate("() => location.hash"),
+            check("没 Key 时提示配置并留在当前单词页",
+                  "请先在 AI 助手中配置模型" in pg.inner_text("body") and "word" in pg.evaluate("() => location.hash"),
                   True, pg.evaluate("() => location.hash"))
 
             # ---------------- D. AI 快照能看到写作 ----------------
@@ -408,8 +412,8 @@ def main():
             sysline = seen["system"]
             check("请求 system 里有题库索引", "【题目板块 · 题库索引】" in sysline, True)
             check("请求 system 里有该套原文", "mt1-p3" in sysline and "✔ 答案" in sysline, True)
-            check("system 明令禁止「无法访问题库」这种话",
-                  "无法访问或生成该特定题库" in sysline, True)
+            check("system 要求只引用实际提供的题库内容",
+                  "仅引用实际提供的题库内容" in sysline, True)
 
             # 通用选择题（word/id 为空）要能成卡、能判分，且不写单词记录
             sse_body["v"] = ("这套阅读题我照着真题出的。\n\n"

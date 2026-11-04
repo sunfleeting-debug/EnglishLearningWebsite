@@ -249,10 +249,11 @@
           '<button class="btn ghost" id="ls-trans">' + (S.showTrans ? '只看原文' : '看原文 + 译文') + '</button>' +
         '</div>' +
         (S.showText ? '<div class="ls-texts">' + textHtml(set) + '</div>' : '') +
-      '</div>' +
+      '</div>' + '<div id="study-chat"></div>' +
     '</div>';
 
     bind(host, set);
+    if (TW.studyChat) TW.studyChat.mount(host, function () { return {title: set.title, answers: S.answers, graded: S.graded, score: S.graded ? scoreOf(set) : undefined, segments: set.segments}; }, '听力');
     if (S.playing >= 0) {
       var tip = TW.$('#ls-now', host);
       if (tip) tip.textContent = '正在朗读 ' + set.segments[S.playing].label + '…';

@@ -359,10 +359,11 @@
         (S.graded ? '' : '<div class="qz-foot"><button class="btn primary" id="qz-submit">' +
           TW.icon('check', 16) + ' 交卷看解析</button>' +
           '<span class="small muted">交卷后逐题给对错与完整解析</span></div>') +
-      '</div>' +
+      '</div>' + '<div id="study-chat"></div>' +
     '</div>';
 
     bind(host, set);
+    if (TW.studyChat) TW.studyChat.mount(host, function () { return {type: set.type, title: set.title, answers: S.answers, graded: S.graded, results: S.graded ? S.items : undefined, body: set.body, paras: set.paras, questions: set.questions}; }, '题目');
   }
 
   function bind(host, set) {
