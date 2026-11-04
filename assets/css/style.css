@@ -2002,3 +2002,111 @@ html.dark .ai-send.stop::after { background: #fff; }
 .ai-hist .ai-th { padding: 0.45rem 0.5rem; }
 .ai-hist .ai-th-x { opacity: 1; }
 .ai-hist .ai-th-main b { font-size: 13.5px; }
+
+/* ==========================================================================
+   写作板块（翻译 / 作文，2026-11-04）
+   列表 → 作答（题目卡 + 要点 + 文本域）→ AI 批改结果（分数 / 分项条 / 问题 / 改写 / 三个候选）
+   ========================================================================== */
+.wr-group { margin-bottom: 1.6rem; }
+.wr-group-h { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.6rem; }
+.wr-group-h h3 { font-family: var(--font-display); font-size: 1.05rem; font-weight: 500; margin: 0; }
+.wr-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 0.6rem; }
+.wr-card {
+  display: block; text-decoration: none; color: var(--text);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 0.75rem 0.85rem; transition: border-color 0.18s, transform 0.18s;
+}
+.wr-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.wr-card-h { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.45rem; }
+.wr-card-t {
+  font-size: 14px; line-height: 1.5; margin-bottom: 0.3rem; min-height: 2.7em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.wr-card-m { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 区块标题：左边文字、右边按钮，窄屏自动换行不挤压 */
+.wr-h {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 0.5rem;
+}
+.wr-h > .btn, .wr-h > .small { margin-left: auto; }
+.wr-h > .small { font-weight: 400; }
+
+.wr-prompt { margin-bottom: 0.9rem; }
+.wr-text { font-size: 14.5px; line-height: 1.95; color: var(--text); white-space: pre-wrap; }
+.wr-tips { margin: 0.55rem 0 0; padding-left: 1.1rem; font-size: 13px; line-height: 1.85; color: var(--text-2); }
+.wr-tips li { margin-bottom: 0.15rem; }
+.wr-tips li::marker { color: var(--text-3); }
+
+.wr-input {
+  width: 100%; min-height: 15rem; resize: vertical;
+  font-size: 14.5px; line-height: 1.9; font-family: var(--font);
+}
+
+.wr-sample-ref { margin-top: 0.8rem; border-top: 1px dashed var(--line-soft); padding-top: 0.7rem; }
+.wr-rewrite {
+  font-size: 14px; line-height: 1.95; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+}
+.wr-err {
+  margin-top: 0.6rem; font-size: 13px; line-height: 1.7;
+  color: var(--err); background: var(--err-soft);
+  border-radius: var(--radius); padding: 0.5rem 0.7rem;
+}
+
+/* ---- 批改结果 ---- */
+.wr-result {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 1rem 1.1rem; margin-top: 0.9rem;
+}
+.wr-score { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.5rem; }
+.wr-score-n { font-family: var(--font-display); font-size: 2.6rem; line-height: 1; font-weight: 500; color: var(--accent); }
+.wr-score-n span { font-size: 1rem; color: var(--text-3); font-family: var(--font); margin-left: 0.1rem; }
+.wr-score-n.ok { color: var(--ok); }
+.wr-score-n.err { color: var(--err); }
+.wr-score-cap { margin-left: auto; }
+.wr-comment { font-size: 14px; line-height: 1.9; color: var(--text); white-space: pre-wrap; margin-bottom: 0.8rem; }
+
+.wr-rubric { display: flex; flex-direction: column; gap: 0.32rem; margin-bottom: 0.9rem; }
+.wr-rub-row { display: flex; align-items: center; gap: 0.5rem; font-size: 12.5px; }
+.wr-rub-l { flex: 0 0 3.4rem; color: var(--text-2); }
+.wr-rub-bar { flex: 1 1 auto; height: 6px; border-radius: 999px; background: var(--accent-2); overflow: hidden; }
+.wr-rub-bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.wr-rub-n { flex: 0 0 auto; font-family: var(--mono); font-size: 11.5px; color: var(--text-2); }
+
+.wr-issues { margin-bottom: 0.9rem; }
+.wr-issue {
+  border-left: 2px solid var(--err); padding: 0.15rem 0 0.15rem 0.6rem;
+  margin-bottom: 0.55rem;
+}
+.wr-quote { font-size: 13.5px; line-height: 1.75; color: var(--text-2); font-style: italic; }
+.wr-fix { font-size: 13.5px; line-height: 1.8; color: var(--ok); }
+.wr-why { line-height: 1.75; }
+
+.wr-block { margin-bottom: 0.9rem; }
+.wr-block .wr-h { margin-bottom: 0.4rem; }
+
+.wr-samples { border-top: 1px dashed var(--line-soft); padding-top: 0.7rem; }
+.wr-tabs { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 0.55rem; }
+.wr-tab {
+  border: 1px solid var(--line); background: var(--bg); color: var(--text-2);
+  border-radius: 999px; padding: 0.2rem 0.65rem; font-size: 12.5px;
+  cursor: pointer; font-family: inherit; transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.wr-tab:hover { border-color: var(--accent); color: var(--text); }
+.wr-tab.active { border-color: var(--accent); background: var(--accent-2); color: var(--accent); font-weight: 600; }
+.wr-sample {
+  font-size: 14px; line-height: 1.95; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+  background: var(--bg-soft); border-radius: var(--radius); padding: 0.7rem 0.8rem;
+}
+
+.wr-orig { margin-top: 0.9rem; border-top: 1px dashed var(--line-soft); padding-top: 0.6rem; }
+.wr-orig summary { font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.wr-orig[open] summary { margin-bottom: 0.4rem; }
+
+@media (max-width: 640px) {
+  .wr-score-n { font-size: 2.1rem; }
+  .wr-input { min-height: 12rem; }
+  .wr-rub-l { flex-basis: 2.8rem; }
+}
