@@ -21,9 +21,15 @@
     streamText: '',
     err: '',
     ctrl: null,
-    stick: true        // 是否贴着底部（用户往上翻看历史时不要被强行拽回来）
+    stick: true,       // 是否贴着底部（用户往上翻看历史时不要被强行拽回来）
+    models: [],        // 当前 provider + Key 拉到的模型列表
+    manual: false,     // 接口没有 /models 时手动填模型名
+    modelErr: '',
+    autoModelTried: false,
+    entered: null      // 是否已从配置卡「保存并开始」进到聊天：false=还在配置，null=没判断过
   };
   var HOST = null;
+  var keyTimer = null;   // 粘贴 Key 后延迟拉列表的定时器（见 syncKey）
 
   var TYPE_NAMES = { choice: '选择', spell: '拼写', fill: '填空', trans: '翻译' };
 
@@ -322,6 +328,57 @@
 
   /* ---------------- 页面骨架 ---------------- */
 
+  /* 模型选择：默认从该 Key 的 /models 拉列表来选，不让人手打模型名。
+     少数自建接口没实现 /models，留「手动填写」兜底（不然那类用户直接卡死）。 */
+  function modelField(p) {
+    var list = (S.models && S.models.length) ? S.models : TW.ai.cachedModels();
+    var cur = TW.ai.modelName();
+    var fetching = S.busy === 'models';
+    var c = TW.ai.config();
+    var canFetch = TW.ai.apiKey().length >= 8 || (c.provider === 'custom' && !!TW.ai.baseUrl());
+
+    if (S.manual) {
+      return '<label class="ai-fl"><span>模型（手动填写）</span>' +
+        '<div class="ai-model-row">' +
+          '<input class="field" id="ai-model" type="text" autocomplete="off" spellcheck="false" ' +
+            'placeholder="' + esc(p.model || '例如 qwen-plus') + '" value="' + esc(cur) + '">' +
+          '<button type="button" class="btn sm ghost" id="ai-model-modes">从列表选</button>' +
+        '</div>' +
+        '<span class="small muted">接口没实现 /models 时才需要手填</span>' +
+      '</label>';
+    }
+
+    if (!list.length) {
+      return '<label class="ai-fl"><span>模型</span>' +
+        '<div class="ai-model-row">' +
+          '<button type="button" class="btn" id="ai-model-fetch"' + (fetching ? ' disabled' : '') + '>' +
+            TW.icon('refresh', 15) + ' ' + (fetching ? '获取中…' : (canFetch ? '获取模型列表' : '先填 Key，再获取模型')) +
+          '</button>' +
+          '<button type="button" class="btn ghost sm" id="ai-model-manual">手动填写</button>' +
+        '</div>' +
+        (S.modelErr ? '<span class="small" style="color:var(--err);line-height:1.6">' + esc(S.modelErr) + '</span>'
+                    : '<span class="small muted">填好 Key 后点一下，直接从该账号可用的模型里选</span>') +
+      '</label>';
+    }
+
+    var opts = list.map(function (id) {
+      return '<option value="' + esc(id) + '"' + (id === cur ? ' selected' : '') + '>' + esc(id) + '</option>';
+    }).join('');
+    if (cur && list.indexOf(cur) < 0) {
+      opts = '<option value="' + esc(cur) + '" selected>' + esc(cur) + '（当前）</option>' + opts;
+    }
+    return '<label class="ai-fl"><span>模型</span>' +
+      '<div class="ai-model-row">' +
+        '<select class="field" id="ai-model-select">' + opts + '</select>' +
+        '<button type="button" class="btn ghost sm" id="ai-model-fetch"' + (fetching ? ' disabled' : '') + '>' +
+          TW.icon('refresh', 14) + ' ' + (fetching ? '刷新中…' : '刷新') + '</button>' +
+        '<button type="button" class="btn ghost sm" id="ai-model-manual">手动填写</button>' +
+      '</div>' +
+      '<span class="small muted">列表来自 ' + esc(p.name) + ' 的 /models，共 ' + list.length + ' 个' +
+        (S.modelErr ? '（刷新失败：' + esc(S.modelErr) + '）' : '') + '</span>' +
+    '</label>';
+  }
+
   function setupCard() {
     var c = TW.ai.config();
     var p = TW.ai.provider(c.provider);
@@ -340,14 +397,12 @@
           '<input class="field" id="ai-key" type="password" autocomplete="off" spellcheck="false" ' +
             'placeholder="' + (isCustom ? '本地接口可留空' : '在 ' + esc(p.name) + ' 控制台创建，形如 sk-...') + '" ' +
             'value="' + esc(TW.ai.apiKey()) + '"></label>' +
-        '<label class="ai-fl"><span>模型</span>' +
-          '<input class="field" id="ai-model" type="text" autocomplete="off" spellcheck="false" ' +
-            'placeholder="' + esc(p.model || '例如 qwen-plus') + '" value="' + esc(TW.ai.modelName()) + '"></label>' +
         (isCustom ?
           '<label class="ai-fl"><span>接口地址</span>' +
             '<input class="field" id="ai-base" type="text" autocomplete="off" spellcheck="false" ' +
               'placeholder="https://xxx/v1 或 http://127.0.0.1:11434/v1" value="' + esc(c.baseUrl) + '"></label>'
           : '') +
+        modelField(p) +
       '</div>' +
       '<div class="row" style="margin-top:.9rem">' +
         '<button class="btn primary" id="ai-save-test"' + (S.busy === 'test' ? ' disabled' : '') + '>' +
@@ -356,6 +411,39 @@
       '</div>' +
       (S.err ? '<div class="ai-err">' + esc(S.err) + '</div>' : '') +
     '</div>';
+  }
+
+  /** 拉模型列表：成功后若当前模型不在列表里，自动切到第一个，免得「选了 Key 却没有模型」 */
+  function fetchModels() {
+    if (S.busy === 'models') return;
+    S.modelErr = '';
+    S.busy = 'models';
+    redraw();
+    TW.ai.listModels(true).then(function (list) {
+      S.busy = '';
+      S.models = list;
+      if (list.indexOf(TW.ai.modelName()) < 0) TW.ai.setModel(list[0]);
+      redraw();
+    }, function (e) {
+      S.busy = '';
+      S.modelErr = (e && e.message) || '获取模型列表失败';
+      redraw();
+    });
+  }
+
+  /** 重渲染并保住 Key 输入框的焦点/光标（用户在敲 Key 时会被上面几次 render 打断） */
+  function redraw() {
+    if (!HOST) return;
+    var active = document.activeElement;
+    var keep = active && active.id === 'ai-key' ? active.selectionStart : -1;
+    render(HOST);
+    if (keep >= 0) {
+      var k = TW.$('#ai-key', HOST);
+      if (k) {
+        k.focus();
+        try { k.setSelectionRange(keep, keep); } catch (e) {}
+      }
+    }
   }
 
   function shell() {
@@ -390,7 +478,10 @@
 
   function render(host) {
     HOST = host;
-    var ok = TW.ai.configured();
+    /* configured() 在「Key + 默认模型」齐了就算通，但那一刻用户还在配置卡上选模型，
+       不能直接把人踢进聊天页 —— 所以未配置过的人必须先点「保存并开始」。 */
+    if (!TW.ai.configured()) S.entered = false;
+    var ok = TW.ai.configured() && S.entered !== false;
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead('AI 英语助手', ok ? '聊天式教练：读你的数据、出题、讲单词' : '先填一个自己的 API Key（只存本机）',
         '<a class="btn ghost" href="#/settings">' + TW.icon('settings', 15) + ' 模型设置</a>') +
@@ -399,6 +490,12 @@
 
     bind(host, ok);
     if (ok) { paintMsgs(); scrollBottom(true); }
+    else if (!S.autoModelTried && !S.manual && !TW.ai.cachedModels().length &&
+             (TW.ai.apiKey().length >= 8 || (TW.ai.config().provider === 'custom' && !!TW.ai.baseUrl()))) {
+      /* Key 已经有了（多半是从设置页填的）→ 自动拉一次，省得用户再点一下 */
+      S.autoModelTried = true;
+      fetchModels();
+    }
   }
 
   function bind(host, ok) {
@@ -407,22 +504,71 @@
       b.addEventListener('click', function () {
         TW.ai.setProvider(b.dataset.prov);
         S.err = '';
+        S.models = [];        // 换 provider 后旧列表（别的家的模型名）必须作废
+        S.modelErr = '';
+        S.autoModelTried = false;
         render(host);
       });
     });
     var saveTest = TW.$('#ai-save-test', host);
     if (saveTest) {
       var keyEl = TW.$('#ai-key', host);
-      var modelEl = TW.$('#ai-model', host);
+      var modelEl = TW.$('#ai-model', host);          // 手动模式下的输入框
+      var modelSel = TW.$('#ai-model-select', host);  // 列表模式下的下拉
       var baseEl = TW.$('#ai-base', host);
-      if (keyEl) keyEl.addEventListener('change', function () { TW.ai.setKey(keyEl.value); });
-      if (modelEl) modelEl.addEventListener('change', function () { TW.ai.setModel(modelEl.value); });
-      if (baseEl) baseEl.addEventListener('change', function () { TW.ai.save({ baseUrl: baseEl.value.trim() }); });
+      var fetchBtn = TW.$('#ai-model-fetch', host);
+
+      /* 改 Key / 接口地址后旧模型列表不再可信：清空并按需重新拉一次。
+         注意监听 input 而不只是 change —— ① 用户**粘贴** Key 就应立刻拿到模型列表，
+         不必再点一次按钮；② 自动化测试（Playwright fill）只派发 input，不派发 change。 */
+      function syncKey() {
+        var v = keyEl.value.trim();
+        var changed = v !== TW.ai.apiKey();
+        if (changed) {
+          TW.ai.setKey(v);
+          S.models = []; S.modelErr = ''; S.autoModelTried = true;
+        }
+        if (keyTimer) { clearTimeout(keyTimer); keyTimer = null; }
+        if (S.manual) return;                  // 手动模式下别偷偷发请求
+        var ready = v.length >= 8 || (TW.ai.config().provider === 'custom' && TW.ai.baseUrl());
+        if (!ready) return;                    // 太短就等，别拿半个 Key 去打接口
+        if (!changed && TW.ai.cachedModels().length) return;   // 列表还有效，不用重拉
+        /* 停顿 420ms 再拉，免得逐字符敲 Key 时打出一串请求 */
+        keyTimer = setTimeout(function () { keyTimer = null; fetchModels(); }, 420);
+      }
+      if (keyEl) {
+        keyEl.addEventListener('input', syncKey);
+        keyEl.addEventListener('change', syncKey);
+      }
+      if (baseEl) baseEl.addEventListener('change', function () {
+        TW.ai.save({ baseUrl: baseEl.value.trim() });
+        S.models = []; S.modelErr = '';
+        render(host);
+      });
+      if (modelEl) modelEl.addEventListener('change', function () { TW.ai.setModel(modelEl.value.trim()); });
+      if (modelSel) modelSel.addEventListener('change', function () { TW.ai.setModel(modelSel.value); });
+
+      if (fetchBtn) fetchBtn.addEventListener('click', function () {
+        /* 先把输入框里的 Key / 地址落库，否则拉的是上一次保存的凭据 */
+        if (keyEl) TW.ai.setKey(keyEl.value.trim());
+        if (baseEl) TW.ai.save({ baseUrl: baseEl.value.trim() });
+        fetchModels();
+      });
+      var manualBtn = TW.$('#ai-model-manual', host);
+      if (manualBtn) manualBtn.addEventListener('click', function () {
+        S.manual = true; S.modelErr = ''; render(host);
+      });
+      var modesBtn = TW.$('#ai-model-modes', host);
+      if (modesBtn) modesBtn.addEventListener('click', function () {
+        S.manual = false; render(host);
+        if (!TW.ai.cachedModels().length) fetchModels();
+      });
 
       saveTest.addEventListener('click', function () {
-        if (keyEl) TW.ai.setKey(keyEl.value);
-        if (modelEl) TW.ai.setModel(modelEl.value);
+        if (keyEl) TW.ai.setKey(keyEl.value.trim());
         if (baseEl) TW.ai.save({ baseUrl: baseEl.value.trim() });
+        if (modelEl) TW.ai.setModel(modelEl.value.trim());
+        if (modelSel) TW.ai.setModel(modelSel.value);
         S.err = ''; S.busy = 'test';
         render(host);
         TW.ai.chat({
@@ -431,6 +577,7 @@
           maxTokens: 16, temperature: 0
         }).then(function (r) {
           S.busy = '';
+          S.entered = true;
           S.messages = [];
           render(host);
           TW.toast('连接成功', 'ok');

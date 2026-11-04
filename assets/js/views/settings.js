@@ -4,6 +4,29 @@
   var TW = window.TW = window.TW || {};
   TW.views = TW.views || {};
 
+  /* 模型：从该 Key 的 /models 拉列表来选，不再手打模型名。
+     设置页放不下「手动填写」兜底，需要时去 AI 助手页切换（那边有）。 */
+  function aiModelRow() {
+    var list = TW.ai.cachedModels();
+    var cur = TW.ai.modelName();
+    if (!list.length) {
+      var ready = TW.ai.apiKey().length >= 8 || (TW.ai.config().provider === 'custom' && !!TW.ai.config().baseUrl);
+      return '<div class="ai-model-row">' +
+        '<button type="button" class="btn sm" id="ai-model-fetch">' + TW.icon('refresh', 14) + ' 获取模型列表</button>' +
+        '<span class="small muted">' + (ready ? '点一下拉取该 Key 可用的模型' : '先填 API Key') + '</span></div>';
+    }
+    var opts = list.map(function (id) {
+      return '<option value="' + TW.esc(id) + '"' + (id === cur ? ' selected' : '') + '>' + TW.esc(id) + '</option>';
+    }).join('');
+    if (cur && list.indexOf(cur) < 0) {
+      opts = '<option value="' + TW.esc(cur) + '" selected>' + TW.esc(cur) + '（当前）</option>' + opts;
+    }
+    return '<div class="ai-model-row">' +
+      '<select class="field" id="ai-model-select">' + opts + '</select>' +
+      '<button type="button" class="btn ghost sm" id="ai-model-fetch">' + TW.icon('refresh', 14) + ' 刷新</button>' +
+    '</div>';
+  }
+
   function render(host) {
     var s = TW.store.settings;
 
@@ -49,10 +72,7 @@
               '<input class="field" id="ai-key" type="password" autocomplete="off" spellcheck="false" ' +
                 'placeholder="' + (TW.ai.config().provider === 'custom' ? '本地接口可留空' : 'sk-...') + '" ' +
                 'value="' + TW.esc(TW.ai.apiKey()) + '"></label>' +
-            '<label class="ai-fl"><span>模型</span>' +
-              '<input class="field" id="ai-model" type="text" autocomplete="off" spellcheck="false" ' +
-                'placeholder="' + TW.esc(TW.ai.provider(TW.ai.config().provider).model || 'qwen-plus') + '" ' +
-                'value="' + TW.esc(TW.ai.modelName()) + '"></label>' +
+            '<label class="ai-fl"><span>模型</span>' + aiModelRow() + '</label>' +
             (TW.ai.config().provider === 'custom' ?
               '<label class="ai-fl"><span>接口地址</span>' +
                 '<input class="field" id="ai-base" type="text" autocomplete="off" spellcheck="false" ' +
@@ -151,8 +171,22 @@
       TW.ai.setKey(aiKey.value);
       if (aiKey.value.trim()) TW.toast('API Key 已保存（仅本机）', 'ok');
     });
-    var aiModel = TW.$('#ai-model', host);
-    if (aiModel) aiModel.addEventListener('change', function () { TW.ai.setModel(aiModel.value); });
+    var aiModelSel = TW.$('#ai-model-select', host);
+    if (aiModelSel) aiModelSel.addEventListener('change', function () { TW.ai.setModel(aiModelSel.value); });
+    var aiModelFetch = TW.$('#ai-model-fetch', host);
+    if (aiModelFetch) aiModelFetch.addEventListener('click', function () {
+      /* 🔴 先把输入框里的 Key 落库，否则拉的是上一次保存的凭据（改了 Key 却报旧 Key 无效） */
+      var kEl = TW.$('#ai-key', host);
+      var bEl = TW.$('#ai-base', host);
+      if (kEl) TW.ai.setKey(kEl.value.trim());
+      if (bEl) TW.ai.save({ baseUrl: bEl.value.trim() });
+      TW.toast('正在获取模型列表…');
+      TW.ai.listModels(true).then(function (list) {
+        if (list.indexOf(TW.ai.modelName()) < 0) TW.ai.setModel(list[0]);
+        TW.toast('拿到 ' + list.length + ' 个模型', 'ok');
+        TW.app.render();
+      }, function (e) { TW.toast((e && e.message) || '获取失败', 'err'); });
+    });
     var aiBase = TW.$('#ai-base', host);
     if (aiBase) aiBase.addEventListener('change', function () { TW.ai.save({ baseUrl: aiBase.value.trim() }); });
 

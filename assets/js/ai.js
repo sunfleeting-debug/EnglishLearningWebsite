@@ -33,7 +33,7 @@
   }
 
   function defaults() {
-    return { provider: 'deepseek', keys: {}, models: {}, baseUrl: '' };
+    return { provider: 'deepseek', keys: {}, models: {}, baseUrl: '', modelLists: {} };
   }
 
   var cache = null;
@@ -48,6 +48,7 @@
         c.keys = d.keys || {};
         c.models = d.models || {};
         c.baseUrl = String(d.baseUrl || '');
+        c.modelLists = d.modelLists || {};
       }
     } catch (e) { /* 配置损坏 → 用默认值，不影响主流程 */ }
     cache = c;
@@ -93,6 +94,97 @@
     save({ models: m });
   }
   function setProvider(id) { save({ provider: provider(id).id }); }
+
+  /* ---------------- 模型列表（不让用户手打模型名） ----------------
+     各家的 GET /models 也不给浏览器 CORS，所以同样走 Worker 转发；
+     自定义 + 本机地址（Ollama / LM Studio）由浏览器直连。
+     列表按 provider 缓存到配置里，换 Key 后旧缓存自动失效（比对后 6 位）。 */
+
+  var NO_CHAT = /embed|whisper|tts|dall|audio|moderation|rerank|image|vision-ocr|bge|text-embedding/i;
+
+  function sortModels(ids) {
+    var uniq = [], seen = {};
+    (ids || []).forEach(function (x) {
+      var id = String(x || '').trim();
+      if (!id || seen[id]) return;
+      seen[id] = 1;
+      uniq.push(id);
+    });
+    uniq.sort(function (a, b) {
+      var d = (NO_CHAT.test(a) ? 1 : 0) - (NO_CHAT.test(b) ? 1 : 0);
+      return d || a.localeCompare(b);
+    });
+    return uniq;
+  }
+
+  /** 缓存里的列表（换 Key / 换 provider 后自动为空） */
+  function cachedModels() {
+    var c = config();
+    var rec = (c.modelLists || {})[c.provider];
+    if (!rec || !Array.isArray(rec.list) || !rec.list.length) return [];
+    if (String(rec.key || '') !== apiKey().slice(-6)) return [];
+    return rec.list.slice();
+  }
+
+  function saveModels(list) {
+    var c = config();
+    var ml = Object.assign({}, c.modelLists || {});
+    ml[c.provider] = { key: apiKey().slice(-6), at: Date.now(), list: list };
+    save({ modelLists: ml });
+  }
+
+  function directModels(pack) {
+    return fetch(pack.baseUrl + '/models', {
+      headers: pack.apiKey ? { 'Authorization': 'Bearer ' + pack.apiKey } : {}
+    }).then(function (res) {
+      return res.text().then(function (t) {
+        var d = null;
+        try { d = t ? JSON.parse(t) : null; } catch (e) {}
+        if (!res.ok) throw new Error('获取模型失败：' + ((d && d.error && (d.error.message || d.error)) || ('HTTP ' + res.status)));
+        var arr = (d && (d.data || d.models)) || [];
+        var ids = arr.map(function (m) { return typeof m === 'string' ? m : (m && (m.id || m.name)); });
+        var list = sortModels(ids);
+        if (!list.length) throw new Error('这个接口没返回模型列表');
+        return list;
+      });
+    }, function () {
+      throw new Error('连不上本地接口（检查地址，以及是否允许跨域）');
+    });
+  }
+
+  /**
+   * 拉取当前 provider + Key 可用的模型。
+   * @param {boolean} force 忽略缓存
+   * @returns {Promise<string[]>}
+   */
+  function listModels(force) {
+    var c = config();
+    if (!force) {
+      var hit = cachedModels();
+      if (hit.length) return Promise.resolve(hit);
+    }
+    var key = apiKey();
+    if (c.provider !== 'custom' && key.length < 8) {
+      return Promise.reject(new Error('先填 API Key 才能拉模型列表'));
+    }
+    if (c.provider === 'custom' && !baseUrl()) {
+      return Promise.reject(new Error('先填接口地址（例如 https://xxx/v1）'));
+    }
+    var pack = { provider: c.provider, apiKey: key, baseUrl: c.provider === 'custom' ? baseUrl() : '' };
+
+    if (c.provider === 'custom' && isLocal(pack.baseUrl)) {
+      return directModels(pack).then(function (list) { saveModels(list); return list; });
+    }
+    if (!TW.api || !TW.api.configured || !TW.api.configured()) {
+      return Promise.reject(new Error('后端地址未配置，拉不到模型列表'));
+    }
+    return TW.api.request('POST', '/api/ai/models', pack, { timeout: 30000 }).then(function (r) {
+      var list = sortModels(r && r.models);
+      if (!list.length) throw new Error('没有拿到可用模型');
+      saveModels(list);
+      return list;
+    });
+  }
 
   /* ---------------- 请求 ---------------- */
 
@@ -538,6 +630,8 @@
     baseUrl: baseUrl,
     configured: configured,
     isLocal: isLocal,
+    listModels: listModels,
+    cachedModels: cachedModels,
     chat: chat,
     streamChat: streamChat,
     parseJson: parseJson,

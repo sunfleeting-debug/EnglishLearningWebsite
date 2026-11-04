@@ -46,6 +46,8 @@
 - **自带 Key**：DeepSeek / 通义千问 / ChatGPT / Claude / 自定义（任何 OpenAI 兼容接口，含本地 Ollama、LM Studio）。
   Key 只存本机 `typingcet.ai.v1`，**不进云同步、也不进导出备份**；请求经本站 Worker 转发
   （`POST /api/ai/chat`），Worker 只做格式转换，不落库、不记日志。
+- **模型从接口选，不用手打**：填完 Key 自动拉 `POST /api/ai/models`（转发上游 `/models`）出下拉框，
+  换 Key 会重新拉；接口没实现 `/models` 时留「手动填写」兜底。
 - **会读你的真实数据**：每次请求把已学 / 掌握 / 错词 / 今日到期 / 近 7 天正确率 / 分书进度 / 最近场次
   打包进 system prompt，模型只做归因和建议 —— 数字由本地算好，它编不出来。
 - **会出题**：约定模型在回复末尾附一个标记为 `quiz` 的代码块，前端把它从正文里摘掉、渲染成

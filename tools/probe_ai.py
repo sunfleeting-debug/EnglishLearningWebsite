@@ -132,6 +132,10 @@ def main():
         pg.add_init_script("try{localStorage.setItem('typingcet.guest','1');"
                            "localStorage.removeItem('typingcet.ai.v1');}catch(e){}")
         pg.route("**/api/ai/chat", make_route(state))
+        pg.route("**/api/ai/models", lambda route: route.fulfill(
+            status=200, content_type="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            body=json.dumps({"models": ["deepseek-chat", "deepseek-reasoner"], "provider": "deepseek"})))
 
         pg.goto(BASE + "#/ai", wait_until="domcontentloaded")
         pg.wait_for_function("() => window.TW && TW.ai && TW.app")
@@ -144,9 +148,24 @@ def main():
         check("提供方 5 个", pg.evaluate("() => document.querySelectorAll('.ai-prov-btn').length") == 5)
         check("有 Key 输入框", pg.evaluate("() => !!document.querySelector('#ai-key')"))
 
-        # ---- 2. 保存并开始 ----
+        # ---- 2. 填 Key 自动拉模型列表 → 选模型 → 保存并开始 ----
         pg.fill("#ai-key", "sk-mock-1234567890")
-        pg.fill("#ai-model", "deepseek-chat")
+        pg.wait_for_selector("#ai-model-select", timeout=8000)
+        pg.wait_for_timeout(200)
+        n_opts = pg.evaluate("() => document.querySelectorAll('#ai-model-select option').length")
+        check("模型下拉列出 2 个", n_opts == 2, n_opts)
+        check("没有模型输入框（列表模式）", pg.evaluate("() => !document.querySelector('#ai-model')"))
+
+        pg.click("#ai-model-manual")
+        check("可切到手动填写", pg.evaluate("() => !!document.querySelector('#ai-model')"))
+        pg.click("#ai-model-modes")
+        pg.wait_for_selector("#ai-model-select", timeout=5000)
+
+        pg.select_option("#ai-model-select", "deepseek-reasoner")
+        check("选中的模型已保存",
+              pg.evaluate("() => JSON.parse(localStorage.getItem('typingcet.ai.v1')).models.deepseek")
+              == "deepseek-reasoner")
+
         pg.click("#ai-save-test")
         pg.wait_for_selector("#ai-msgs", timeout=8000)
         pg.wait_for_timeout(300)

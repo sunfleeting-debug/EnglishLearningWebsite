@@ -1620,3 +1620,10 @@ html.dark .ai-row.user .ai-bubble {
   border: 1px solid var(--line);
 }
 html.dark .ai-send.stop::after { background: #fff; }
+
+/* AI 模型选择行（列表 + 刷新按钮） */
+.ai-model-row { display: flex; gap: 0.45rem; align-items: center; }
+.ai-model-row .field { flex: 1 1 auto; min-width: 0; }
+.ai-model-row .btn { flex: 0 0 auto; white-space: nowrap; }
+.ai-model-row .btn svg { vertical-align: -2px; }
+.ai-fl > .ai-model-row + .small { margin-top: 0.2rem; }

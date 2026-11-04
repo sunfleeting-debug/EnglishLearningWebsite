@@ -146,6 +146,24 @@ def main():
         fresh.wait_for_timeout(600)
         fresh.screenshot(path=str(OUT / "ai-00-setup.png"), full_page=True)
 
+        # 填了 Key（还没保存）：模型下拉从 /models 拉下来，不用手打模型名
+        f2 = browser.new_page(viewport={"width": 1280, "height": 900})
+        f2.add_init_script("try{localStorage.setItem('typingcet.guest','1');localStorage.removeItem('typingcet.ai.v1')}catch(e){}")
+        f2.route("**/api/ai/models", lambda route: route.fulfill(
+            status=200, content_type="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
+            body=json.dumps({"models": ["deepseek-chat", "deepseek-reasoner"], "provider": "deepseek"})))
+        f2.goto(BASE + "#/ai", wait_until="domcontentloaded")
+        f2.wait_for_function("() => window.TW && TW.ai")
+        f2.wait_for_timeout(500)
+        f2.fill("#ai-key", "sk-mock-1234567890")
+        f2.wait_for_selector("#ai-model-select", timeout=8000)
+        f2.wait_for_timeout(250)
+        f2.screenshot(path=str(OUT / "ai-00b-model.png"), full_page=True)
+        f2.evaluate("() => document.documentElement.classList.add('dark')")
+        f2.wait_for_timeout(250)
+        f2.screenshot(path=str(OUT / "ai-00c-model-dark.png"), full_page=True)
+
         pg = browser.new_page(viewport={"width": 1280, "height": 900})
         setup(pg)
         pg.wait_for_timeout(700)

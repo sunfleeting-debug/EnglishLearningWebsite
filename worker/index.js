@@ -23,6 +23,7 @@
  *   GET  /api/me/state                                         -> {progress, daily, srs, syncedAt}
  *   POST /api/me/sync           {progress,daily,srs,deleted,mode} -> {progress,daily,srs,syncedAt}
  *   POST /api/ai/chat           {provider,apiKey,model,messages,...} -> {text,model,usage}  （AI 助手转发，不落库）
+ *   POST /api/ai/models         {provider,apiKey,baseUrl?}          -> {models:[...]}       （拉模型列表）
  *   GET  /api/admin/users                                      -> {users:[...]}
  *   GET  /api/admin/users/:id                                  -> {user, progress, daily, srs}
  *   POST /api/admin/users/:id/password  {password}              -> {ok}
@@ -812,6 +813,7 @@ function landingPage(host) {
     + '<tr><td><code>GET /api/me/state</code></td><td>拉取全部进度（首次全量）</td></tr>\n'
     + '<tr><td><code>POST /api/me/sync</code></td><td>增量同步（含删除标记）</td></tr>\n'
     + '<tr><td><code>POST /api/ai/chat</code></td><td>AI 助手转发（用户自带 Key，不落库）</td></tr>\n'
+    + '<tr><td><code>POST /api/ai/models</code></td><td>拉取该 Key 可用的模型列表</td></tr>\n'
     + '<tr><td><code>/api/admin/*</code></td><td>管理看板，仅管理员</td></tr>\n'
     + '</table>\n'
     + '<p class="mut">其他路径返回 404 JSON，属正常现象。</p>\n'
@@ -841,6 +843,69 @@ function aiSafeBase(raw) {
   if (/\.(local|internal|localhost)$/.test(host)) return '';
   if (u.username || u.password) return '';
   return u.href.replace(/\/+$/, '');
+}
+
+/* POST /api/ai/models
+   {provider, apiKey, baseUrl?} -> {models:["deepseek-chat", ...], provider}
+   浏览器拿不到各家的 /models（同样是 CORS），所以也走这里转发。
+   OpenAI 兼容：GET {base}/models + Bearer；Anthropic：GET {base}/models + x-api-key。 */
+async function handleAiModels(request) {
+  const body = await readJson(request);
+  const provider = String(body.provider || 'deepseek').toLowerCase();
+  const conf = AI_PROVIDERS[provider];
+  if (!conf) return fail('不支持的模型提供方：' + provider);
+
+  const apiKey = String(body.apiKey || '').trim();
+  if (apiKey.length < 8) return fail('请先填写有效的 API Key');
+  const base = provider === 'custom' ? aiSafeBase(body.baseUrl) : conf.base;
+  if (!base) return fail('自定义接口地址必须是 https 公网地址');
+
+  const headers = conf.kind === 'anthropic'
+    ? { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' }
+    : { 'Authorization': 'Bearer ' + apiKey };
+  const url = conf.kind === 'anthropic' ? base + '/models?limit=100' : base + '/models';
+
+  let res;
+  try {
+    res = await fetch(url, { headers: headers, signal: AbortSignal.timeout(20000) });
+  } catch (e) {
+    return fail('拿不到模型列表（连不上）：' + String((e && e.message) || 'network'), 502);
+  }
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch (e) {}
+  if (!res.ok) {
+    const msg = (data && data.error && (data.error.message || data.error)) || text || ('HTTP ' + res.status);
+    const out = String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 300);
+    return jsonBody({ error: '模型列表获取失败：' + out }, (res.status === 401 || res.status === 403) ? 401 : 502);
+  }
+
+  /* OpenAI 兼容是 {data:[{id}]}，Anthropic 也是 {data:[{id}]}，顺手兼容 {models:[...]} 字符串数组 */
+  let ids = [];
+  if (data && Array.isArray(data.data)) {
+    ids = data.data.map(function (m) { return typeof m === 'string' ? m : (m && (m.id || m.name)); });
+  } else if (data && Array.isArray(data.models)) {
+    ids = data.models.map(function (m) { return typeof m === 'string' ? m : (m && (m.id || m.name)); });
+  } else if (Array.isArray(data)) {
+    ids = data.map(function (m) { return typeof m === 'string' ? m : (m && (m.id || m.name)); });
+  }
+  ids = ids.filter(function (x) { return typeof x === 'string' && x.trim(); });
+  if (!ids.length) return fail('这家接口没有返回可用模型（可能需要先在控制台开通）', 502);
+
+  /* 去重 + 排序；把 embedding / tts / whisper 这类明显不是对话模型的排到后面 */
+  const uniq = [];
+  const seen = {};
+  ids.forEach(function (id) {
+    id = id.trim();
+    if (seen[id]) return;
+    seen[id] = 1;
+    uniq.push(id);
+  });
+  const chatFirst = function (id) {
+    return /embed|whisper|tts|dall|audio|moderation|rerank|image|vision-ocr|bge|text-embedding/i.test(id) ? 1 : 0;
+  };
+  uniq.sort(function (a, b) { return (chatFirst(a) - chatFirst(b)) || a.localeCompare(b); });
+  return jsonBody({ models: uniq.slice(0, 200), provider: provider });
 }
 
 /* POST /api/ai/chat
@@ -987,6 +1052,7 @@ export default {
       /* AI 助手转发：不依赖 D1（用户用自己的 key，Worker 只借一次网络），
          所以放在 DB 检查之前 —— 后端没绑库时照样能用。 */
       if (path === '/api/ai/chat' && method === 'POST') return withCors(await handleAiChat(request));
+      if (path === '/api/ai/models' && method === 'POST') return withCors(await handleAiModels(request));
 
       if (!env.DB) return withCors(fail('后端未绑定 D1 数据库（检查 wrangler.toml 的 d1_databases）', 500));
 

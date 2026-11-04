@@ -91,6 +91,7 @@ python tools/verify_backend.py      # 端到端核验（自己拉起 mock）
 | GET | `/api/me/state` | 云端全量进度 |
 | POST | `/api/me/sync` | 推送增量并取回合并后的全量进度 |
 | POST | `/api/ai/chat` | AI 助手转发（用户自带 Key，不落库；`stream:true` 时回 SSE） |
+| POST | `/api/ai/models` | 拉该 Key 可用的模型列表（转发上游 `/models`，供前端下拉框用） |
 | GET | `/api/admin/users` | 用户列表 + 各项统计（仅管理员） |
 | GET | `/api/admin/users/:id` | 某用户的完整进度（仅管理员） |
 | POST | `/api/admin/users/:id/password` | 重置某用户密码（仅管理员） |
@@ -115,6 +116,21 @@ POST /api/ai/chat
 - `custom` 的 `baseUrl` 只允许 **https 公网地址**（拒绝环回/内网/`.local`，防被当 SSRF 跳板）；
   本地 Ollama / LM Studio 由前端直接连 `http://127.0.0.1:*`，不经过 Worker。
 - 上游非 2xx 时把对方错误原文透传（401 → 401，其余 → 502），前端好据此提示「Key 无效 / 额度用尽」。
+
+### `/api/ai/models` 拉模型列表
+
+AI 助手不让用户手打模型名（打错一个字母就报「模型不存在」），改成从接口拉：
+
+```
+POST /api/ai/models
+{ provider, apiKey, baseUrl? }
+→ { models: ["deepseek-chat", "deepseek-reasoner", ...], provider }
+```
+
+- 仍是一次性转发：`GET {base}/models`（OpenAI 兼容 `Authorization: Bearer`，Anthropic `x-api-key` + `anthropic-version`），key 不落库。
+- 兼容三种上游返回：`{data:[{id}]}`（OpenAI 系）、`{models:[...]}`（部分国产网关）、纯数组；去重后排序，`embed/tts/whisper/rerank` 这类非对话模型排到最后。
+- 前端按 `provider + Key 后 6 位`缓存列表，换 Key 自动失效。
+- 少数自建接口没实现 `/models`：前端留「手动填写」兜底。
 
 ### `/api/me/sync` 的合并规则
 
