@@ -10,6 +10,11 @@
      点一次美音读 N 遍（N = 本次页面加载内进过详情页的次数）、收藏反复横跳。 */
   var prevActionsCleanup = null;
 
+  /* AI 讲解缓存（2026-11-05 加）：只在本次会话内留着，刷新就重新生成 ——
+     它是一次模型调用，不该悄悄落盘占空间。 */
+  var aiCache = {};
+  var aiBusy = false;
+
   function sec(title, icon, body, cls) {
     if (!body) return '';
     return '<div class="card dc-sec' + (cls ? ' ' + cls : '') + '">' +
@@ -24,6 +29,81 @@
       return '<li>' + (t.pos ? '<span class="dc-pos">' + TW.esc(t.pos) + '</span>' : '') +
         '<span>' + TW.esc(t.text) + '</span></li>';
     }).join('') + '</ul>';
+  }
+
+  /* ---------------- AI 讲解 ----------------
+     用词卡里已有的事实喂给模型（释义/搭配/例句/辨析），让它补充「为什么」和「怎么考」，
+     而不是让它从头编一遍释义。流式写进 #dc-ai-body。 */
+  function aiSystem() {
+    return [
+      '你是六级词汇教练。用户在单词详解页点「AI 讲解」，你要讲清这个词「怎么用、怎么考」。',
+      '',
+      '输出格式（中文，总长 220 字以内，不要 Markdown 表格，不要重复用户已经看到的释义原文）：',
+      '1. 一句话本质：这个词到底表达什么，和中文直觉哪里不一样（用 **粗体** 标关键词）。',
+      '2. 常考搭配 2~3 个：`搭配 + 中文`，每个配半句英文语境。',
+      '3. 易混词：只挑最容易混的一个，先说「差在哪」，再各给一例。',
+      '4. 一个例句：六级作文/翻译里真能用上的，长度 12~20 词，后面括号给中文。',
+      '',
+      '要求：具体、可背，不要说「多读多练」这类空话；拿不准的用法宁可不写。'
+    ].join('\n');
+  }
+
+  function aiExplain(host, w) {
+    if (aiBusy) return;
+    if (!TW.ai || !TW.ai.configured || !TW.ai.configured()) {
+      TW.toast('还没配置 AI Key，去「AI 助手」填一下', 'err');
+      TW.app.go('/ai');
+      return;
+    }
+    var body = TW.$('#dc-ai-body', host);
+    if (!body) return;
+    var token = host.dataset.owner;
+    aiBusy = true;
+    body.className = 'dc-ai-body';
+    body.innerHTML = '<span class="muted small">正在生成…</span>';
+
+    var card = (TW.data.card && TW.data.card(w.word)) || {};
+    var ctx = ['单词：' + w.word];
+    if (w.phon) ctx.push('音标：' + w.phon);
+    var brief = TW.data.brief(w);
+    if (brief) ctx.push('词典释义：' + brief);
+    if (card && card.colloc && card.colloc.length) {
+      ctx.push('词典给的搭配：' + card.colloc.slice(0, 5).map(function (c) {
+        return (c.en || c.phrase || '') + (c.zh ? '（' + c.zh + '）' : '');
+      }).join('；'));
+    }
+    if (card && card.discrim && card.discrim.items) {
+      ctx.push('词典里的辨析对象：' + card.discrim.items.slice(0, 4).map(function (it) {
+        return it.word;
+      }).join('、'));
+    }
+
+    TW.ai.streamChat({
+      system: aiSystem(),
+      messages: [{ role: 'user', content: ctx.join('\n') + '\n\n请按格式讲这个词。' }],
+      maxTokens: 900,
+      temperature: 0.5
+    }, function (sofar) {
+      if (host.dataset.owner !== token) return;   // 已经翻到别的词了
+      var b = TW.$('#dc-ai-body', host);
+      if (b) b.textContent = sofar;
+    }).then(function (r) {
+      aiBusy = false;
+      if (host.dataset.owner !== token) return;
+      aiCache[w.id] = (r && r.text) || '';
+      var b = TW.$('#dc-ai-body', host);
+      if (b) b.innerHTML = aiCache[w.id] ? TW.ai.md(aiCache[w.id]) : '<span class="muted small">模型没有返回内容，再试一次。</span>';
+      var sub = TW.$('.dc-ai-sub', host);
+      if (sub) sub.textContent = '已生成（本次会话）';
+      var btn = TW.$('#dc-ai-go', host);
+      if (btn) btn.textContent = '重新生成';
+    }, function (e) {
+      aiBusy = false;
+      if (host.dataset.owner !== token) return;
+      var b = TW.$('#dc-ai-body', host);
+      if (b) b.innerHTML = '<span class="dc-ai-err">' +
+        TW.esc((e && e.message) || '生成失败') + '（点右上按钮重试）</span>';
+    });
   }
 
   function render(host, query) {
@@ -316,6 +396,26 @@
       secs += sec('词源', 'book', '<div class="dc-etym">' + TW.esc(card.etym) + '</div>');
     }
 
+    /* ---- AI 讲解（sunfleeting 2026-11-05：「在单词页面加一个 AI 助手，让 AI 来解释这个单词」）----
+       放在最后一块：先把词典里已有的事实（释义/搭配/例句）看完，再决定要不要让模型补充。
+       流式输出直接写进 #dc-ai-body，不整页重渲染 —— 否则每次增量都会打断朗读和输入焦点。 */
+    var aiOn = !!(TW.ai && TW.ai.configured && TW.ai.configured());
+    var cached = aiCache[w.id];
+    secs += '<div class="card card-pad dc-ai" id="dc-ai">' +
+      '<div class="dc-ai-h">' +
+        '<span class="dc-ai-t">' + TW.icon('spark', 16) + ' AI 讲解</span>' +
+        '<span class="small muted dc-ai-sub">' +
+          (cached ? '已生成（本次会话）' : aiOn ? '讲清用法、易混词和考点' : '需先在「AI 助手」里填 Key') +
+        '</span>' +
+        '<button class="btn sm ghost" id="dc-ai-go">' + (cached ? '重新生成' : '让 AI 讲这个词') + '</button>' +
+      '</div>' +
+      '<div class="dc-ai-body' + (cached ? '' : ' is-empty') + '" id="dc-ai-body">' +
+        (cached ? TW.ai.md(cached)
+          : '<span class="muted small">点右上按钮，AI 会针对这个词给：一句话本质 → 常考搭配与语境 → ' +
+            '易混词差在哪 → 一个你明天能用上的例句。结果不落盘，刷新即清。</span>') +
+      '</div>' +
+    '</div>';
+
     if (!card.syn && !card.ant && !card.deriv && !card.discrim && !card.colloc && !card.colloc_raw && !card.ex) {
       secs += '<div class="card card-pad muted">' + (w.deck
         ? '词典词条仅提供音标与释义；搭配 / 派生 / 例句等详解目前只覆盖「六级词汇周计划」词库。'
@@ -328,6 +428,10 @@
     var backBtn = TW.$('#dc-back', host);
     if (backBtn) backBtn.addEventListener('click', back);
     var clicksCleanup = TW.ui.bindWordActions(host, w.id);
+
+    /* AI 讲解按钮：没配 Key 就把人送到 AI 页；配了就流式写进面板 */
+    var aiBtn = TW.$('#dc-ai-go', host);
+    if (aiBtn) aiBtn.addEventListener('click', function () { aiExplain(host, w); });
 
     /* ---- 键盘快捷键（sunfleeting：详解页也要有键盘快捷键）----
        Esc 返回 · ←/→ 上/下一个词 · S 发音 · F 收藏 · M 掌握 · R 复习队列

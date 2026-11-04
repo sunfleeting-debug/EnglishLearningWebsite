@@ -24,7 +24,65 @@
 
   var TYPE_TAG = { cloze: '选词填空', match: '段落匹配', reading: '仔细阅读', mixed: 'AI 出题' };
 
+  /* ---------------- 计时器（sunfleeting 2026-11-05） ----------------
+     「做题目的时候加一个计时器…超过十分钟就提醒，这个在设置那里可以关掉」。
+     按「一套题」计时，不是按单道小题：六级阅读本来就是一篇十分钟，
+     一道题一道题掐反而打断读文章。阈值走设置里的 quizTimerMin（默认 10 分钟），
+     总开关是 settings.quizTimer（默认开）。
+     状态放在模块级 T 里：renderSet 会整块重渲染（点选项就重渲），
+     计时起点必须活在渲染之外，否则每点一次就归零。 */
+  var T = { id: '', start: 0, end: 0, warned: false, tick: 0 };
+
+  function timerOn() {
+    var st = TW.store.settings || {};
+    return st.quizTimer !== false;      // 没设置过 = 开
+  }
+
+  function timerLimit() {
+    var st = TW.store.settings || {};
+    var m = Number(st.quizTimerMin);
+    return m > 0 ? m : 10;
+  }
+
+  function fmtClock(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    var m = Math.floor(s / 60);
+    s = s % 60;
+    return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  function startTimer(id) {
+    T.id = id; T.start = Date.now(); T.end = 0; T.warned = false;
+  }
+
+  function stopTimer() {
+    if (T.start && !T.end) T.end = Date.now();
+  }
+
+  /** 只在页面里真有 #qz-timer 时才跑；视图一走（元素没了）自己把定时器关掉，不留后台任务 */
+  function ensureTick() {
+    if (T.tick) return;
+    T.tick = setInterval(function () {
+      var el = document.getElementById('qz-timer');
+      if (!el) { clearInterval(T.tick); T.tick = 0; return; }
+      if (T.end) return;                       // 已交卷：定住，不再跳
+      var ms = Date.now() - T.start;
+      el.textContent = fmtClock(ms);
+      if (!T.warned && ms >= timerLimit() * 60000) {
+        T.warned = true;
+        el.classList.add('over');
+        TW.toast('这套题已经做了 ' + timerLimit() + ' 分钟，先把不确定的标记掉，往下走', 'warn');
+      }
+    }, 1000);
+  }
+
   function esc(s) { return TW.esc(s); }
+
+  /* 换路由就作废计时：下次进来重新开始，别把在别的页面待的时间算进来 */
+  window.addEventListener('hashchange', function () {
+    T.id = ''; stopTimer();
+    if (T.tick) { clearInterval(T.tick); T.tick = 0; }
+  });
 
   /* ---------------- 列表页 ---------------- */
 
@@ -233,6 +291,10 @@
       S.pick = S.pick || 0;
     }
 
+    /* 计时器：换套题才重置；同一套重渲染（点选项、展开材料）保持计时 */
+    if (T.id !== id) startTimer(id);
+    if (S.graded) stopTimer();
+
     var meta = [];
     if (set.no) meta.push('Passage ' + set.no);
     if (set.source) meta.push(set.source);
@@ -264,8 +326,21 @@
     }
     if (!S.showBody) mat = '';
 
+    /* 译文：sunfleeting 2026-11-05 要求「一句一句放在英文原句下面」，
+       用 TW.biling 对齐（对齐不出来就退回整段，绝不硬凑） */
     var trans = S.showTrans && set.translation
-      ? '<div class="qz-mat qz-tr"><div class="card-title">参考译文</div>' + esc(set.translation) + '</div>' : '';
+      ? '<div class="qz-mat qz-tr"><div class="card-title">参考译文 · 逐句对照</div>' +
+        ((TW.biling && TW.biling.html(TW.biling.parasOf(set), set.translation)) || esc(set.translation)) +
+        '</div>' : '';
+
+    /* 计时小条：交卷后定住显示总用时，超时后变红（提醒只弹一次） */
+    var chip = '';
+    if (timerOn()) {
+      var used = T.start ? ((T.end || Date.now()) - T.start) : 0;
+      chip = '<span class="qz-timer' + (T.warned ? ' over' : '') + (T.end ? ' frozen' : '') +
+        '" id="qz-timer" title="单套题超过 ' + timerLimit() + ' 分钟会提醒（设置里可关）">' +
+        fmtClock(used) + '</span>';
+    }
 
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead(set.test + (set.no ? ' · Passage ' + set.no : ''), meta.join(' · '),
@@ -273,7 +348,8 @@
       scoreBar +
       '<div class="card card-pad qz-sheet">' +
         '<div class="qz-mat-wrap">' +
-          '<div class="qz-mat-h-row"><span class="tag qz">' + esc(TYPE_TAG[set.type] || '题目') + '</span>' + matHead + '</div>' +
+          '<div class="qz-mat-h-row"><span class="tag qz">' + esc(TYPE_TAG[set.type] || '题目') + '</span>' +
+            chip + matHead + '</div>' +
           mat + trans +
         '</div>' +
         (set.type === 'cloze' ? bankHtml(set) : '') +
@@ -290,6 +366,7 @@
   }
 
   function bind(host, set) {
+    if (timerOn()) ensureTick();       // 元素在就每秒刷新，元素不在自己停
     var tb = TW.$('#qz-toggle-body', host);
     if (tb) tb.addEventListener('click', function () { S.showBody = !S.showBody; renderSet(host, set.id); });
     var tt = TW.$('#qz-toggle-tr', host);
@@ -300,6 +377,7 @@
       TW.quiz.clearResult(set.id);
       delete S.cache[set.id];
       S.answers = {}; S.items = {}; S.graded = false; S.right = 0; S.pick = 0;
+      startTimer(set.id);              // 重做＝重新计时
       renderSet(host, set.id);
     });
 
@@ -368,7 +446,7 @@
 
   function render(host, query) {
     if (query && query.set) renderSet(host, query.set);
-    else { S.id = ''; renderList(host); }
+    else { S.id = ''; T.id = ''; stopTimer(); renderList(host); }
   }
 
   TW.views.quiz = { render: render };

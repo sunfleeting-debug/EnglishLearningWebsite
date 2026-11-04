@@ -1822,6 +1822,22 @@ html.dark .ai-send.stop::after { background: #fff; }
 .qz-sheet { padding: 1rem 1.1rem; }
 .qz-mat-h-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
 .qz-mat-h { margin-left: auto; display: flex; gap: 0.35rem; }
+/* 做题计时（2026-11-05）：紧跟在题型标签后面，等宽数字避免每秒跳动时左右晃 */
+.qz-timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 12.5px; letter-spacing: 0.02em;
+  color: var(--text-3);
+  border: 1px solid var(--line-soft); border-radius: 999px;
+  padding: 0.12rem 0.5rem;
+  background: var(--bg-soft);
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+.qz-timer::before { content: '⏱ '; }
+.qz-timer.over {
+  color: var(--warn); border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+.qz-timer.frozen { color: var(--text-2); }
 .qz-mat {
   border: 1px solid var(--line-soft); background: var(--bg-soft);
   border-radius: var(--radius); padding: 0.8rem 0.9rem; margin-bottom: 0.9rem;
@@ -2110,3 +2126,137 @@ html.dark .ai-send.stop::after { background: #fff; }
   .wr-input { min-height: 12rem; }
   .wr-rub-l { flex-basis: 2.8rem; }
 }
+
+/* ==========================================================================
+   听力板块（新闻 / 长对话 / 讲座，2026-11-05）
+   播放条 + 分段卡 + 四选一 + 交卷后的原文/译文/解析
+   ========================================================================== */
+.ls-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.6rem; }
+.ls-card {
+  display: block; text-decoration: none; color: var(--text);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 0.75rem 0.85rem; transition: border-color 0.18s, transform 0.18s;
+}
+.ls-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.ls-card-h { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; margin-bottom: 0.45rem; }
+.ls-card-t {
+  font-size: 14px; line-height: 1.5; margin-bottom: 0.3rem; min-height: 2.7em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* 播放条：吸顶，滚动听的时候也能随时停 */
+.ls-player {
+  position: sticky; top: 0.4rem; z-index: 12;
+  background: var(--card); border: 1px solid var(--line);
+  margin-bottom: 0.9rem;
+}
+.ls-rate { display: inline-flex; align-items: center; gap: 0.25rem; }
+.ls-rate-b {
+  border: 1px solid var(--line); background: var(--bg); color: var(--text-2);
+  border-radius: 999px; padding: 0.12rem 0.5rem; font-size: 12px;
+  cursor: pointer; font-family: var(--mono);
+}
+.ls-rate-b:hover { border-color: var(--accent); color: var(--text); }
+.ls-rate-b.on { border-color: var(--accent); background: var(--accent-2); color: var(--accent); }
+#ls-now { margin-left: auto; }
+
+/* 分段卡 */
+.ls-seg { margin-bottom: 0.8rem; }
+.ls-seg-h { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+.ls-seg-l {
+  font-family: var(--font-display); font-size: 1rem; font-weight: 500; color: var(--text);
+}
+.ls-seg-h .btn { margin-left: auto; }
+.ls-qs { display: flex; flex-direction: column; gap: 0.75rem; }
+
+/* 题目 */
+.ls-q { border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 0.7rem 0.8rem; background: var(--card); }
+.ls-q.ok { border-color: rgba(27, 166, 75, 0.4); }
+.ls-q.err { border-color: rgba(226, 61, 61, 0.4); }
+.ls-q-h { display: flex; align-items: flex-start; gap: 0.45rem; margin-bottom: 0.45rem; }
+.ls-q-no {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 1.4rem; height: 1.4rem; border-radius: 50%;
+  background: var(--accent-2); color: var(--accent); font-family: var(--mono); font-size: 11.5px;
+}
+.ls-q-t { font-size: 14px; line-height: 1.7; }
+.ls-opts { display: flex; flex-direction: column; gap: 0.3rem; }
+.ls-opt {
+  display: flex; align-items: flex-start; gap: 0.5rem; text-align: left;
+  border: 1px solid var(--line); background: var(--bg); border-radius: var(--radius-sm);
+  padding: 0.42rem 0.6rem; font-size: 13.5px; line-height: 1.6; color: var(--text);
+  cursor: pointer; font-family: inherit; transition: border-color 0.15s, background 0.15s;
+}
+.ls-opt:hover { border-color: var(--accent); }
+.ls-opt[disabled] { cursor: default; }
+.ls-opt i { font-family: var(--mono); font-size: 11.5px; font-style: normal; color: var(--text-3); flex: 0 0 auto; }
+.ls-opt.sel { border-color: var(--accent); background: var(--accent-2); }
+.ls-opt.ok { border-color: var(--ok); background: var(--ok-soft); }
+.ls-opt.ok i { color: var(--ok); }
+.ls-opt.err { border-color: var(--err); background: var(--err-soft); }
+.ls-opt.err i { color: var(--err); }
+
+.ls-exp { margin-top: 0.55rem; border-top: 1px dashed var(--line-soft); padding-top: 0.5rem; }
+.ls-ok { color: var(--ok); font-size: 12.5px; }
+.ls-err { color: var(--err); font-size: 12.5px; }
+.ls-miss { color: var(--warn); font-size: 12.5px; }
+.ls-exp-t { font-size: 13.5px; line-height: 1.9; color: var(--text-2); margin-top: 0.25rem; }
+
+.ls-score { font-family: var(--font-display); font-size: 1.15rem; font-weight: 500; color: var(--accent); }
+
+/* 原文 / 译文 */
+.ls-texts { margin-top: 0.8rem; border-top: 1px dashed var(--line-soft); padding-top: 0.7rem; }
+.ls-txt { margin-bottom: 1rem; }
+.ls-txt:last-child { margin-bottom: 0; }
+.ls-tr { font-size: 14.5px; line-height: 1.95; color: var(--text); }
+.ls-tr p { margin: 0 0 0.55rem; }
+.ls-tr p:last-child { margin-bottom: 0; }
+
+@media (max-width: 640px) {
+  .ls-player { position: static; }
+  #ls-now { margin-left: 0; }
+}
+
+/* 单词详解页右下的「AI 讲解」面板（2026-11-05） */
+.dc-ai { margin-top: 0.9rem; border-style: dashed; }
+.dc-ai-h { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; margin-bottom: 0.55rem; }
+.dc-ai-t {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 13.5px; font-weight: 600; color: var(--text);
+}
+.dc-ai-t svg { color: var(--accent); }
+.dc-ai-sub { font-weight: 400; }
+.dc-ai-h .btn { margin-left: auto; }
+.dc-ai-body { font-size: 14px; line-height: 1.95; color: var(--text); }
+.dc-ai-body.is-empty { line-height: 1.8; }
+.dc-ai-body p { margin: 0 0 0.5rem; }
+.dc-ai-body p:last-child { margin-bottom: 0; }
+.dc-ai-body strong { font-weight: 600; color: var(--accent); }
+.dc-ai-body code {
+  font-family: var(--mono); font-size: 12.5px;
+  background: var(--accent-2); color: var(--accent);
+  padding: 0.05rem 0.3rem; border-radius: 3px;
+}
+.dc-ai-body ul, .dc-ai-body ol { margin: 0 0 0.5rem; padding-left: 1.15rem; }
+.dc-ai-err { color: var(--err); font-size: 13px; }
+
+/* 逐句对照（英文原句 + 紧随其下的中文）  2026-11-05 */
+.bi { display: flex; flex-direction: column; gap: 0.15rem; }
+.bi-row {
+  padding: 0.3rem 0 0.3rem 0.6rem;
+  border-left: 2px solid var(--line-soft);
+  transition: border-color 0.15s, background 0.15s;
+}
+.bi-row:hover { border-left-color: var(--accent); background: var(--accent-2); }
+/* 段落第一句：拉开段落间距，否则整篇看起来是一大坨 */
+.bi-row.bi-p { margin-top: 0.55rem; }
+.bi-row.bi-p:first-child { margin-top: 0; }
+.bi-en { margin: 0; font-size: 14.5px; line-height: 1.85; color: var(--text); }
+.bi-zh {
+  margin: 0.12rem 0 0; font-size: 13.5px; line-height: 1.8;
+  color: var(--text-2);
+}
+/* 中文用一个细小的起始标记，扫读时一眼能认出「这句是译文」 */
+.bi-zh::before { content: '译 '; font-size: 11px; color: var(--text-3); letter-spacing: 0.05em; }
+.qz-tr .bi { margin-top: 0.15rem; }
+.ls-txt .bi { margin-top: 0.15rem; }

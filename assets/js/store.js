@@ -21,7 +21,9 @@
     speakMode: 'auto',     // 发音通道 auto 在线音频优先(失败回退系统语音) | audio 只用在线音频 | tts 只用系统语音
     keySound: true,        // 键盘音效
     srsAuto: true,         // 答错的词自动加入复习队列
-    autoMaster: true       // 连对 5 次自动标记「已掌握」（sunfleeting 要求的自动化）
+    autoMaster: true,      // 连对 5 次自动标记「已掌握」（sunfleeting 要求的自动化）
+    quizTimer: true,       // 题目板块做题计时（单套超过 quizTimerMin 分钟提醒一次）
+    quizTimerMin: 10       // 提醒阈值（分钟）
   };
 
   var state = {

@@ -60,6 +60,13 @@
         '</div>' +
 
         '<div class="card card-pad" style="margin-bottom:1rem">' +
+          '<div class="card-title" style="margin-bottom:.3rem">题目板块</div>' +
+          switchRow('quizTimer', '做题计时与超时提醒',
+            '做阅读/完形/匹配时右上角显示计时；单套题超过 ' + (TW.store.settings.quizTimerMin || 10) +
+            ' 分钟弹一次提醒（做完交卷后定住显示总用时）') +
+        '</div>' +
+
+        '<div class="card card-pad" style="margin-bottom:1rem">' +
           '<div class="card-title" style="margin-bottom:.3rem">AI 英语助手</div>' +
           '<div class="set-hint" style="margin-bottom:.8rem">填自己的 API Key 就能用「学习诊断 / 智能出题 / 对话答疑」。' +
             'Key 只存在这台设备的浏览器里（独立存储，<b>不参与云同步、也不会写进导出备份</b>），请求经本站 Worker 转发一次到模型官方接口。</div>' +

@@ -302,8 +302,11 @@ def main():
                 const y = new Date(); y.setDate(y.getDate() - 1);
                 const m = y.getMonth() + 1, dd = y.getDate();
                 d[y.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (dd < 10 ? '0' : '') + dd] = { done: 30, right: 30 };
-                S.addSession({ t: now - 3600e3, mode: 'type', src: 'book', total: 20, right: 15, wrong: 5, acc: 75 });
-                S.addSession({ t: now - 7200e3, mode: 'recall', src: 'srs', total: 10, right: 10, wrong: 0, acc: 100 });
+                /* 🔴 「今天」的场次用 now-1min / now-2min，不要用 now-1h：
+                   凌晨 0~2 点跑测试时，1 小时前已经算昨天，断言必挂（2026-11-05 实测）
+                   1 分钟前只有在 00:01 之前才会跨天，实际跑不到那么极端。 */
+                S.addSession({ t: now - 60e3, mode: 'type', src: 'book', total: 20, right: 15, wrong: 5, acc: 75 });
+                S.addSession({ t: now - 120e3, mode: 'recall', src: 'srs', total: 10, right: 10, wrong: 0, acc: 100 });
                 S.addSession({ t: now - 86400e3, mode: 'type', src: 'book', total: 15, right: 6, wrong: 9, acc: 40 });
                 S.addSession({ t: now - 90000e3, mode: 'listen', src: 'srs', total: 5, right: 4, wrong: 1, acc: 80 });
                 // 造 3 个练过的词，其中 2 个已掌握 —— 环形图三段才都有长度、可点
@@ -345,14 +348,25 @@ def main():
                   and pg.evaluate("() => (document.querySelector('.st-tip') || {}).textContent || ''") != "",
                   True, extra=pg.evaluate("() => (document.querySelector('.st-tip') || {}).textContent || ''"))
 
-            # 点今天的柱子 → 场次只剩今天的 2 场 + 出现筛选 chip
+            # 点今天的柱子 → 场次只剩今天的 + 出现筛选 chip
+            # 期望值从种子数据现算，别写死 2 —— 写死就等于把「跑测试的时刻」焊进断言
+            exp_today = pg.evaluate("""() => {
+                const t = TW.store.today();
+                return TW.store.state.sessions.filter(s => {
+                    const d = new Date(s.t);
+                    const k = d.getFullYear() + '-' +
+                        String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                        String(d.getDate()).padStart(2, '0');
+                    return k === t;
+                }).length;
+            }""")
             pg.evaluate("""() => {
                 const t = TW.store.today();
                 const el = [...document.querySelectorAll('.st-bar[data-day]')].find(x => x.dataset.day === t);
                 el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
             }""")
             pg.wait_for_timeout(300)
-            check("点某天 → 场次只剩那天", pg.locator(".sess-row").count(), 2)
+            check("点某天 → 场次只剩那天", pg.locator(".sess-row").count(), exp_today, exp_today)
             check("出现筛选 chip", pg.locator(".st-chip[data-clear='day']").count(), 1)
             pg.click(".st-chip[data-clear='day']")
             pg.wait_for_timeout(300)

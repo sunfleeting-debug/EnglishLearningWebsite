@@ -36,10 +36,15 @@
     }
   }
 
-  /** 题库里的真题（静态数据，可能因为脚本没加载而缺席） */
+  /** 题库里的真题（静态数据，可能因为脚本没加载而缺席）
+      2026-11-05 起两处来源：data/quiz.js（扫描件生成）+ data/quiz-more.js（真题/模拟，手写） */
   function bank() {
-    var d = window.TW_QUIZ;
-    return (d && Array.isArray(d.sets)) ? d.sets : [];
+    var out = [];
+    var a = window.TW_QUIZ;
+    if (a && Array.isArray(a.sets)) out = out.concat(a.sets);
+    var b = window.TW_QUIZ_MORE;
+    if (b && Array.isArray(b.sets)) out = out.concat(b.sets);
+    return out;
   }
 
   /** AI 发布出来的题：结构补齐成和真题一样的形状 */

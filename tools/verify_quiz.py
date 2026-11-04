@@ -12,6 +12,7 @@
 import json
 import os
 import pathlib
+import re
 import socket
 import subprocess
 import sys
@@ -142,9 +143,10 @@ def main():
                 });
                 return out;
             }""")
-            check("题库 8 组（2 套 Model Test × 4 篇）", data["n"], 8, data["n"])
-            check("题目总数 60", data["total"], 60, data["total"])
-            check("三种题型都有", data["types"], {"cloze": 2, "match": 2, "reading": 4}, data["types"])
+            check("题库 13 组（扫描件 8 + 新增真题/模拟 5）", data["n"], 13, data["n"])
+            check("题目总数 >= 95", data["total"] >= 95, True, data["total"])
+            check("三种题型都有（cloze 3 / match 3 / reading 7）",
+                  data["types"], {"cloze": 3, "match": 3, "reading": 7}, data["types"])
             check("每道题都有答案 + 完整解析，空位/词库/段落数对得上", data["bad"], [], data["bad"][:5])
             check("仔细阅读都带参考译文", data["trans"] >= 4, True, data["trans"])
 
@@ -152,8 +154,9 @@ def main():
             log("B) 题目板块：选词填空全对流程")
             pg.goto(BASE + "#/quiz", wait_until="domcontentloaded")
             pg.wait_for_selector(".qz-card", timeout=8000)
-            check("列表卡片 8 组", pg.locator(".qz-card").count(), 8)
-            check("有 Model Test 1 / 2 两个分组", pg.locator(".qz-group-h h3").count(), 3)  # 两个 Model Test + AI 出题
+            check("列表卡片 13 张", pg.locator(".qz-card").count(), 13)
+            check("分组 6 个（MT1 / MT2 / 真题 / 模拟9 / 模拟10 / AI 出题）",
+                  pg.locator(".qz-group-h h3").count(), 6)
 
             pg.goto(BASE + "#/quiz?set=mt1-p1", wait_until="domcontentloaded")
             pg.wait_for_selector(".qz-blank", timeout=8000)
@@ -199,6 +202,25 @@ def main():
             pg.click("#qz-toggle-tr")
             pg.wait_for_timeout(250)
             check("译文展开", pg.locator(".qz-tr").count(), 1)
+            # 逐句对照（2026-11-05 新增）：英文一句 + 紧随其下的中文，不是整段糊在一起
+            check("译文按句切成多行", pg.locator(".qz-tr .bi-row").count() >= 12, True,
+                  pg.locator(".qz-tr .bi-row").count())
+            check("每行都有中文译文", pg.locator(".qz-tr .bi-zh").count(),
+                  pg.locator(".qz-tr .bi-row").count())
+            first_pair = pg.evaluate("""() => {
+                const r = document.querySelector('.qz-tr .bi-row');
+                return r ? [r.querySelector('.bi-en').textContent.slice(0, 40),
+                            r.querySelector('.bi-zh').textContent.slice(0, 24)] : null;
+            }""")
+            check("首句英中都在且内容对得上",
+                  bool(first_pair) and ("7:30" in first_pair[0])
+                  and bool(re.search(r"[\u4e00-\u9fa5]", first_pair[1] or "")), True, first_pair)
+            check("对齐器给得出级别（sentence/aligned/approx）",
+                  pg.evaluate("""() => {
+                      const s = TW.quiz.get('z202412-p2');
+                      const i = TW.biling.info(s);
+                      return i && ['sentence', 'aligned', 'approx'].indexOf(i.level) >= 0;
+                  }"""), True)
 
             pg.goto(BASE + "#/quiz?set=mt1-p2", wait_until="domcontentloaded")
             pg.wait_for_selector(".qz-paras", timeout=8000)
@@ -224,7 +246,7 @@ def main():
 
             pg.goto(BASE + "#/quiz", wait_until="domcontentloaded")
             pg.wait_for_selector(".qz-card", timeout=8000)
-            check("列表里出现 AI 组（8+1）", pg.locator(".qz-card").count(), 9)
+            check("列表里出现 AI 组（13+1）", pg.locator(".qz-card").count(), 14)
             check("AI 组的卡片在「AI 出题」分组下",
                   pg.locator(".qz-group").last.locator(".qz-card").count(), 1)
             pg.locator(".qz-group").last.locator(".qz-card").first.click()
@@ -311,6 +333,55 @@ def main():
             check("system 里有「不要说无法联网」的硬约束",
                   "绝对不要说「我无法联网」" in sys_txt, True)
             check("system 要求标注来源域名", "句末标一个来源域名" in sys_txt, True)
+
+            # ---------------- G. 做题计时器（2026-11-05 新增） ----------------
+            log("G) 做题计时器与超时提醒")
+            pg.goto(BASE + "#/quiz?set=mt1-p4", wait_until="domcontentloaded")
+            pg.wait_for_selector("#qz-timer", timeout=8000)
+            t0 = pg.inner_text("#qz-timer")
+            check("题面顶部出现计时条", bool(re.match(r"^\d\d:\d\d$", t0.strip())), True, t0)
+            pg.wait_for_timeout(1400)
+            t1 = pg.inner_text("#qz-timer")
+            check("计时在走（1.4 秒后数字变了）", t1 != t0, True, (t0, t1))
+            check("默认不超标、没有红色态", pg.locator(".qz-timer.over").count(), 0)
+
+            # 把阈值压到 0.02 分钟（1.2 秒）验证「超时提醒」这条逻辑本身
+            # 🔴 store.save() 有 120ms 防抖：写完立刻 reload 会丢，必须等一下
+            pg.evaluate("() => TW.store.setSetting('quizTimerMin', 0.02)")
+            pg.wait_for_timeout(350)
+            pg.reload(wait_until="domcontentloaded")
+            pg.wait_for_selector("#qz-timer", timeout=8000)
+            pg.wait_for_timeout(2600)
+            check("超时后计时条变红", pg.locator(".qz-timer.over").count(), 1)
+            toast = pg.evaluate("() => (document.querySelector('#toast-host .toast') || {}).textContent || ''")
+            check("超时弹一次提醒", "分钟" in toast and "往下走" in toast, True, toast)
+
+            # 设置里关掉 → 计时条不再出现（也不跑定时器）
+            pg.evaluate("""() => { TW.store.setSetting('quizTimer', false);
+                                    TW.store.setSetting('quizTimerMin', 10); }""")
+            pg.wait_for_timeout(350)
+            pg.reload(wait_until="domcontentloaded")
+            pg.wait_for_selector(".qz-sheet", timeout=8000)
+            pg.wait_for_timeout(300)
+            check("设置里关掉后没有计时条", pg.locator("#qz-timer").count(), 0)
+
+            # 设置页有对应的开关行
+            pg.goto(BASE + "#/settings", wait_until="domcontentloaded")
+            pg.wait_for_timeout(500)
+            row = pg.evaluate("""() => {
+                const b = document.querySelector('[data-switch="quizTimer"]');
+                if (!b) return null;
+                return { on: b.classList.contains('on'),
+                         txt: b.closest('.set-row').textContent };
+            }""")
+            check("设置页有「做题计时」开关", bool(row), True)
+            check("关掉状态回显正确", row and row["on"] is False, True, row and row["on"])
+            check("说明里写清 10 分钟阈值", row and "10 分钟" in row["txt"], True,
+                  row and row["txt"][:60])
+            pg.click('[data-switch="quizTimer"]')
+            pg.wait_for_timeout(200)
+            check("点一下能重新打开",
+                  pg.evaluate("() => TW.store.settings.quizTimer"), True)
 
             check("无 JS 报错", len(errors) == 0, extra=errors[:3])
             browser.close()

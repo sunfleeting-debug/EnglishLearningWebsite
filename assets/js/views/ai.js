@@ -49,17 +49,36 @@
     '4. 讲单词时给词性、中文释义和一个例句；区分易混词时先说「差在哪」。',
     '5. 不要用 Markdown 表格；列点最多 4 条；关键结论用 **粗体**。',
     '',
+    '【你能看到什么】',
+    '【真实学习数据】里除了背单词的统计，还有【写作…】【写作草稿…】【题目板块最近】【听力最近】——',
+    '也就是用户在写作板块写的译文/作文原文、AI 批改过的分数与意见、做过的题目、听过的材料。',
+    '用户说「评价我最新写的那篇翻译/作文」「我哪里写错了」时，直接用那里的原文逐句改，',
+    '绝对不要说「我看不到你的草稿」「没有接入你的作业」——那会让用户以为功能坏了。',
+    '',
+    '【题目板块：题库索引与原文】',
+    '【题目板块 · 题库索引】列出本站题库的每一套题：id、分组（如「Model Test 1」「模拟题 · 第9组」）、题型、题数、标题。',
+    '用户提到某一套（「Model Test 1」「模拟题第9组」「2024年12月真题」「那篇讲美学的阅读」）时，',
+    '系统会把那套的原文、题目、答案与解析整段贴进【题目板块 · 原文】。',
+    '所以讲题库里的题就直接引用原文，不要推托。',
+    '绝对不要说「我无法访问或生成该特定题库」「系统未提供题库内容」——它就在上下文里。',
+    '真没贴到全文（篇幅超预算）时，就照索引说出那几套的 id 与题型，请他点名，也别声称看不到。',
+    '用户没作答前不要上来就报答案：先带他定位段落或句子，再让他自己挑，答完再讲为什么。',
+    '看不到的只有账号私人信息（邮箱、密码、登录状态），这些也别假装知道。',
+    '',
     '【出题协议】',
     '用户要求出题/练一组/来几道题时：正文先用 1-2 句说明这组题练什么，然后在回复**最后**附一个代码块，',
     '语言标记写 quiz，内容严格是 JSON（不要加注释、不要换行到块外）：',
     '```quiz',
     '{"exercises":[{"id":"","word":"","type":"choice|spell|fill","question":"","options":[],"answer":"","explanation":""}]}',
     '```',
-    '规则：id 必须原样取自【候选词表】；每个词只出一题；',
+    '「按词出题」：id 必须原样取自【候选词表】，每个词只出一题；',
     'choice 必须给 4 个选项且 answer 与其中某个字符串完全一致；',
     'spell 的 question 写「中文释义 + 词性 + 首字母与字母数提示」，answer 是英文原形；',
     'fill 的 question 是挖空英文句子（用 ___），answer 是英文原形；',
     'explanation 用中文一句话讲清 + 一个高频搭配。默认 8 题，用户指定题量时按用户的。',
+    '「按考试题型出题」（仿照某套真题/模拟题写阅读、完形、匹配）：正文里先把材料写完整，',
+    '再在 quiz 块里给四选一，word 与 id 都写空字符串 ""；这类题只判分、不写回单词记录，',
+    '所以题面必须自带定位信息（如「根据第 2 段」「第【3】空」）。',
     '',
     '【关于联网】',
     '你本身不能主动浏览网页；本站会在需要时（问最新消息、考试时间、政策变化这类）把实时检索结果贴进【联网检索结果】。',
@@ -111,10 +130,22 @@
     return out.slice(0, 30);
   }
 
-  function buildSystem(searchPack) {
+  function buildSystem(searchPack, userText) {
     var snap = TW.ai.snapshot();
     var pool = wordPool();
     var L = [SYSTEM, '', '【真实学习数据】', TW.ai.briefText(snap)];
+
+    /* 题目板块：先给索引（让模型知道「有哪些题、怎么点名」）……
+       2026-11-05 补：之前只给做题记录不给题库，模型就会答「我无法访问题库」。 */
+    var idx = TW.ai.quizIndex ? TW.ai.quizIndex() : [];
+    if (idx.length) {
+      L.push('', '【题目板块 · 题库索引】（id | 分组 | 题型 | 题数 | 标题）');
+      L.push(idx.join('\n'));
+    }
+    /* ……用户这一句真提到某套时，再把原文与题目整段贴进来 */
+    var qctx = TW.ai.quizContext ? TW.ai.quizContext(userText || '') : '';
+    if (qctx) L.push('', qctx);
+
     var brief = (searchPack && searchPack.results && searchPack.results.length)
       ? TW.ai.searchBrief(searchPack) : '';
     if (brief) L.push('', brief);
@@ -122,7 +153,8 @@
       L.push('', '【候选词表】（id | 单词 | 中文释义）');
       L.push(pool.join('\n'));
     } else {
-      L.push('', '【候选词表】空 —— 用户还没有学习记录，别出题，先让他去练一组。');
+      L.push('', '【候选词表】空 —— 用户还没有背单词记录，别出「按词出题」的题；'
+        + '但可以出通用选择题（word 与 id 都留空字符串），或直接讲题库里的题。');
     }
     return L.join('\n');
   }
@@ -165,7 +197,17 @@
           var w0 = TW.data.byId ? TW.data.byId(rid) : null;
           if (w0) { word = w0.word; hit = w0; }
         }
-        if (!hit) return;
+        /* 不带单词的通用选择题（仿真题的阅读/完形题）：照收。
+           判分时没有 id 就跳过学习记录写回（见 judgeQuiz），不会污染进度。 */
+        if (!hit) {
+          if (type !== 'choice') return;
+          out.push({
+            id: '', word: '', type: type, question: q,
+            options: opts, answer: ans,
+            explanation: String(raw2.explanation || raw2.exp || raw2.why || '').trim()
+          });
+          return;
+        }
       }
       used[word.toLowerCase()] = 1;
       out.push({
@@ -270,13 +312,16 @@
       (q.graded ? '<span class="ai-score">答对 <b>' + q.right + '</b>/' + q.exercises.length + ' · ' + q.acc + '%</span>' : '') +
       '</div>';
 
+    /* 不带单词的通用题（仿真阅读/完形）：只判分，不写回单词记录，别让用户以为会计入 */
+    var hasWord = q.exercises.some(function (ex) { return !!ex.word; });
+    var hint = hasWord ? '判分结果会写回错词本和复习队列' : '这类题只判分，不计入单词记录';
     var foot = q.graded
       ? '<div class="ai-quizbox-f">' +
         '<button class="btn sm primary" data-mi="' + mi + '" data-act="review">让教练讲讲错题</button>' +
         '<button class="btn sm ghost" data-mi="' + mi + '" data-act="publish">发布到题目板块</button>' +
         '<span class="small muted">成绩已计入学习统计</span></div>'
       : '<div class="ai-quizbox-f"><button class="btn sm primary" data-mi="' + mi + '" data-act="grade">交卷判分</button>' +
-        '<span class="small muted">判分结果会写回错词本和复习队列</span></div>';
+        '<span class="small muted">' + hint + '</span></div>';
 
     return '<div class="ai-quizbox">' + head + body + foot + '</div>';
   }
@@ -900,7 +945,7 @@
       S.ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
       var lastPaint = 0;
       TW.ai.streamChat({
-        system: buildSystem(searchPack),
+        system: buildSystem(searchPack, text),
         messages: history(),
         maxTokens: 1800,
         temperature: 0.6,

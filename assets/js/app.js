@@ -15,6 +15,7 @@
     { key: 'audio', label: '音频跟读', path: '/audio', icon: 'headphone' },
     { key: 'stats', label: '学习统计', path: '/stats', icon: 'chart' },
     { key: 'quiz', label: '题目', path: '/quiz', icon: 'quiz' },
+    { key: 'listening', label: '听力', path: '/listening', icon: 'headphone' },
     { key: 'writing', label: '写作', path: '/writing', icon: 'pen' },
     { key: 'reading', label: '真题阅读', path: '/reading', icon: 'file' },
     { key: 'resources', label: '学习资料', path: '/resources', icon: 'download' },
@@ -62,6 +63,7 @@
       ai: TW.views.ai,
       quiz: TW.views.quiz,
       writing: TW.views.writing,
+      listening: TW.views.listening,
       reading: TW.views.reading, resources: TW.views.resources, settings: TW.views.settings,
       account: TW.views.account, admin: TW.views.admin, gate: TW.views.gate
     };

@@ -547,14 +547,335 @@
     var b = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     var n = Math.round((b - a) / day);
     if (n <= 0) return '今天';
+
     if (n === 1) return '昨天';
     return n + ' 天前';
   }
 
+  /* ---------------- 写作 / 做题 / 听力 记录（2026-11-05 加） ----------------
+     sunfleeting：「这个 AI 助手能获取该账号私人信息以外的所有信息」。
+     原来快照只统计「背单词」那一侧，问「评价我刚写的那篇翻译」时模型只能回「看不到你的草稿」。
+     这几个键都不在 store.state 里（故意不进云同步），所以要直接读 localStorage。
+     只读学习产物，不碰账号、邮箱、token、AI Key —— 那些是私人信息。 */
+  function readKey(k) {
+    try {
+      var raw = window.localStorage.getItem(k);
+      return raw ? (JSON.parse(raw) || {}) : {};
+    } catch (e) { return {}; }
+  }
+
+  function clip(s, n) {
+    s = String(s || '').replace(/\s+/g, ' ').trim();
+    return s.length > n ? s.slice(0, n) + '…' : s;
+  }
+
+  function worksSnapshot() {
+    var out = { writing: [], drafts: [], quiz: [], listen: [] };
+
+    /* ① 写作：已批改的 + 只写了草稿没批改的，各取最近几条 */
+    var wr = readKey('typingcet.write.v1');
+    var items = (window.TW_WRITING && window.TW_WRITING.items) || [];
+    var byId = {};
+    items.forEach(function (it) { byId[it.id] = it; });
+    var results = wr.results || {}, drafts = wr.drafts || {};
+
+    Object.keys(results).map(function (id) { return { id: id, r: results[id] }; })
+      .filter(function (x) { return x.r && x.r.text; })
+      .sort(function (a, b) { return (b.r.ts || 0) - (a.r.ts || 0); })
+      .slice(0, 4).forEach(function (x) {
+        var it = byId[x.id] || {}, d = x.r.data || {};
+        out.writing.push({
+          title: it.title || x.id,
+          type: it.type === 'trans' ? '翻译' : '作文',
+          when: relDay(x.r.ts || Date.now()),
+          score: x.r.score,
+          max: x.r.max || 15,
+          words: (String(x.r.text).match(/[A-Za-z][A-Za-z'’-]*/g) || []).length,
+          text: clip(x.r.text, 300),
+          comment: clip(d.comment, 160),
+          issues: (d.issues || []).slice(0, 3).map(function (k) {
+            return clip(k.quote, 60) + ' → ' + clip(k.fix, 60);
+          })
+        });
+      });
+
+    Object.keys(drafts).filter(function (id) {
+      return drafts[id] && String(drafts[id]).trim() && !(results[id] && results[id].text === drafts[id]);
+    }).map(function (id) {
+      var it = byId[id] || {};
+      return { id: id, it: it, txt: String(drafts[id]).trim() };
+    }).sort(function (a, b) { return b.txt.length - a.txt.length; })
+      .slice(0, 3).forEach(function (x) {
+        out.drafts.push({
+          title: x.it.title || x.id,
+          type: x.it.type === 'trans' ? '翻译' : '作文',
+          words: (x.txt.match(/[A-Za-z][A-Za-z'’-]*/g) || []).length,
+          text: clip(x.txt, 400)
+        });
+      });
+
+    /* ② 题目板块：最近做过的几套，带对错 */
+    var qz = readKey('typingcet.quiz.v1');
+    var all = (window.TW.quiz && TW.quiz.bank) ? TW.quiz.bank() : [];
+    var qmap = {};
+    all.forEach(function (s) { qmap[s.id] = s; });
+    var qr = qz.results || {};
+    Object.keys(qr).map(function (id) { return { id: id, r: qr[id] }; })
+      .filter(function (x) { return x.r && x.r.total; })
+      .sort(function (a, b) { return (b.r.ts || 0) - (a.r.ts || 0); })
+      .slice(0, 5).forEach(function (x) {
+        var s = qmap[x.id] || {};
+        out.quiz.push({
+          title: (s.test ? s.test + ' ' : '') + (s.title || x.id),
+          when: relDay(x.r.ts || Date.now()),
+          right: x.r.right, total: x.r.total
+        });
+      });
+
+    /* ③ 听力：同上（数据来自 data/listening.js + 本地记录） */
+    var ls = readKey('typingcet.listen.v1');
+    var lres = ls.results || {};
+    var lmap = {};
+    ((window.TW_LISTENING && window.TW_LISTENING.sets) || []).forEach(function (s) { lmap[s.id] = s; });
+    Object.keys(lres).map(function (id) { return { id: id, r: lres[id] }; })
+      .filter(function (x) { return x.r && x.r.total; })
+      .sort(function (a, b) { return (b.r.ts || 0) - (a.r.ts || 0); })
+      .slice(0, 4).forEach(function (x) {
+        var s = lmap[x.id] || {};
+        out.listen.push({
+          title: s.title || x.id,
+          when: relDay(x.r.ts || Date.now()),
+          right: x.r.right, total: x.r.total
+        });
+      });
+
+    return out;
+  }
+
+  /* ---------------- 题目板块：题库索引 + 按需注入原文 ----------------
+     sunfleeting 2026-11-05：「AI 说看不到我的 Model Test 1，为什么不可以生成题目」。
+     根因不是模型笨，而是 prompt 里从头到尾没给它题库内容 —— 它只拿到了做题**记录**。
+     所以这里补两样：
+       · quizIndex()：一张紧凑索引（id | 分组 | 题型 | 题数 | 标题），常驻 system；
+       · quizContext(text)：这一轮用户提到哪套，就把那套的原文+题目+答案整段贴进去。
+     两步都纯本地、同步、无网络，命中不了就什么都不加（不污染 prompt）。 */
+
+  var QTYPE_CN = { cloze: '完形填空', match: '段落匹配', reading: '仔细阅读' };
+
+  function quizBank() {
+    return (window.TW.quiz && TW.quiz.bank) ? TW.quiz.bank() : [];
+  }
+
+  /** 索引：一行一套，够模型判断「有哪些题、怎么点名」 */
+  function quizIndex() {
+    var list = quizBank();
+    if (!list.length) return [];
+    return list.map(function (s) {
+      return (s.id || '-') + ' | ' + (s.test || '-') + ' | '
+        + (QTYPE_CN[s.type] || s.type || '-') + ' | '
+        + ((s.questions || []).length) + '题 | ' + (s.title || '');
+    });
+  }
+
+  /** 「Model Test 1」「MT2」「模拟题第9组」「真题（卷二）」「第 51 题」这些写法都要认 */
+  function normText(s) {
+    return String(s || '').toLowerCase()
+      .replace(/[（）()【】\[\]]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  var CN_NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+
+  /** 从文本里猜「第几组 / Model Test 几」 */
+  function groupNo(t) {
+    var m;
+    if ((m = /(?:model\s*test|mt)\s*([0-9]{1,2})/.exec(t))) return parseInt(m[1], 10);
+    if ((m = /第\s*([0-9]{1,2}|[一二三四五六七八九十])\s*(?:组|套|份)/.exec(t))) {
+      return m[1].length === 1 && CN_NUM[m[1]] ? CN_NUM[m[1]] : parseInt(m[1], 10);
+    }
+    return 0;
+  }
+
+  /** 挑出用户这一句指向的题套；挑不出来返回 null */
+  function pickSets(text) {
+    var list = quizBank();
+    if (!list.length) return null;
+    var t = normText(text);
+    if (!t) return null;
+
+    /* ① 直接写了 id：最准，命中就只要这几套 */
+    var byId = list.filter(function (s) {
+      return s.id && t.indexOf(normText(s.id)) >= 0;
+    });
+    if (byId.length) return { sets: byId, how: '点名了套号' };
+
+    var pool = list, tagged = false;
+
+    /* ② 分组号：Model Test 1 / MT2 / 第9组 */
+    var no = groupNo(t);
+    if (no) {
+      var gp = list.filter(function (s) {
+        var g = normText(s.test);
+        if (!g) return false;
+        var gm = /(?:model\s*test|mt)\s*([0-9]{1,2})/.exec(g);
+        if (gm) return parseInt(gm[1], 10) === no;
+        var gn = /第\s*([0-9]{1,2})\s*组/.exec(g);
+        if (gn) return parseInt(gn[1], 10) === no;
+        return false;
+      });
+      if (gp.length) { pool = gp; tagged = true; }
+    }
+    /* ③ 分组名整段出现（「2024年12月真题（卷二）」） */
+    if (!tagged) {
+      var groups = [];
+      list.forEach(function (s) {
+        if (s.test && groups.indexOf(s.test) < 0) groups.push(s.test);
+      });
+      for (var i = 0; i < groups.length; i++) {
+        if (t.indexOf(normText(groups[i])) >= 0) {
+          pool = list.filter(function (s) { return s.test === groups[i]; });
+          tagged = true;
+          break;
+        }
+      }
+    }
+    /* ④ 「真题」「模拟题」这种大类 */
+    if (!tagged && /真题/.test(t)) {
+      var zt = list.filter(function (s) { return /真题/.test(String(s.test || '')); });
+      if (zt.length) { pool = zt; tagged = true; }
+    }
+
+    /* ⑤ 题型收窄：提到「完形/匹配/阅读」就只留这一类 */
+    var types = [];
+    if (/完形|cloze|选词填空|填空/.test(t)) types.push('cloze');
+    if (/匹配|match|段落/.test(t)) types.push('match');
+    if (/仔细阅读|阅读理解|reading|阅读/.test(t)) types.push('reading');
+    if (types.length && tagged) {
+      var sub = pool.filter(function (s) { return types.indexOf(s.type) >= 0; });
+      if (sub.length === 1) return { sets: sub, how: '分组 + 题型' };
+      if (sub.length > 1) {
+        /* 「第一篇阅读」这种序号：在筛出来的几套里按顺序取 */
+        var om = /第\s*([一二三四五六1-9])\s*(?:篇|套|份)/.exec(t);
+        if (om) {
+          var n2 = CN_NUM[om[1]] || parseInt(om[1], 10);
+          if (n2 >= 1 && n2 <= sub.length) {
+            return { sets: [sub[n2 - 1]], how: '分组 + 题型 + 序号' };
+          }
+        }
+        return { sets: sub, how: '分组 + 题型' };
+      }
+    }
+    if (tagged) return { sets: pool, how: '分组' };
+
+    /* ⑥ 只提题型、同时明显在说题库（避免「我阅读不好」这种闲聊也塞七套原文）。
+       这类命中往往有 5~8 套，全贴会撑爆上下文 —— 只给候选清单，让模型问是「哪一套」。 */
+    if (types.length && /(这套|那套|这组|那组|这道|那道|第\s*[0-9]+\s*题|题目板块|题库|做错)/.test(t)) {
+      var only = list.filter(function (s) { return types.indexOf(s.type) >= 0; });
+      if (only.length) return { sets: only, how: '只说了题型', compact: true };
+    }
+
+    /* ⑦ 标题/话题里的关键词（「美在观者眼中」「城区十五分钟」） */
+    var kw = list.filter(function (s) {
+      var ti = normText(s.title);
+      return ti.length >= 2 && t.indexOf(ti) >= 0;
+    });
+    if (kw.length) return { sets: kw, how: '标题' };
+    return null;
+  }
+
+  /** 把一套题渲染成给模型看的纯文本（含答案与解析 —— 讲解必须要，但要提醒它别提前报答案） */
+  function setBlock(s) {
+    var L = ['—— ' + s.id + '《' + (s.title || '') + '》　' + (s.test || '') + ' · '
+      + (QTYPE_CN[s.type] || s.type || '') + ' ' + ((s.questions || []).length) + '题'
+      + (s.topic ? '（' + s.topic + '）' : '')];
+    if (s.type === 'match') {
+      (s.paras || []).forEach(function (p) { L.push('[' + p.k + '] ' + p.text); });
+    } else {
+      (s.body || []).forEach(function (p, i) { L.push('¶' + (i + 1) + ' ' + p); });
+    }
+    if (s.bank && s.bank.length) L.push('词库：' + s.bank.join(' / '));
+    if (s.translation) L.push('参考译文：' + String(s.translation).replace(/\s*\n+\s*/g, ' '));
+    L.push('题目（附答案与解析）：');
+    (s.questions || []).forEach(function (q) {
+      L.push('  ' + q.n + '. ' + q.stem);
+      (q.options || []).forEach(function (o) { L.push('     ' + o.k + '. ' + o.t); });
+      L.push('     ✔ 答案 ' + q.answer + (q.explain ? '｜解析：' + q.explain : ''));
+    });
+    return L.join('\n');
+  }
+
   /**
-   * 汇总当前学习情况（纯本地、确定性计算 —— 模型只负责解释，数字都由这里给）。
-   * 输出刻意做小：整个 JSON 控制在 4KB 上下，避免把上下文塞满。
+   * 按当前这句用户输入，拼出【题目板块 · 原文】段落。
+   * 有预算上限：超了就先贴前面的、后面只留一行提示（比把上下文撑爆好）。
    */
+  /** 概况版（一套只占几百字）：分组级提问时用，够模型说清「这组有几套、各练什么」 */
+  function setBriefBlock(s) {
+    var L = ['—— ' + s.id + '《' + (s.title || '') + '》　' + (s.test || '') + ' · '
+      + (QTYPE_CN[s.type] || s.type || '') + ' ' + ((s.questions || []).length) + '题'
+      + (s.topic ? '（' + s.topic + '）' : '')];
+    if (s.type === 'match') {
+      L.push('段落：' + (s.paras || []).map(function (p) {
+        return '[' + p.k + '] ' + String(p.text).slice(0, 70) + '…';
+      }).join(' '));
+    } else {
+      var body = (s.body || []).join(' ');
+      L.push('开头：' + String(body).slice(0, 320) + (body.length > 320 ? '…' : ''));
+    }
+    L.push('题干：' + (s.questions || []).map(function (q) {
+      return q.n + '. ' + String(q.stem).slice(0, 80);
+    }).join(' / '));
+    return L.join('\n');
+  }
+
+  /**
+   * 按当前这句用户输入，拼出【题目板块 · 原文】段落。
+   * 两种情况：
+   *   · 指到 1~2 套 → 贴全文（正文 + 选项 + 答案 + 解析）
+   *   · 指到 3 套以上（说了一整个分组）→ 每套只给概况，另附一句「点名套号可拿全文」
+   * 组级提问若也贴全文，四套就 29k 字符，上下文直接翻倍 —— 不值。
+   */
+  function quizContext(text, cap) {
+    var pick = pickSets(text);
+    if (!pick || !pick.sets.length) return '';
+
+    /* 只说了题型（阅读/完形…）：候选可能有七八套，全贴会撑爆上下文。
+       这里只给清单 + 一句「问他是哪一套」，比瞎猜一套强。 */
+    if (pick.compact) {
+      return '【题目板块 · 候选】（用户只说了题型：' + pick.how + '）'
+        + '下面是题库里符合的几套，篇幅原因没贴全文。'
+        + '先按这张表告诉他有哪几套（报 id 与标题），问清是哪一套，再讲；别说看不到。\n'
+        + pick.sets.map(function (s) {
+          return '· ' + s.id + ' | ' + (s.test || '') + ' | '
+            + (QTYPE_CN[s.type] || s.type) + ' ' + ((s.questions || []).length) + '题 | '
+            + (s.title || '');
+        }).join('\n');
+    }
+
+    if (pick.sets.length > 2) {
+      return '【题目板块 · 概况】（用户这句指向这一整组题：' + pick.how + '）'
+        + '下面是每套的概况（正文只给开头）。要讲某一道题，让他点名套号或「第几篇」，'
+        + '系统下一轮会把那套全文贴进来；这一轮先按概况回答，别说看不到题库。\n'
+        + pick.sets.map(setBriefBlock).join('\n');
+    }
+
+    cap = cap || 20000;
+    var head = '【题目板块 · 原文】（用户这句指向本站题库：' + pick.how + '）'
+      + '以下是真题面与答案，用它讲解或仿写都行；'
+      + '但**用户还没作答时不要直接报答案**，先带他定位、再确认。';
+    var out = [head], used = 0, skipped = 0;
+    pick.sets.forEach(function (s) {
+      var block = setBlock(s);
+      if (used + block.length > cap) { skipped++; return; }
+      used += block.length;
+      out.push('', block);
+    });
+    if (skipped) {
+      out.push('', '（另有 ' + skipped + ' 套因篇幅没贴全文，用户点名套号时可以再要。）');
+    }
+    return out.join('\n');
+  }
+
   function snapshot() {
     var st = TW.store.state;
     var c = TW.store.counts();
@@ -645,7 +966,8 @@
       dueWords: due,
       srs: TW.store.srs.stats(),
       recentSessions: sessions,
-      wrongOrder: wrongOrder
+      wrongOrder: wrongOrder,
+      works: worksSnapshot()
     };
   }
 
@@ -677,6 +999,29 @@
       }).join('；'));
     }
     L.push('【近 7 天每日做题】' + snap.daily.map(function (d) { return d[0] + ' ' + d[1] + '题'; }).join('，'));
+
+    /* 写作 / 题目 / 听力 —— 用户问「评价我写的那篇」「我做到哪了」时要能直接答 */
+    var w = snap.works || {};
+    (w.writing || []).forEach(function (x, i) {
+      L.push('【写作' + (i === 0 ? '·最近批改' : '') + '】《' + x.title + '》（' + x.type + '，' + x.when +
+        '，' + x.words + ' 词，得分 ' + (x.score == null ? '无' : x.score + '/' + x.max) + '）：' + x.text +
+        (x.comment ? ' ｜ 批改意见：' + x.comment : '') +
+        (x.issues && x.issues.length ? ' ｜ 主要问题：' + x.issues.join('；') : ''));
+    });
+    (w.drafts || []).forEach(function (x, i) {
+      L.push('【写作草稿·未批改' + (i === 0 ? '（最新）' : '') + '】《' + x.title + '》（' + x.type + '，' +
+        x.words + ' 词）：' + x.text);
+    });
+    if (w.quiz && w.quiz.length) {
+      L.push('【题目板块最近】' + w.quiz.map(function (x) {
+        return x.title + ' ' + x.right + '/' + x.total + '（' + x.when + '）';
+      }).join('；'));
+    }
+    if (w.listen && w.listen.length) {
+      L.push('【听力最近】' + w.listen.map(function (x) {
+        return x.title + ' ' + x.right + '/' + x.total + '（' + x.when + '）';
+      }).join('；'));
+    }
     return L.join('\n');
   }
 
@@ -818,6 +1163,9 @@
     md: md,
     snapshot: snapshot,
     briefText: briefText,
+    quizIndex: quizIndex,
+    quizContext: quizContext,
+    pickQuizSets: pickSets,
     searchWeb: searchWeb,
     needsWeb: needsWeb,
     searchBrief: searchBrief,
