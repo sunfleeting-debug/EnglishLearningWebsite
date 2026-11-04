@@ -265,17 +265,29 @@ def main():
             check("当天再错 → 顺延到明天", res["d2"] > res["today"], extra=res["d2"])
             check("顺延后不再出现在今天队列", res["due"] == [], extra=res["due"])
 
-            # 答对则正常升档
+            # 答对则正常升档。🔴 2026-11-04 起间隔是 今天/1/2/3/4/6/7/10 天：
+            # 第 1 档落在「今天」（当天再巩固一次），第 2 档才是 +1 天。
             res2 = pg.evaluate("""() => {
                 const S = TW.store;
                 S.resetAll();
                 S.srs.enroll('enroll', 'book1', 'v. 登记');
                 S.srs.onResult('enroll', true, 'book1', 'v. 登记');
-                const r = S.state.srs['enroll'];
-                return { d: r.d, b: r.b, today: S.today() };
+                const r1 = JSON.parse(JSON.stringify(S.state.srs['enroll']));
+                S.srs.onResult('enroll', true, 'book1', 'v. 登记');
+                const r2 = JSON.parse(JSON.stringify(S.state.srs['enroll']));
+                S.srs.onResult('enroll', true, 'book1', 'v. 登记');
+                const r3 = JSON.parse(JSON.stringify(S.state.srs['enroll']));
+                return { b1: r1.b, d1: r1.d, b2: r2.b, d2: r2.d, b3: r3.b, d3: r3.d,
+                         today: S.today(), iv: S.srs.INTERVALS.slice() };
             }""")
-            check("答对升到第 1 档（明天）", res2["b"] == 1 and res2["d"] > res2["today"],
-                  extra=res2)
+            check("间隔表 = 今天/1/2/3/4/6/7/10",
+                  res2["iv"] == [0, 1, 2, 3, 4, 6, 7, 10], extra=res2["iv"])
+            check("第 1 次答对 → 第 1 档、今天再来",
+                  res2["b1"] == 1 and res2["d1"] == res2["today"], extra=res2)
+            check("第 2 次答对 → 第 2 档、明天",
+                  res2["b2"] == 2 and res2["d2"] > res2["today"], extra=res2)
+            check("第 3 次答对 → 第 3 档、更远",
+                  res2["b3"] == 3 and res2["d3"] > res2["d2"], extra=res2)
 
             check("无 JS 报错", len(errors) == 0, extra=errors[:3])
             browser.close()

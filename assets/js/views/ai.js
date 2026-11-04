@@ -26,7 +26,12 @@
     manual: false,     // 接口没有 /models 时手动填模型名
     modelErr: '',
     autoModelTried: false,
-    entered: null      // 是否已从配置卡「保存并开始」进到聊天：false=还在配置，null=没判断过
+    entered: null,     // 是否已从配置卡「保存并开始」进到聊天：false=还在配置，null=没判断过
+    threadId: '',      // 当前会话 id（历史对话按它 upsert）
+    threads: [],       // 历史会话列表（右栏、历史面板共用）
+    histOpen: false,   // 历史面板是否展开
+    webOn: true,       // 联网检索开关（默认开；只有「最近/考试时间」这类问法才真去搜）
+    searching: false   // 正在检索（先给个提示，别让气泡空等）
   };
   var HOST = null;
   var keyTimer = null;   // 粘贴 Key 后延迟拉列表的定时器（见 syncKey）
@@ -54,7 +59,13 @@
     'choice 必须给 4 个选项且 answer 与其中某个字符串完全一致；',
     'spell 的 question 写「中文释义 + 词性 + 首字母与字母数提示」，answer 是英文原形；',
     'fill 的 question 是挖空英文句子（用 ___），answer 是英文原形；',
-    'explanation 用中文一句话讲清 + 一个高频搭配。默认 8 题，用户指定题量时按用户的。'
+    'explanation 用中文一句话讲清 + 一个高频搭配。默认 8 题，用户指定题量时按用户的。',
+    '',
+    '【关于联网】',
+    '你本身不能主动浏览网页；本站会在需要时（问最新消息、考试时间、政策变化这类）把实时检索结果贴进【联网检索结果】。',
+    '有结果：事实以结果为准，句末标一个来源域名（如「据 neea.edu.cn」），别啰嗦。',
+    '没有结果：直接用你已有的知识照常回答。绝对不要说「我无法联网」「我没有实时信息」「请自行搜索」这类话——',
+    '那会让用户以为功能坏了。真拿不准就给判断 + 一句「以官网为准」。'
   ].join('\n');
 
   /* ---------------- 工具 ---------------- */
@@ -100,10 +111,13 @@
     return out.slice(0, 30);
   }
 
-  function buildSystem() {
+  function buildSystem(searchPack) {
     var snap = TW.ai.snapshot();
     var pool = wordPool();
     var L = [SYSTEM, '', '【真实学习数据】', TW.ai.briefText(snap)];
+    var brief = (searchPack && searchPack.results && searchPack.results.length)
+      ? TW.ai.searchBrief(searchPack) : '';
+    if (brief) L.push('', brief);
     if (pool.length) {
       L.push('', '【候选词表】（id | 单词 | 中文释义）');
       L.push(pool.join('\n'));
@@ -259,6 +273,7 @@
     var foot = q.graded
       ? '<div class="ai-quizbox-f">' +
         '<button class="btn sm primary" data-mi="' + mi + '" data-act="review">让教练讲讲错题</button>' +
+        '<button class="btn sm ghost" data-mi="' + mi + '" data-act="publish">发布到题目板块</button>' +
         '<span class="small muted">成绩已计入学习统计</span></div>'
       : '<div class="ai-quizbox-f"><button class="btn sm primary" data-mi="' + mi + '" data-act="grade">交卷判分</button>' +
         '<span class="small muted">判分结果会写回错词本和复习队列</span></div>';
@@ -268,7 +283,12 @@
 
   function renderMsg(m, mi) {
     if (m.role === 'user') {
-      return '<div class="ai-row user"><div class="ai-bubble">' + esc(m.content) + '</div></div>';
+      var chip = '';
+      if (m.web === 'pending') chip = '<span class="ai-webchip">联网检索中…</span>';
+      else if (m.web && m.web !== 'none') chip = '<span class="ai-webchip on">已联网检索 ' + esc(m.web) + '</span>';
+      else if (m.web === 'none') chip = '<span class="ai-webchip">联网没搜到，按已有知识回答</span>';
+      return '<div class="ai-row user"><div class="ai-col"><div class="ai-bubble">' + esc(m.content) +
+        '</div>' + chip + '</div></div>';
     }
     return '<div class="ai-row assistant" data-mi="' + mi + '">' +
       '<div class="ai-ava">A</div>' +
@@ -309,7 +329,10 @@
         '<div class="ai-ava">A</div><div class="ai-bubble">' +
         (S.streamText
           ? '<div class="ai-md">' + TW.ai.md(S.streamText) + '</div>'
-          : '<span class="ai-dots"><i></i><i></i><i></i></span>') +
+          : (S.searching
+              ? '<span class="ai-dots"><i></i><i></i><i></i></span>' +
+                '<span class="ai-searching small muted">正在联网检索最新信息…</span>'
+              : '<span class="ai-dots"><i></i><i></i><i></i></span>')) +
         '</div></div>';
     }
     if (S.err) {
@@ -455,36 +478,144 @@
 
   function shell() {
     var p = TW.ai.provider(TW.ai.config().provider);
-    return '<div class="ai-shell">' +
-      '<div class="ai-bar">' +
-        '<div class="ai-bar-l"><span class="ai-bar-ava">A</span>' +
-          '<div><b>AI 英语教练</b><span class="small muted">' + esc(p.name) + ' · ' + esc(TW.ai.modelName()) + '</span></div>' +
+    return '<div class="ai-layout">' +
+      '<div class="ai-shell">' +
+        '<div class="ai-bar">' +
+          '<div class="ai-bar-l"><span class="ai-bar-ava">A</span>' +
+            '<div><b>AI 英语教练</b><span class="small muted">' + esc(p.name) + ' · ' + esc(TW.ai.modelName()) + '</span></div>' +
+          '</div>' +
+          '<div class="ai-bar-r">' +
+            '<button class="btn ghost sm" id="ai-hist-btn">' + TW.icon('list', 14) + ' 历史</button>' +
+            '<button class="btn ghost sm" id="ai-new">新对话</button>' +
+            '<a class="btn ghost sm" href="#/settings">设置</a>' +
+          '</div>' +
         '</div>' +
-        '<div class="ai-bar-r">' +
-          '<button class="btn ghost sm" id="ai-new">新对话</button>' +
-          '<a class="btn ghost sm" href="#/settings">设置</a>' +
+        '<div class="ai-msgs" id="ai-msgs"></div>' +
+        '<div class="ai-composer">' +
+          '<div class="ai-quick">' +
+            ['分析我的学习情况', '按错词出 8 道题', '排一个 7 天复习计划'].map(function (q) {
+              return '<button type="button" class="ai-toggle" data-prompt="' + esc(q) + '">' + esc(q) + '</button>';
+            }).join('') +
+            '<button type="button" class="ai-toggle ai-web-toggle' + (S.webOn ? ' on' : '') + '" id="ai-web">' +
+              TW.icon('search', 13) + ' 联网检索' + (S.webOn ? '：开' : '：关') + '</button>' +
+          '</div>' +
+          '<div class="ai-inwrap">' +
+            '<textarea id="ai-input" class="ai-textarea" rows="1" placeholder="问点什么，或说「按我的错词出 8 道题」"></textarea>' +
+            '<button class="ai-send" id="ai-send" title="发送">' + TW.icon('arrowRight', 18) + '</button>' +
+          '</div>' +
+          '<div class="ai-hint small muted">Enter 发送 · Shift + Enter 换行 · 问到最新的事会自动联网检索</div>' +
         '</div>' +
       '</div>' +
-      '<div class="ai-msgs" id="ai-msgs"></div>' +
-      '<div class="ai-composer">' +
-        '<div class="ai-quick">' +
-          ['分析我的学习情况', '按错词出 8 道题', '排一个 7 天复习计划'].map(function (q) {
-            return '<button type="button" class="ai-toggle" data-prompt="' + esc(q) + '">' + esc(q) + '</button>';
-          }).join('') +
-        '</div>' +
-        '<div class="ai-inwrap">' +
-          '<textarea id="ai-input" class="ai-textarea" rows="1" placeholder="问点什么，或说「按我的错词出 8 道题」"></textarea>' +
-          '<button class="ai-send" id="ai-send" title="发送">' + TW.icon('arrowRight', 18) + '</button>' +
-        '</div>' +
-        '<div class="ai-hint small muted">Enter 发送 · Shift + Enter 换行 · 回答会读取你的真实学习数据</div>' +
-      '</div>' +
+      '<aside class="ai-rail" id="ai-rail">' + railHtml() + '</aside>' +
+      (S.histOpen ? '<div class="ai-hist" id="ai-hist"><div class="ai-hist-in">' +
+        '<div class="ai-hist-head"><b>历史对话（' + S.threads.length + '）</b>' +
+          '<button class="icon-btn" id="ai-hist-close" aria-label="关闭">' + TW.icon('x', 16) + '</button></div>' +
+        '<div class="ai-hist-body">' + histHtml(true) + '</div>' +
+      '</div></div>' : '') +
     '</div>';
+  }
+
+  /* ---------------- 右栏：历史对话 + 题目板块 ---------------- */
+
+  function relTime(ts) {
+    var d = Date.now() - (ts || 0);
+    if (d < 60 * 1000) return '刚刚';
+    if (d < 3600 * 1000) return Math.round(d / 60000) + ' 分钟前';
+    if (d < 86400 * 1000) return Math.round(d / 3600000) + ' 小时前';
+    if (d < 7 * 86400 * 1000) return Math.round(d / 86400000) + ' 天前';
+    var dt = new Date(ts || 0);
+    return (dt.getMonth() + 1) + '月' + dt.getDate() + '日';
+  }
+
+  function histHtml(full) {
+    var list = S.threads || [];
+    if (!list.length) return '<div class="ai-th-empty small muted">还没有历史对话。<br>聊完会自动存下来，换设备前也可以先在这里翻。</div>';
+    var pick = full ? list : list.slice(0, 5);
+    return pick.map(function (t) {
+      var on = t.id === S.threadId;
+      return '<div class="ai-th' + (on ? ' on' : '') + '" data-thread="' + esc(t.id) + '">' +
+        '<div class="ai-th-main"><b>' + esc(t.title) + '</b>' +
+          '<span>' + relTime(t.ts) + ' · ' + (t.messages || []).length + ' 条</span></div>' +
+        '<button class="ai-th-x" data-del="' + esc(t.id) + '" title="删除这条对话">' + TW.icon('x', 13) + '</button>' +
+      '</div>';
+    }).join('');
+  }
+
+  function railHtml() {
+    var sum = TW.quiz ? TW.quiz.summary() : { sets: 0, done: 0, acc: 0, published: 0 };
+    var pub = TW.quiz ? TW.quiz.published().slice(0, 3) : [];
+    var pubItems = pub.map(function (p) {
+      return '<a class="ai-rail-item" href="#/quiz?set=' + encodeURIComponent(p.id) + '">' +
+        '<b>' + esc(p.title) + '</b><span>' + (p.questions || []).length + ' 题 · ' + relTime(p.ts) + '</span></a>';
+    }).join('');
+    return '<div class="ai-rail-sec">' +
+        '<div class="ai-rail-h"><span>历史对话</span>' +
+          '<button class="ai-rail-more" id="ai-rail-more" data-hist="1">全部</button></div>' +
+        '<div class="ai-th-list">' + histHtml(false) + '</div>' +
+        '<button class="btn ghost sm ai-rail-new" data-newthread="1">' + TW.icon('play', 13) + ' 开新对话</button>' +
+      '</div>' +
+      '<div class="ai-rail-sec">' +
+        '<div class="ai-rail-h"><span>题目板块</span>' +
+          '<a class="ai-rail-more" href="#/quiz">全部 →</a></div>' +
+        '<div class="ai-rail-stat small muted">题库 <b>' + sum.sets + '</b> 组 · 已做 <b>' + sum.done +
+          '</b> · 正确率 <b>' + sum.acc + '%</b></div>' +
+        (pubItems || '<div class="small muted" style="margin:.3rem 0 .5rem">在聊天里让它出题，判分后点「发布到题目板块」，' +
+          '这组题就会固定下来，随时能重做。</div>') +
+        '<a class="btn sm ai-rail-btn" href="#/quiz">' + TW.icon('quiz', 14) + ' 去做题</a>' +
+      '</div>';
+  }
+
+  /** 只重画右栏与历史面板：整页 render 会打断正在输入的草稿焦点 */
+  function paintRail() {
+    var rail = TW.$('#ai-rail');
+    if (rail) rail.innerHTML = railHtml();
+    var body = TW.$('.ai-hist-body');
+    if (body) body.innerHTML = histHtml(true);
+    var head = TW.$('.ai-hist-head b');
+    if (head) head.textContent = '历史对话（' + (S.threads || []).length + '）';
+  }
+
+  function persist() {
+    if (!S.messages.length) return;
+    if (!S.threadId) S.threadId = TW.ai.newThreadId();
+    TW.ai.saveThread({ id: S.threadId, messages: S.messages });
+    S.threads = TW.ai.listThreads();
+    paintRail();
+  }
+
+  function loadThread(id) {
+    var t = TW.ai.getThread(id);
+    if (!t) { TW.toast('这条对话找不到了'); return; }
+    if (S.busy && S.ctrl) S.ctrl.abort();
+    S.threadId = t.id;
+    S.messages = (t.messages || []).map(function (m) {
+      var o = { role: m.role, content: m.content };
+      if (m.quiz) { o.quiz = m.quiz; o._parsed = true; }
+      if (m.web) o.web = m.web;
+      return o;
+    });
+    S.err = ''; S.streamText = ''; S.busy = false; S.searching = false;
+    S.stick = true; S.histOpen = false;
+    render(HOST);
+  }
+
+  function startNewThread() {
+    persist();
+    if (S.busy && S.ctrl) S.ctrl.abort();
+    S.threadId = '';
+    S.messages = [];
+    S.err = ''; S.streamText = ''; S.busy = false; S.searching = false;
+    S.stick = true; S.histOpen = false;
+    render(HOST);
+    var inp = TW.$('#ai-input');
+    if (inp) inp.focus();
   }
 
   /* ---------------- 交互 ---------------- */
 
   function render(host) {
     HOST = host;
+    S.threads = TW.ai.listThreads();
     /* configured() 在「Key + 默认模型」齐了就算通，但那一刻用户还在配置卡上选模型，
        不能直接把人踢进聊天页 —— 所以未配置过的人必须先点「保存并开始」。 */
     if (!TW.ai.configured()) S.entered = false;
@@ -600,12 +731,58 @@
 
     /* ---- 顶部按钮 ---- */
     var nb = TW.$('#ai-new', host);
-    if (nb) nb.addEventListener('click', function () {
-      if (S.busy && S.ctrl) S.ctrl.abort();
-      S.messages = []; S.streamText = ''; S.err = ''; S.busy = false; S.stick = true;
-      paintMsgs(); scrollBottom(true);
-      var inp = TW.$('#ai-input');
-      if (inp) inp.focus();
+    if (nb) nb.addEventListener('click', startNewThread);
+
+    var hb = TW.$('#ai-hist-btn', host);
+    if (hb) hb.addEventListener('click', function () { S.histOpen = !S.histOpen; render(host); });
+
+    /* ---- 右栏：历史对话 / 题目板块（内容会重绘，监听挂在容器上） ---- */
+    var rail = TW.$('#ai-rail', host);
+    if (rail) rail.addEventListener('click', function (e) {
+      var del = e.target.closest('[data-del]');
+      if (del) {
+        e.stopPropagation();
+        var id = del.dataset.del;
+        if (!window.confirm('删除这条对话？删了就找不回来了。')) return;
+        TW.ai.removeThread(id);
+        if (id === S.threadId) { S.threadId = ''; S.messages = []; }
+        S.threads = TW.ai.listThreads();
+        paintRail();
+        paintMsgs();
+        return;
+      }
+      if (e.target.closest('[data-newthread]')) { startNewThread(); return; }
+      if (e.target.closest('[data-hist]')) { S.histOpen = true; render(host); return; }
+      var th = e.target.closest('[data-thread]');
+      if (th) loadThread(th.dataset.thread);
+    });
+
+    var panel = TW.$('#ai-hist', host);
+    if (panel) {
+      panel.addEventListener('click', function (e) {
+        if (e.target === panel || e.target.closest('#ai-hist-close')) { S.histOpen = false; render(host); return; }
+        var del = e.target.closest('[data-del]');
+        if (del) {
+          e.stopPropagation();
+          if (!window.confirm('删除这条对话？删了就找不回来了。')) return;
+          TW.ai.removeThread(del.dataset.del);
+          if (del.dataset.del === S.threadId) { S.threadId = ''; S.messages = []; }
+          S.threads = TW.ai.listThreads();
+          paintRail();
+          render(host);
+          return;
+        }
+        var th = e.target.closest('[data-thread]');
+        if (th) loadThread(th.dataset.thread);
+      });
+    }
+
+    var web = TW.$('#ai-web', host);
+    if (web) web.addEventListener('click', function () {
+      S.webOn = !S.webOn;
+      web.classList.toggle('on', S.webOn);
+      web.innerHTML = TW.icon('search', 13) + ' 联网检索' + (S.webOn ? '：开' : '：关');
+      TW.toast(S.webOn ? '联网检索已开：问到最新的事会先去搜' : '联网检索已关：只用模型自己的知识', S.webOn ? 'ok' : '');
     });
 
     /* ---- 输入框 ---- */
@@ -673,6 +850,7 @@
         var mi2 = parseInt(btn.dataset.mi, 10);
         if (btn.dataset.act === 'grade') grade(mi2);
         else if (btn.dataset.act === 'review') reviewQuiz(mi2);
+        else if (btn.dataset.act === 'publish') publishQuiz(mi2, box);
       });
       box.addEventListener('input', function (e) {
         var el = e.target.closest('.ai-input');
@@ -700,45 +878,62 @@
     });
   }
 
-  function sendText(text) {
+  function sendText(text, opts) {
     text = String(text || '').trim();
     if (!text || S.busy) return;
-    S.messages.push({ role: 'user', content: text });
+    /* 联网判定：开关开着、并且问的是「最新/时间/政策」这类才去搜（见 TW.ai.needsWeb）。
+       搜不到也照常发——模型手里有 system 里的约束，不会再说「我无法联网」。 */
+    var wantWeb = (opts && typeof opts.web === 'boolean') ? opts.web : (S.webOn && TW.ai.needsWeb(text));
+    S.messages.push({ role: 'user', content: text, web: wantWeb ? 'pending' : '' });
     S.draft = '';
     var inp = TW.$('#ai-input');
     if (inp) { inp.value = ''; autoGrow(inp); }
-    S.busy = true; S.streamText = ''; S.err = ''; S.stick = true;
+    S.busy = true; S.streamText = ''; S.err = ''; S.stick = true; S.searching = !!wantWeb;
     var bar = TW.$('#ai-send');
     if (bar) bar.classList.add('stop');
     paintMsgs();
     scrollBottom(true);
+    persist();       // 用户这句先落盘：万一关掉页面，至少问题还在历史里
 
-    S.ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    var lastPaint = 0;
-    TW.ai.streamChat({
-      system: buildSystem(),
-      messages: history(),
-      maxTokens: 1800,
-      temperature: 0.6,
-      signal: S.ctrl ? S.ctrl.signal : undefined
-    }, function (soFar) {
-      S.streamText = soFar;
-      /* 40ms 节流：每个 token 都重排 Markdown 会明显掉帧 */
-      var now = Date.now();
-      if (now - lastPaint > 40) { lastPaint = now; patchStream(); }
-    }).then(function (r) {
-      finishStream(r.text);
-    }, function (e) {
-      if (e && e.aborted) {
-        finishStream(S.streamText, '（已停止）');
-        return;
+    var go = function (searchPack) {
+      S.searching = false;
+      S.ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var lastPaint = 0;
+      TW.ai.streamChat({
+        system: buildSystem(searchPack),
+        messages: history(),
+        maxTokens: 1800,
+        temperature: 0.6,
+        signal: S.ctrl ? S.ctrl.signal : undefined
+      }, function (soFar) {
+        S.streamText = soFar;
+        /* 40ms 节流：每个 token 都重排 Markdown 会明显掉帧 */
+        var now = Date.now();
+        if (now - lastPaint > 40) { lastPaint = now; patchStream(); }
+      }).then(function (r) {
+        finishStream(r.text);
+      }, function (e) {
+        if (e && e.aborted) {
+          finishStream(S.streamText, '（已停止）');
+          return;
+        }
+        S.busy = false;
+        S.err = explain(e && e.message ? e.message : '请求失败');
+        if (S.err.indexOf('还没配置') >= 0) S.err += '，去「设置」填一下。';
+        S.streamText = '';
+        var b = TW.$('#ai-send'); if (b) b.classList.remove('stop');
+        paintMsgs();
+      });
+    };
+
+    if (!wantWeb) { go(null); return; }
+    TW.ai.searchWeb(text).then(function (pack) {
+      var last = S.messages[S.messages.length - 1];
+      if (last && last.role === 'user') {
+        last.web = pack.results.length ? (pack.results.length + ' 条') : 'none';
       }
-      S.busy = false;
-      S.err = explain(e && e.message ? e.message : '请求失败');
-      if (S.err.indexOf('还没配置') >= 0) S.err += '，去「设置」填一下。';
-      S.streamText = '';
-      var b = TW.$('#ai-send'); if (b) b.classList.remove('stop');
-      paintMsgs();
+      S.lastSearch = pack;
+      go(pack);
     });
   }
 
@@ -777,6 +972,7 @@
     }
     paintMsgs();
     scrollBottom(true);
+    persist();
     var inp = TW.$('#ai-input');
     if (inp) inp.focus();
   }
@@ -831,6 +1027,22 @@
     S.messages[mi] = m;
     paintMsgs();
     TW.toast('这组题 ' + q.acc + '%', q.acc >= 60 ? 'ok' : '');
+  }
+
+  /** 把这一组 AI 出的题固定到「题目板块」，之后可以反复练（离线也能做） */
+  function publishQuiz(mi) {
+    var m = S.messages[mi];
+    if (!m || !m.quiz) return;
+    if (!TW.quiz) { TW.toast('题目板块没加载成功，刷新一下试试'); return; }
+    var n = m.quiz.exercises.length;
+    var d = new Date();
+    var rec = TW.quiz.publish({
+      exercises: m.quiz.exercises,
+      title: 'AI 出题 · ' + (d.getMonth() + 1) + '/' + d.getDate() + ' · ' + n + ' 题'
+    });
+    if (!rec) { TW.toast('这组题没有可用题目'); return; }
+    TW.toast('已发布到题目板块', 'ok');
+    paintRail();
   }
 
   function reviewQuiz(mi) {

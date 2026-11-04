@@ -24,6 +24,7 @@
  *   POST /api/me/sync           {progress,daily,srs,deleted,mode} -> {progress,daily,srs,syncedAt}
  *   POST /api/ai/chat           {provider,apiKey,model,messages,...} -> {text,model,usage}  （AI 助手转发，不落库）
  *   POST /api/ai/models         {provider,apiKey,baseUrl?}          -> {models:[...]}       （拉模型列表）
+ *   POST /api/ai/search         {q,count?}                          -> {results:[...]}      （联网检索，Bing RSS）
  *   GET  /api/admin/users                                      -> {users:[...]}
  *   GET  /api/admin/users/:id                                  -> {user, progress, daily, srs}
  *   POST /api/admin/users/:id/password  {password}              -> {ok}
@@ -908,6 +909,237 @@ async function handleAiModels(request) {
   return jsonBody({ models: uniq.slice(0, 200), provider: provider });
 }
 
+/* POST /api/ai/search
+   {q, count?} -> {results:[{title,url,snippet,host}], engine, q}
+   为什么要走 Worker：Bing / DDG 都不给浏览器 CORS 响应，前端直连必被拦。
+   用 Bing 的 RSS 输出（&format=rss）拿结构化结果——比抓 HTML 稳（没有前端渲染、
+   也不容易落到验证码页），而且免费、不需要 Key。失败时返回 200 + 空数组：
+   前端据此让模型「按已有知识照常回答」，绝不把「检索失败」显示成「AI 坏了」。 */
+const SEARCH_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36';
+
+function decodeXml(s) {
+  return String(s || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&');
+}
+
+function tidyText(s, max) {
+  const t = decodeXml(s).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  return t.length > max ? t.slice(0, max) + '…' : t;
+}
+
+function parseBingRss(xml) {
+  const out = [];
+  const re = /<item>([\s\S]*?)<\/item>/g;
+  let m;
+  while ((m = re.exec(xml))) {
+    const blk = m[1];
+    const t = /<title>([\s\S]*?)<\/title>/.exec(blk);
+    const l = /<link>([\s\S]*?)<\/link>/.exec(blk);
+    const d = /<description>([\s\S]*?)<\/description>/.exec(blk);
+    if (!t || !l) continue;
+    const url = decodeXml(l[1]).trim();
+    if (!/^https?:/i.test(url)) continue;
+    let host = '';
+    try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (e) { continue; }
+    out.push({
+      title: tidyText(t[1], 160),
+      url: url,
+      snippet: tidyText(d ? d[1] : '', 260),
+      host: host
+    });
+  }
+  return out;
+}
+
+/* DDG 的 HTML 版：结果链接是 //duckduckgo.com/l/?uddg=<编码后的真实地址>，要解开。
+   lite 版（lite.duckduckgo.com/lite/）与 html 版（html.duckduckgo.com/html/）标记不同：
+     lite: <a ... href="..." class='result-link'>标题</a> + <td class='result-snippet'>
+     html: <a class="result__a" href="...">标题</a> + <a class="result__snippet">
+   实测：从 Cloudflare 出口访问 lite 版能拿到真结果（html 版常被 202 拦成验证页）。 */
+function parseDdg(html) {
+  const out = [];
+  const titles = [];
+  const snips = [];
+  let m;
+  const linkRe = /<a[^>]+href=["']([^"']+)["'][^>]*class=["'][^"']*result[-_](?:link|a)[^"']*["'][^>]*>([\s\S]*?)<\/a>/g;
+  while ((m = linkRe.exec(html))) titles.push([m[1], m[2]]);
+  /* 反向顺序（class 在前 href 在后）的写法也认一下 */
+  if (!titles.length) {
+    const alt = /<a[^>]+class=["'][^"']*result[-_](?:link|a)[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/g;
+    while ((m = alt.exec(html))) titles.push([m[1], m[2]]);
+  }
+  const snipRe = /<(?:td|a)[^>]+class=["'][^"']*result[-_]snippet[^"']*["'][^>]*>([\s\S]*?)<\/(?:td|a)>/g;
+  while ((m = snipRe.exec(html))) snips.push(m[1]);
+
+  titles.forEach(function (pair, i) {
+    let url = decodeXml(pair[0]);
+    const hit = /[?&]uddg=([^&]+)/.exec(url);
+    if (hit) {
+      try { url = decodeURIComponent(hit[1]); } catch (e) { return; }
+    }
+    if (url.startsWith('//')) url = 'https:' + url;
+    if (!/^https?:/i.test(url)) return;
+    let host = '';
+    try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return; }
+    out.push({
+      title: tidyText(pair[1], 160),
+      url: url,
+      snippet: tidyText(snips[i] || '', 260),
+      host: host
+    });
+  });
+  return out;
+}
+
+/* 必应资讯 RSS：从 Cloudflare 出口唯一稳定能用的一个（实测 2026-11-04）。
+   条目 link 是跳转壳 http://www.bing.com/news/apiclick.aspx?...&url=<真实地址>，要解开；
+   还带 <pubDate> 与 <News:Source>（媒体名），拼进摘要里，模型回答「什么时候」时有用。 */
+function parseBingNews(xml) {
+  const out = [];
+  const re = /<item>([\s\S]*?)<\/item>/g;
+  let m;
+  while ((m = re.exec(xml))) {
+    const blk = m[1];
+    const t = /<title>([\s\S]*?)<\/title>/.exec(blk);
+    const l = /<link>([\s\S]*?)<\/link>/.exec(blk);
+    const d = /<description>([\s\S]*?)<\/description>/.exec(blk);
+    const p = /<pubDate>([\s\S]*?)<\/pubDate>/.exec(blk);
+    const s = /<News:Source>([\s\S]*?)<\/News:Source>/.exec(blk);
+    if (!t || !l) continue;
+    let url = decodeXml(l[1]).trim();
+    const hit = /[?&]url=([^&]+)/.exec(url);
+    if (hit) { try { url = decodeURIComponent(hit[1]); } catch (e) { /* 保持原链接 */ } }
+    if (!/^https?:/i.test(url)) continue;
+    let host = '';
+    try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (e) { continue; }
+    let when = '';
+    if (p) {
+      const dt = new Date(decodeXml(p[1]));
+      if (!isNaN(dt.getTime())) when = dt.toISOString().slice(0, 10);
+    }
+    const meta = [when, s ? tidyText(s[1], 20) : ''].filter(Boolean).join(' · ');
+    out.push({
+      title: tidyText(t[1], 160),
+      url: url,
+      snippet: (meta ? '[' + meta + '] ' : '') + tidyText(d ? d[1] : '', 240),
+      host: host
+    });
+  }
+  return out;
+}
+
+/* 相关性闸门：实测 Cloudflare 出口有时会从 Bing 拿到「热门话题」这种和查询无关的条目
+   （中文查询尤其明显）。这种结果塞给模型比不给更糟——它会当成事实来答。
+   判据：把查询切成英文词 + 中文二元组，标题/摘要里至少命中一个才算相关。 */
+function queryTokens(q) {
+  const t = String(q || '').toLowerCase();
+  const out = (t.match(/[a-z][a-z0-9-]{2,}/g) || []).slice();
+  const cjk = (t.match(/[\u4e00-\u9fa5]+/g) || []).join('');
+  for (let i = 0; i + 1 < cjk.length; i++) out.push(cjk.slice(i, i + 2));
+  return out;
+}
+
+function relevantOnly(items, q) {
+  const tk = queryTokens(q);
+  if (!tk.length) return items;
+  return items.filter(function (it) {
+    const hay = (it.title + ' ' + it.snippet).toLowerCase();
+    return tk.some(function (k) { return hay.indexOf(k) >= 0; });
+  });
+}
+
+async function handleAiSearch(request) {
+  const body = await readJson(request);
+  const q = String(body.q || '').trim().slice(0, 200);
+  if (!q) return fail('缺少检索关键词');
+  /* 临时诊断口：{q, probe:1} → 各路引擎的原始状态与开头片段（排查「搜出来是热门话题」时用） */
+  if (body.probe) {
+    const qs = encodeURIComponent(q);
+    const cands = [
+      ['gnews', 'https://news.google.com/rss/search?hl=zh-CN&gl=CN&ceid=CN:zh-Hans&q=' + qs],
+      ['bingnews', 'https://www.bing.com/news/search?format=rss&q=' + qs],
+      ['bing-rss', 'https://www.bing.com/search?format=rss&mkt=zh-CN&q=' + qs],
+      ['ddg-lite', 'https://lite.duckduckgo.com/lite/?q=' + qs]
+    ];
+    const out = [];
+    for (const c of cands) {
+      if (body.at && body.atName && c[0] !== String(body.atName)) continue;
+      try {
+        const r = await fetch(c[1], {
+          headers: { 'User-Agent': SEARCH_UA, 'Accept': 'text/html,application/json', 'Accept-Language': 'zh-CN,zh;q=0.9' },
+          redirect: 'follow', signal: AbortSignal.timeout(10000)
+        });
+        const t = await r.text();
+        /* 去掉 <style>/<script>：百度/必应页面头部有几万字符的 CSS，不剥掉，
+           任何标记计数和取样都会落在样式表里（踩过一次）。 */
+        const clean = t.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<script[\s\S]*?<\/script>/gi, '');
+        const counts = {};
+        const wins = [];
+        ['class="result', "class='result", 'result-link', 'result__a', 'c-showurl', 'title-a', 'cosc-title', 'captcha', '验证', 'c-abstract'].forEach(function (k) {
+          let n = 0, i = 0, first = -1;
+          while ((i = clean.indexOf(k, i)) >= 0) { n++; if (first < 0) first = i; i += k.length; }
+          if (n) counts[k] = n;
+          if (n && body.win && wins.length < 4) {
+            wins.push(k + ':' + clean.slice(Math.max(0, first - 80), first + 320).replace(/\s+/g, ' '));
+          }
+        });
+        out.push({ name: c[0], status: r.status, len: t.length, counts: counts, wins: wins,
+          chunk: body.at ? (function () {
+            const i = clean.indexOf(String(body.at));
+            return i < 0 ? '(未找到 ' + body.at + ')' : clean.slice(Math.max(0, i - 200), i + 1800);
+          })() : '',
+          head: clean.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 100) });
+      } catch (e) { out.push({ name: c[0], status: 0, err: String(e && e.message || e).slice(0, 80) }); }
+    }
+    return jsonBody({ probe: out });
+  }
+  const want = Math.min(8, Math.max(3, Number(body.count) || 6));
+  const qs = encodeURIComponent(q);
+  /* 顺序即优先级（2026-11-04 在 Cloudflare 出口逐个实测过）：
+     · bingnews 必应资讯 RSS —— 唯一稳定可用，新闻源正好覆盖「考试时间/报名/政策」这类问题；
+     · bing 必应网页 RSS —— 有时能出真结果，有时只回「热门话题」，靠下面的相关性闸门挡；
+     · ddg lite / html —— 经常被 202 拦成验证页，留着当第三手。
+     cn.bing.com、google news、mojeek、searx 各实例、百度、搜狗都试过，从机房 IP 一律被拦或返回空。 */
+  const engines = [
+    { name: 'bingnews', url: 'https://www.bing.com/news/search?format=rss&q=' + qs,
+      parse: function (t) { return parseBingNews(t); } },
+    { name: 'bing', url: 'https://www.bing.com/search?format=rss&mkt=zh-CN&setlang=zh-cn&q=' + qs,
+      parse: function (t) { return parseBingRss(t); } },
+    { name: 'ddg', url: 'https://lite.duckduckgo.com/lite/?kl=cn-zh&q=' + qs,
+      parse: function (t) { return parseDdg(t); } },
+    { name: 'ddg', url: 'https://html.duckduckgo.com/html/?kl=cn-zh&q=' + qs,
+      parse: function (t) { return parseDdg(t); } }
+  ];
+  const dbg = [];      // 每次请求都带上（很小）：出问题时不用再猜是哪一路挂的
+  for (const e of engines) {
+    try {
+      const res = await fetch(e.url, {
+        headers: {
+          'User-Agent': SEARCH_UA,
+          'Accept': e.name === 'ddg' ? 'text/html,application/xhtml+xml' : 'application/rss+xml, application/xml, text/xml',
+          'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+          'Referer': 'https://' + (e.name === 'ddg' ? 'duckduckgo.com/' : 'www.bing.com/')
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(12000)
+      });
+      if (!res.ok) { dbg.push(e.name + ':' + res.status); continue; }
+      const txt = await res.text();
+      const items = e.parse(txt);
+      if (!items.length) { dbg.push(e.name + ':0items/' + txt.length + 'B'); continue; }
+      const rel = relevantOnly(items, q);
+      dbg.push(e.name + ':' + items.length + '→' + rel.length);
+      /* 一条都不相关就换下一路：把「热门话题」当检索结果喂给模型，比不喂更糟 */
+      if (rel.length) return jsonBody({ results: rel.slice(0, want), engine: e.name, q: q, dbg: dbg });
+    } catch (err) { dbg.push(e.name + ':ERR ' + String(err && err.message || err).slice(0, 60)); }
+  }
+  return jsonBody({ results: [], engine: '', q: q, dbg: dbg, error: '检索服务暂时没有返回结果' });
+}
+
 /* POST /api/ai/chat
    {provider, apiKey, model, baseUrl?, system?, messages:[{role,content}], maxTokens?, temperature?}
    -> {text, model, usage} */
@@ -1071,6 +1303,7 @@ export default {
          所以放在 DB 检查之前 —— 后端没绑库时照样能用。 */
       if (path === '/api/ai/chat' && method === 'POST') return withCors(await handleAiChat(request));
       if (path === '/api/ai/models' && method === 'POST') return withCors(await handleAiModels(request));
+      if (path === '/api/ai/search' && method === 'POST') return withCors(await handleAiSearch(request));
 
       if (!env.DB) return withCors(fail('后端未绑定 D1 数据库（检查 wrangler.toml 的 d1_databases）', 500));
 

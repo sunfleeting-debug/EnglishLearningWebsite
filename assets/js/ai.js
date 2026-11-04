@@ -680,6 +680,123 @@
     return L.join('\n');
   }
 
+  /* ---------------- 联网检索 ----------------
+     sunfleeting 2026-11-04：「为什么不能联网，你修一下呀」——
+     模型本身没有浏览器，但本站可以替它去搜：Worker 用 Bing 的 RSS 出口拿结果
+     （免费、不用 Key、给浏览器 CORS 拦不住），再把摘要塞进 system。
+     所以真正的修法有两半：① 真要能搜到东西；② 搜不到时模型也不许说「我无法联网」。 */
+  function searchWeb(q, count) {
+    var text = String(q || '').trim();
+    if (!text) return Promise.resolve({ results: [] });
+    return TW.api.request('POST', '/api/ai/search', { q: text.slice(0, 120), count: count || 6 }, { timeout: 15000 })
+      .then(function (r) { return { results: (r && r.results) || [], q: text, error: (r && r.error) || '' }; },
+            function (e) { return { results: [], q: text, error: (e && e.message) || '检索失败' }; });
+  }
+
+  /* 哪些问题值得先搜一下：时间敏感 / 事实性 / 明确要好处的「最新」类问法。
+     宁可多搜一次（一次 RSS 请求，几百毫秒），也别让模型凭记忆编考试时间。 */
+  var WEB_HINT = new RegExp([
+    '最新', '最近', '近来', '今年', '去年', '明年', '今天', '昨天', '明天', '现在', '目前', '当前', '实时',
+    '新闻', '热点', '政策', '规定', '改革', '大纲', '题型变化',
+    '考试时间', '报名', '准考证', '成绩查询', '查分', '分数线', '真题下载',
+    '官网', '价格', '多少钱', '发布', '版本', '截止', '什么时候', '几月', '几号',
+    '20(2[5-9]|[3-9]\d)'
+  ].join('|'), 'i');
+
+  /* 「帮我分析最近的学习情况」这种问的是自己的数据（快照里全都有），搜了纯浪费；
+     而「我最近要不要报六级，报名时间几号」有外部事实对象，照常搜。
+     判据：句子里有「我/本站」+ 学习类对象，且没有外部事实词。 */
+  var EXTERNAL = /(考试|报名|政策|大纲|官网|真题|分数线|查分|成绩查询|新闻|改革|几月|几号|什么时候|时间|价格|多少钱|版本|发布|截止)/;
+  var MINE = /(学习|词|进度|记录|成绩|统计|正确率|复习|掌握|场次|数据|表现|情况|错)/;
+
+  function personal(t) {
+    if (!/(我|自己|本站|这个站)/.test(t)) return false;
+    if (EXTERNAL.test(t)) return false;
+    return MINE.test(t);
+  }
+
+  function needsWeb(text) {
+    var t = String(text || '');
+    if (!t || t.length > 200) return false;
+    if (/^(继续|好的|谢谢|嗯|ok|OK)$/.test(t.trim())) return false;
+    if (personal(t)) return false;
+    return WEB_HINT.test(t);
+  }
+
+  /** 把检索结果压成给模型看的短文本（带域名，方便它标注来源） */
+  function searchBrief(pack) {
+    var rs = (pack && pack.results) || [];
+    if (!rs.length) return '';
+    var L = ['【联网检索结果】（本站代你检索，' + fmtDate(new Date()) + '）'];
+    rs.slice(0, 6).forEach(function (r, i) {
+      L.push((i + 1) + '. ' + r.title + ' — ' + (r.snippet || '（无摘要）') + '（来源：' + r.host + '）');
+    });
+    L.push('用法：事实以这些结果为准，句末标一句来源域名；与问题无关的结果直接忽略。');
+    return L.join('\n');
+  }
+
+  function fmtDate(d) {
+    function p(n) { return (n < 10 ? '0' : '') + n; }
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  /* ---------------- 历史对话 ----------------
+     存独立 localStorage 键（和 Key 分开）：对话里有学习数据、题目，体积大，
+     没必要进同步协议；换设备重来也符合「Key 只在本机」的设定。
+     每条消息截断到 4000 字、每条会话最多 40 条，避免长对话把 5MB 配额吃满。 */
+  var TK = 'typingcet.ai.chat.v1';
+  var THREAD_MAX = 30;
+
+  function readThreads() {
+    try {
+      var raw = localStorage.getItem(TK);
+      var arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.filter(function (t) { return t && t.id && Array.isArray(t.messages); }) : [];
+    } catch (e) { return []; }
+  }
+  function writeThreads(list) {
+    try { localStorage.setItem(TK, JSON.stringify(list.slice(0, THREAD_MAX))); } catch (e) { /* 满了就算了 */ }
+  }
+  function trimMsg(m) {
+    var o = { role: m.role, content: String(m.content || '').slice(0, 4000) };
+    if (m.quiz) o.quiz = m.quiz;
+    return o;
+  }
+  function threadTitle(messages) {
+    for (var i = 0; i < messages.length; i++) {
+      if (messages[i].role === 'user') {
+        var t = String(messages[i].content || '').replace(/\s+/g, ' ').trim();
+        return t.length > 24 ? t.slice(0, 24) + '…' : (t || '新对话');
+      }
+    }
+    return '新对话';
+  }
+  function listThreads() {
+    return readThreads().sort(function (a, b) { return (b.ts || 0) - (a.ts || 0); });
+  }
+  function getThread(id) {
+    var list = readThreads();
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+  function saveThread(t) {
+    if (!t || !t.id || !t.messages || !t.messages.length) return null;
+    var list = readThreads().filter(function (x) { return x.id !== t.id; });
+    var rec = {
+      id: t.id, ts: Date.now(), title: threadTitle(t.messages),
+      messages: t.messages.slice(-40).map(trimMsg)
+    };
+    list.unshift(rec);
+    writeThreads(list);
+    return rec;
+  }
+  function removeThread(id) {
+    writeThreads(readThreads().filter(function (x) { return x.id !== id; }));
+  }
+  function newThreadId() {
+    return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
   TW.ai = {
     PROVIDERS: PROVIDERS,
     provider: provider,
@@ -701,6 +818,14 @@
     md: md,
     snapshot: snapshot,
     briefText: briefText,
+    searchWeb: searchWeb,
+    needsWeb: needsWeb,
+    searchBrief: searchBrief,
+    listThreads: listThreads,
+    getThread: getThread,
+    saveThread: saveThread,
+    removeThread: removeThread,
+    newThreadId: newThreadId,
     bookName: bookName
   };
 })();

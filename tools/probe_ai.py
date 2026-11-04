@@ -136,6 +136,17 @@ def main():
             status=200, content_type="application/json",
             headers={"Access-Control-Allow-Origin": "*"},
             body=json.dumps({"models": ["deepseek-chat", "deepseek-reasoner"], "provider": "deepseek"})))
+        # 联网检索也 mock 掉：正常情况不该被触发（见下面第 6 步的断言），
+        # 万一以后哪句样本命中了 WEB_HINT，也不会真的去连 workers.dev 拖慢探针。
+        searches = []
+
+        def fake_search(route):
+            searches.append(route.request.post_data)
+            route.fulfill(status=200, content_type="application/json",
+                          headers={"Access-Control-Allow-Origin": "*"},
+                          body=json.dumps({"results": [], "engine": "mock", "q": ""}))
+
+        pg.route("**/api/ai/search", fake_search)
 
         pg.goto(BASE + "#/ai", wait_until="domcontentloaded")
         pg.wait_for_function("() => window.TW && TW.ai && TW.app")
@@ -245,6 +256,8 @@ def main():
         check("助手回复渲染 markdown", "<b>" in html, html[:100])
         check("列表渲染成 ul", "ai-ul" in html or "<li>" in html, html[:100])
         check("输入框已清空", pg.evaluate("() => document.querySelector('#ai-input').value") == "")
+        # 「我最近的学习情况」是自己的数据（system 快照里有），不该触发联网检索
+        check("「我最近的学习情况」不触发联网检索", searches == [], searches[:2])
 
         # ---- 7. 设置页 / 深色 ----
         pg.goto(BASE + "#/settings", wait_until="domcontentloaded")

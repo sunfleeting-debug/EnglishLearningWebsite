@@ -496,9 +496,16 @@ def main():
         pg.keyboard.press("Enter")
         pg.wait_for_timeout(700)
         rec = pg.evaluate("(w) => TW.store.srs.get(w)", rword)
+        # 🔴 2026-11-04 起间隔改成 今天/1/2/3/4/6/7/10 天：第 1 档落在「今天」，
+        #    也就是当天还要再巩固一次；再答对一次才推到明天。
         check("答对后复习档位升到第 1 档", bool(rec and rec.get("b") == 1), True)
-        check("答对后到期日 = 明天", bool(rec and rec.get("d") == pg.evaluate(
-            "() => TW.store.addDays(TW.store.today(), 1)")), True)
+        check("第 1 档到期日 = 今天（当天再巩固）", bool(rec and rec.get("d") == pg.evaluate(
+            "() => TW.store.today()")), True)
+        check("当天仍在待复习里（还没清零）", pg.evaluate("() => TW.store.srs.dueCount()") >= 1, True)
+        pg.evaluate("(w) => TW.store.srs.onResult(w, true, '', '')", rword)
+        rec2 = pg.evaluate("(w) => TW.store.srs.get(w)", rword)
+        check("第 2 次答对 → 第 2 档、明天到期", bool(rec2 and rec2.get("b") == 2 and rec2.get("d") ==
+              pg.evaluate("() => TW.store.addDays(TW.store.today(), 1)")), True)
         check("今日待复习清零", pg.evaluate("() => TW.store.srs.dueCount()"), 0)
         pg.screenshot(path=str(SHOTS / "31-srs-done.png"))
 

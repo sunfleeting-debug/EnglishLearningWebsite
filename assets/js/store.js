@@ -311,8 +311,11 @@
 
   /* ================= 艾宾浩斯复习队列 ================= */
 
-  /* 7 档间隔（天）：答对一次升一档，答错直接归零、当天重新回到队列 */
-  var INTERVALS = [1, 2, 4, 7, 15, 30, 60];
+  /* 8 档间隔（天）：答对一次升一档，答错直接归零、当天重新回到队列。
+     🔴 sunfleeting 2026-11-04：原来的 1/2/4/7/15/30/60 太疏，「今天」这一档最重要 ——
+     错的词当天就得再见一次；之后 1/2/3/4/6/7/10 天，10 天就到顶（满档）。
+     第一档是 0 天（今天），所以刚答对的词当天还会被再抽到一次，第二天才进入 +1 天。 */
+  var INTERVALS = [0, 1, 2, 3, 4, 6, 7, 10];
 
   function srsKey(word) { return String(word == null ? '' : word).toLowerCase(); }
 
@@ -533,7 +536,7 @@
     recentWrong: function () { return state.recentWrong.slice(); },
     addSession: addSession, sessions: sessions,
     setSetting: setSetting, counts: counts, srcStats: srcStats, today: today,
-    addDays: addDays, diffDays: diffDays, RANGES: RANGES, rangeMs: rangeMs,
+    addDays: addDays, diffDays: diffDays, ymd: ymd, RANGES: RANGES, rangeMs: rangeMs,
     applyRemote: applyRemote,
     dirty: {
       peek: function () { return dirty; },

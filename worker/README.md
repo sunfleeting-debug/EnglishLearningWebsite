@@ -92,6 +92,7 @@ python tools/verify_backend.py      # 端到端核验（自己拉起 mock）
 | POST | `/api/me/sync` | 推送增量并取回合并后的全量进度 |
 | POST | `/api/ai/chat` | AI 助手转发（用户自带 Key，不落库；`stream:true` 时回 SSE） |
 | POST | `/api/ai/models` | 拉该 Key 可用的模型列表（转发上游 `/models`，供前端下拉框用） |
+| POST | `/api/ai/search` | 联网检索（服务端抓 Bing RSS / DDG，免费无 Key，返回带域名的摘要） |
 | GET | `/api/admin/users` | 用户列表 + 各项统计（仅管理员） |
 | GET | `/api/admin/users/:id` | 某用户的完整进度（仅管理员） |
 | POST | `/api/admin/users/:id/password` | 重置某用户密码（仅管理员） |
@@ -131,6 +132,26 @@ POST /api/ai/models
 - 兼容三种上游返回：`{data:[{id}]}`（OpenAI 系）、`{models:[...]}`（部分国产网关）、纯数组；去重后排序，`embed/tts/whisper/rerank` 这类非对话模型排到最后。
 - 前端按 `provider + Key 后 6 位`缓存列表，换 Key 自动失效。
 - 少数自建接口没实现 `/models`：前端留「手动填写」兜底。
+
+### `/api/ai/search` 联网检索
+
+模型自己不能上网，而浏览器直连搜索引擎会被 CORS 拦，所以由 Worker 抓一次结果：
+
+```
+POST /api/ai/search
+{ q, count? }              → { results:[{title,url,snippet,host}], engine, q, dbg }
+{ q, probe:1 }             → { probe:[...] }   # 诊断口：各路引擎的 status / 标记计数 / 取样
+```
+
+- **顺序**：必应**资讯** RSS → 必应网页 RSS → DuckDuckGo（lite / html）。第一条命中相关结果就返回。
+- 🔴 2026-11-04 在 Cloudflare 出口逐个实测过：`cn.bing.com` RSS、Google News RSS、Mojeek、
+  SearXNG 各公共实例、百度、搜狗**全部被拦或返回空/验证页**；DuckDuckGo 常被 202 挡；
+  Bing 网页 RSS 时好时坏（机房 IP 会拿到「热门话题」那种与查询无关的条目）。
+  **唯一稳定的是必应资讯 RSS**（新闻源正好覆盖考试时间/报名/政策这类问题）。
+- **相关性闸门**：查询切成英文词 + 中文二元组，标题/摘要里至少命中一个才算数。
+  宁可这轮不返回，也不把「热门话题」当检索结果喂给模型 —— 那比不搜更糟。
+- 失败返回 **200 + 空数组**（不是 5xx）：前端据此让模型按已有知识照常回答，
+  绝不把「检索失败」显示成「AI 坏了」。检索结果只在这一次请求的内存里，不落库。
 
 ### `/api/me/sync` 的合并规则
 

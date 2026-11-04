@@ -1,5 +1,6 @@
 /* 复习页：艾宾浩斯遗忘曲线队列
-   答错的词自动进入队列；答对升档（1/2/4/7/15/30/60 天），答错归零档、当天再练一次（当天再错就顺延到明天）。 */
+   答错的词自动进入队列；答对升档（今天/1/2/3/4/6/7/10 天，8 档封顶），
+   答错归零档、当天再练一次（当天再错就顺延到明天）。 */
 (function () {
   'use strict';
   var TW = window.TW = window.TW || {};
@@ -13,6 +14,13 @@
     { id: 'listen', name: '听音写词' },
     { id: 'flash', name: '翻卡记忆' }
   ];
+
+  /** 间隔文案：第一档是 0 天，直接叫「今天」，别显示成「今天 + 0 天」 */
+  function spanText() {
+    return TW.store.srs.INTERVALS.map(function (d) {
+      return d === 0 ? '今天' : d + ' 天';
+    }).join(' / ');
+  }
 
   function dueText(d) {
     var n = TW.store.diffDays(TW.store.today(), d);
@@ -39,7 +47,7 @@
         '<div class="card card-pad">' + TW.ui.empty('复习队列还是空的') +
           '<div class="muted small" style="text-align:center;max-width:560px;margin:0 auto 1rem">' +
             '在「练习」里答错的单词会自动进入复习队列：<b>当天再练一次</b>，之后每答对一次，' +
-            '间隔就按 <b>' + intervals.join(' / ') + '</b> 天逐档拉长；答错则归零重来（当天已练过就顺延到明天）。' +
+            '间隔就按 <b>' + spanText() + '</b> 逐档拉长；答错则归零重来（当天已练过就顺延到明天）。' +
             '你也可以在任意单词详情页点 <b>' + TW.icon('refresh', 13) + '</b> 手动加入。</div>' +
           '<div class="row" style="justify-content:center">' +
             '<button class="btn primary" id="sr-go-practice">' + TW.icon('play', 16) + ' 去练习</button>' +
@@ -116,7 +124,7 @@
       '</div></div>';
 
     host.innerHTML = '<div class="wrap">' +
-      TW.ui.pageHead('复习', '答错的词自动入队，按 ' + intervals.join(' / ') + ' 天的间隔滚动复习') +
+      TW.ui.pageHead('复习', '答错的词自动入队，按 ' + spanText() + ' 的间隔滚动复习') +
       sentenceCard +
 
       '<div class="grid stats" style="margin-bottom:1.2rem">' +
@@ -158,7 +166,7 @@
 
       '<div class="card card-pad muted small" style="margin-top:1rem">' +
         '<b>复习规则</b>：练习中答错的词自动进入队列。答对一次升一档，下次复习时间 = 今天 + ' +
-        '<b>1 / 2 / 4 / 7 / 15 / 30 / 60</b> 天；答错归零档，<b>当天再练一次</b>' +
+        '<b>' + spanText() + '</b>（第一档是当天再巩固一次，之后 1/2/3/4/6/7/10 天逐档拉长，10 天满档）；答错归零档，<b>当天再练一次</b>' +
         '（当天第二次还错就顺延到明天，昨天/更早入队的词同样顺延到明天——避免同一个词把每一轮都占满）。' +
         '可在「设置」里关闭自动入队。' +
         (stats.total ? ' <button class="btn sm ghost" id="sr-clear" style="margin-left:.4rem">' + TW.icon('trash', 14) + ' 清空队列</button>' : '') +

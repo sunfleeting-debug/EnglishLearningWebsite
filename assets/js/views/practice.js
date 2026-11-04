@@ -169,7 +169,14 @@
       if (resumed) return true;                                 // 会话续接不打断
       if (cfg.src !== '' || cfg.status !== 'all') return true;  // 只管学新词（词书/词典默认筛选）
       if (!session.some(isNew)) return true;                    // 这组全是旧词，无所谓
-      var due = TW.store.srs.dueList().length;
+      /* 🔴 排除「今天刚答对」的词：2026-11-04 起复习间隔第一档是「今天」，
+         刚答对的词当天会再被抽到一次 —— 如果拿 dueList().length 当提醒条件，
+         用户刚练完就又被弹「先复习再学新词」，纯属打扰。
+         今天刚答错的词（ok=0、ts=今天）仍然要提醒，那正是这条提醒存在的理由。 */
+      var tk = TW.store.today();
+      var due = TW.store.srs.dueList().filter(function (r) {
+        return !(r.ok > 0 && TW.store.ymd(new Date(r.ts || 0)) === tk);
+      }).length;
       if (!due) return true;
       var today = (function () {
         var d = new Date();
