@@ -128,6 +128,7 @@
 
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead('听力', '新闻 / 长对话 / 讲座，按六级题型出题；用浏览器语音朗读，可调速、可单段重播') +
+      '<div id="personal-materials"></div>' +
       '<div class="grid stats" style="margin-bottom:1.2rem">' +
         '<div class="stat-card"><div class="stat-num">' + l.length + '</div><div class="stat-label">套材料</div></div>' +
         '<div class="stat-card"><div class="stat-num">' + qn + '</div><div class="stat-label">题目</div></div>' +
@@ -141,6 +142,7 @@
         '做完再展开原文和译文，把「听错的那句」跟着读两遍。听力提分靠的是「听错-看原文-再听」这个循环。' +
       '</div>' +
     '</div>';
+    if (TW.personalMaterials) TW.personalMaterials.mount(host, 'listening');
   }
 
   /* ---------------- 做题页 ---------------- */

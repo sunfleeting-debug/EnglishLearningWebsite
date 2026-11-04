@@ -78,6 +78,7 @@
 
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead('写作', '翻译与作文都是主观题：可以先自己写，再让 AI 按六级标准批改（也能只看参考译文）') +
+      '<div id="personal-materials"></div>' +
       '<div class="grid stats" style="margin-bottom:1.2rem">' +
         '<div class="stat-card"><div class="stat-num">' + l.length + '</div><div class="stat-label">题目</div></div>' +
         '<div class="stat-card"><div class="stat-num accent">' + done + '</div><div class="stat-label">已批改</div></div>' +
@@ -93,6 +94,7 @@
         '一份改写稿和三个不同风格的候选版本。没配 AI 时也能看参考译文/范文。' +
       '</div>' +
     '</div>';
+    if (TW.personalMaterials) TW.personalMaterials.mount(host, 'writing');
   }
 
   /* ---------------- 批改协议 ---------------- */

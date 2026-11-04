@@ -146,6 +146,7 @@
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead('题目板块', '六级阅读真题（选词填空 / 段落匹配 / 仔细阅读）+ AI 出的题，做完当场看完整解析',
         '<a class="btn ghost" href="#/reading">' + TW.icon('file', 15) + ' 真题阅读原文</a>') +
+      '<div id="personal-materials"></div>' +
       '<div class="grid stats" style="margin-bottom:1.2rem">' +
         '<div class="stat-card"><div class="stat-num">' + sum.sets + '</div><div class="stat-label">题目组</div></div>' +
         '<div class="stat-card"><div class="stat-num accent">' + sum.done + '</div><div class="stat-label">已做</div></div>' +
@@ -159,6 +160,7 @@
         '解析保留书上的【定位】与【解析】原文，仔细阅读另附整篇参考译文。' +
       '</div>' +
     '</div>';
+    if (TW.personalMaterials) TW.personalMaterials.mount(host, 'quiz');
   }
 
   /* ---------------- 做题页 ---------------- */
