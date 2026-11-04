@@ -531,11 +531,12 @@ kbd {
 .wl-row:hover { background: var(--bg-soft); }
 .wl-row:last-child { border-bottom: none; }
 .wl-main { min-width: 0; flex: 1; }
-.wl-word { font-family: var(--mono); font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 0.45rem; }
+.wl-word { font-family: var(--mono); font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
 /* 单词链接：保持原有视觉（不加下划线、不改色），悬停才高亮 */
 .wl-link { color: inherit; text-decoration: none; }
 .wl-link:hover { color: var(--accent); }
-.wl-phon { font-family: var(--mono); font-size: 12px; color: var(--text-3); }
+/* 音标不许在词中间断行：窄屏上换到第二行显示（旧样子会把 /ɪks/ ˈteɪndʒ/ 压在单词上） */
+.wl-phon { font-family: var(--mono); font-size: 12px; color: var(--text-3); white-space: nowrap; }
 .wl-trans { font-size: 13px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; }
 .wl-side { display: flex; align-items: center; gap: 0.2rem; }
 .wl-num { font-family: var(--mono); font-size: 11.5px; color: var(--text-3); flex: 0 0 2rem; text-align: right; }
@@ -1627,3 +1628,59 @@ html.dark .ai-send.stop::after { background: #fff; }
 .ai-model-row .btn { flex: 0 0 auto; white-space: nowrap; }
 .ai-model-row .btn svg { vertical-align: -2px; }
 .ai-fl > .ai-model-row + .small { margin-top: 0.2rem; }
+
+/* ===== 分页增强：末页 + 页码跳转（sunfleeting：只有上一页/下一页太憋屈） ===== */
+.pager { flex-wrap: wrap; row-gap: 0.45rem; }
+.pg-jump {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 13px; color: var(--text-3);
+}
+.pg-input {
+  width: 3.6em; text-align: center;
+  font: inherit; font-size: 13px; font-family: var(--mono);
+  color: var(--text-1); background: var(--card);
+  border: 1px solid var(--line); border-radius: 7px;
+  padding: 0.22rem 0.3rem;
+}
+.pg-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+@media (max-width: 560px) {
+  .pager { gap: 0.35rem; }
+  .pg-jump { width: 100%; justify-content: center; }
+}
+
+/* 生词本 tab 多了以后允许换行，别把「练习这组」挤出屏幕 */
+#rv-tabs { flex-wrap: wrap; }
+
+/* ===== 统计页：场次可点开看答题明细 ===== */
+.sess-click { cursor: pointer; border-radius: 8px; transition: background var(--anim); }
+.sess-click:hover { background: var(--bg-soft); }
+.sess-click:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sess-chev { display: inline-block; margin-left: 0.3rem; color: var(--text-3); transition: transform var(--anim); vertical-align: -1px; }
+.sess-row.open .sess-chev { transform: rotate(90deg); color: var(--accent); }
+.sess-detail { padding: 0.15rem 0 0.6rem; }
+.sess-detail[hidden] { display: none; }
+.sd-head { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; margin-bottom: 0.4rem; }
+.sd-n-err { color: var(--err); }
+.sd-n-ok { color: var(--ok); }
+.sd-more { font-size: 12.5px; color: var(--accent); text-decoration: none; }
+.sd-more:hover { text-decoration: underline; }
+.sd-grid { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.sd-chip {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 13px; padding: 0.16rem 0.5rem; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text-1);
+  text-decoration: none;
+}
+.sd-chip:hover { border-color: var(--accent); }
+.sd-chip.err { border-color: var(--err); background: var(--err-soft); }
+.sd-chip.ok { color: var(--text-2); }
+.sd-mark { font-family: var(--mono); font-size: 11.5px; color: var(--err); }
+.sd-chip.ok .sd-mark { color: var(--ok); }
+
+/* 报错条里的「重试」：别把按钮撑成整行 */
+.ai-err { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.ai-err .ai-err-tx { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; }
+.ai-err #ai-retry { flex: 0 0 auto; margin-left: auto; }
+
+/* 单词行里的标签别被 flex 压扁成两行字（窄屏「刚刚」被断成「刚/刚」） */
+.wl-word > .tag { flex: 0 0 auto; white-space: nowrap; }

@@ -137,13 +137,58 @@
     return function () { root.removeEventListener('click', handler); };
   };
 
-  /** 分页控件 */
+  /** 分页控件（sunfleeting：只有上一页/下一页太憋屈，直接给「末页」和页码跳转） */
   ui.pager = function (page, pages, total) {
+    pages = Math.max(1, pages | 0);
     return '<div class="pager">' +
       '<button class="btn sm" data-pg="prev"' + (page <= 1 ? ' disabled' : '') + '>' + TW.icon('arrowLeft', 14) + ' 上一页</button>' +
-      '<span class="pg-info">' + page + ' / ' + Math.max(1, pages) + '（' + total + '）</span>' +
+      '<span class="pg-info">' + page + ' / ' + pages + '（' + total + '）</span>' +
       '<button class="btn sm" data-pg="next"' + (page >= pages ? ' disabled' : '') + '>下一页 ' + TW.icon('arrowRight', 14) + '</button>' +
+      '<button class="btn sm ghost" data-pg="last"' + (page >= pages ? ' disabled' : '') + ' title="跳到最后一页">末页</button>' +
+      '<span class="pg-jump">跳至 <input class="pg-input" data-pgin type="text" inputmode="numeric" ' +
+        'aria-label="页码" value="' + page + '"> 页' +
+        '<button class="btn sm ghost" data-pgjump>跳转</button></span>' +
     '</div>';
+  };
+
+  /**
+   * 给 ui.pager 生成的控件接线。root 是包含 .pager 的容器，
+   * go(page) 负责真正跳转（各视图自己决定怎么改 URL）。
+   */
+  ui.bindPager = function (root, page, pages, go) {
+    if (!root) return;
+    var box = root.querySelector('.pager');
+    if (!box) return;
+    var max = Math.max(1, pages | 0);
+    function jump(p) {
+      p = Math.max(1, Math.min(max, parseInt(p, 10) || 1));
+      if (p === page) return;
+      go(p);
+    }
+    box.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-pg],[data-pgjump]');
+      if (!b || b.disabled) return;
+      if (b.hasAttribute('data-pgjump')) {
+        var inp = box.querySelector('[data-pgin]');
+        jump(inp ? inp.value : page);
+        return;
+      }
+      var d = b.getAttribute('data-pg');
+      if (d === 'prev') jump(page - 1);
+      else if (d === 'next') jump(page + 1);
+      else if (d === 'last') jump(max);
+      else if (d === 'first') jump(1);
+    });
+    var input = box.querySelector('[data-pgin]');
+    if (input) {
+      /* 聚焦全选：直接敲数字就覆盖，不用先删掉当前页码 */
+      input.addEventListener('focus', function () { try { input.select(); } catch (err) {} });
+      input.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        jump(input.value);
+      });
+    }
   };
 
   ui.empty = function (text, ico) {

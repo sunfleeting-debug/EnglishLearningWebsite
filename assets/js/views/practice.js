@@ -69,12 +69,14 @@
       mode: MODES.some(function (m) { return m.id === query.mode; }) ? query.mode : 'type',
       order: query.order || TW.store.settings.order,
       status: query.status || 'all',
+      range: query.range || '3d',      // status=recent（生词本「最近学过」）的时间范围
       size: parseInt(query.size || '', 10) || TW.store.settings.sessionSize
     };
 
     /* 会话续接的 key：词源 + 筛选 + 顺序 + 组大小。mode 不参与——切模式要接着当前词练。
        （srcQuery 是函数声明，提升后此处可用） */
-    var sKey = srcQuery() + '|' + cfg.order + '|' + cfg.status + '|' + cfg.size;
+    var sKey = srcQuery() + '|' + cfg.order + '|' + cfg.status + '|' + cfg.size +
+      (cfg.status === 'recent' ? '|' + cfg.range : '');
     var resumed = null;   // 本次 render 是否命中了会话续接（begin 里据此恢复进度）
 
     /* 本实例的认领标记：#view 是复用的，新页面会改写 host.dataset.owner，
@@ -207,10 +209,21 @@
         }
         return due;
       }
-      /* status=learned（复习页「自由复习已学的词」）映射到 progressItems 的 touched 池 */
+      /* status=learned（复习页「自由复习已学的词」）映射到 progressItems 的 touched 池；
+         status=recent（生词本「最近学过」）也走 touched 池，再按时间范围过滤、倒序。 */
       var tab = (cfg.status === 'all' || cfg.status === 'new') ? 'wrong'
-              : cfg.status === 'learned' ? 'touched' : cfg.status;
-      return TW.data.progressItems(tab).map(function (it) {
+              : (cfg.status === 'learned' || cfg.status === 'recent') ? 'touched' : cfg.status;
+      var items = TW.data.progressItems(tab);
+      if (cfg.status === 'recent') {
+        var cut = Date.now() - TW.store.rangeMs(cfg.range);
+        items = items.filter(function (it) {
+          var p = TW.store.get(it.id) || {};
+          return (p.ts || 0) >= cut;
+        }).sort(function (a, b) {
+          return (TW.store.get(b.id).ts || 0) - (TW.store.get(a.id).ts || 0);
+        });
+      }
+      return items.map(function (it) {
         return { w: it.word, s: it.book || '', m: TW.data.brief(it), id: it.id };
       });
     }
@@ -256,7 +269,8 @@
     /** 词源在 URL 里的写法（模式切换 / 再来一轮都用它） */
     function srcQuery() {
       if (cfg.src === 'srs') return 'src=srs';
-      if (cfg.src === 'collection') return 'src=collection&status=' + cfg.status;
+      if (cfg.src === 'collection') return 'src=collection&status=' + cfg.status +
+        (cfg.status === 'recent' ? '&range=' + cfg.range : '');
       return 'book=' + encodeURIComponent(cfg.book);
     }
 
@@ -325,7 +339,8 @@
           i: 0, correct: 0, wrong: 0, phase: 'answering', // answering | retyping | feedback | done
           revealed: false, lastOk: false, hintShown: false,
           tries: 0,    // 本题已答错次数：第一次错只提示重做，不改判、不揭答案
-          spoke: false // 本词是否已自动发音（drawStage 在「看提示/翻面」时会重画，不标记会读两遍）
+          spoke: false, // 本词是否已自动发音（drawStage 在「看提示/翻面」时会重画，不标记会读两遍）
+          log: []      // 每题的判定结果 [{id,word,ok}]，场次明细用（统计页点开某场能看到具体哪几个词错了）
         };
       }
       resetRound();
@@ -335,12 +350,21 @@
         return;
       }
 
+      /** 记一条本题判定（每题只记一次：「照答案重打」不再重复记） */
+      function logItem(w, ok) {
+        st.log.push({ id: w.id, word: w.word, ok: ok ? 1 : 0 });
+      }
+
       /** 把当前进度快照到模块级 resume，供下次 render 续接（见模块顶部说明）。
           反馈阶段 = 当前题已判完，快照直接指向下一题，恢复后正好接着练。 */
       function saveResume() {
         resume = {
           key: sKey, session: session,
-          st: { i: st.phase === 'feedback' ? st.i + 1 : st.i, correct: st.correct, wrong: st.wrong }
+          st: {
+            i: st.phase === 'feedback' ? st.i + 1 : st.i,
+            correct: st.correct, wrong: st.wrong,
+            log: st.log.slice()          // 明细跟着续接走，否则统计页只剩后半场
+          }
         };
       }
 
@@ -349,6 +373,7 @@
         st.i = Math.min(resumed.st.i, session.length);
         st.correct = resumed.st.correct;
         st.wrong = resumed.st.wrong;
+        st.log = (resumed.st.log || []).slice();
       }
 
       var REC = (cfg.src === 'srs' || cfg.src === 'collection');
@@ -781,6 +806,7 @@
         var w = session[st.i];
         st.phase = 'retyping';
         st.wrong++; TW.store.markWrong(w.id);
+        logItem(w, false);
         TW.store.srs.onResult(w.word, false, w.book, TW.data.brief(w));
         TW.speech.sound.wrong();
         saveResume();
@@ -840,6 +866,7 @@
         if (ok) {
           var wasMaster = (TW.store.get(w.id) || {}).master;
           st.correct++; TW.store.markRight(w.id);
+          logItem(w, true);
           TW.store.srs.onResult(w.word, true, w.book, brief);
           TW.speech.sound.correct();
           if (!wasMaster && (TW.store.get(w.id) || {}).master) {
@@ -847,6 +874,7 @@
           }
         } else {
           st.wrong++; TW.store.markWrong(w.id);
+          logItem(w, false);
           TW.store.srs.onResult(w.word, false, w.book, brief);
           TW.speech.sound.wrong();
         }
@@ -885,6 +913,7 @@
         if (st.phase !== 'answering') return;
         var w = session[st.i];
         st.wrong++; TW.store.markWrong(w.id);
+        logItem(w, false);
         TW.store.srs.onResult(w.word, false, w.book, TW.data.brief(w));
         next();
       }
@@ -916,7 +945,8 @@
           TW.store.addSession({
             mode: cfg.mode,
             src: cfg.src === '' ? 'book' : cfg.src,
-            total: session.length, right: st.correct, wrong: st.wrong, acc: acc
+            total: session.length, right: st.correct, wrong: st.wrong, acc: acc,
+            detail: st.log.slice()      // 统计页点开这一场能看到具体哪几个词答错了
           });
         } catch (e) { /* 记录失败不影响完成页 */ }
         var stageEl = TW.$('#p-stage', host);

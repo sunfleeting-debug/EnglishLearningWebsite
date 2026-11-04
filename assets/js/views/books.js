@@ -210,10 +210,8 @@
         onOpen: function (w) { TW.app.go('/word?id=' + encodeURIComponent(w.id)); }
       });
 
-      TW.$$('[data-pg]', host).forEach(function (b) {
-        b.addEventListener('click', function () {
-          setParam('page', b.dataset.pg === 'prev' ? params.page - 1 : params.page + 1);
-        });
+      TW.ui.bindPager(TW.$('#books-body', host), params.page, pages, function (p) {
+        setParam('page', p);
       });
     }
 

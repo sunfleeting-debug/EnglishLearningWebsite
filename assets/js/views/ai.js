@@ -312,7 +312,14 @@
           : '<span class="ai-dots"><i></i><i></i><i></i></span>') +
         '</div></div>';
     }
-    if (S.err) html += '<div class="ai-err">' + esc(S.err) + '</div>';
+    if (S.err) {
+      /* 报错旁边给一个「重试」：上游限流（1015）这类问题，等半分钟点一下就好，
+         不用让用户把问题重新打一遍 */
+      var canRetry = S.messages.length && S.messages[S.messages.length - 1].role === 'user' && !S.busy;
+      html += '<div class="ai-err"><span class="ai-err-tx">' + esc(S.err) + '</span>' +
+        (canRetry ? '<button type="button" class="btn sm ghost" id="ai-retry">重试</button>' : '') +
+      '</div>';
+    }
     box.innerHTML = html;
     scrollBottom();
   }
@@ -643,6 +650,8 @@
         S.stick = (box.scrollHeight - box.scrollTop - box.clientHeight) < 48;
       });
       box.addEventListener('click', function (e) {
+        var rt = e.target.closest('#ai-retry');
+        if (rt) { retryLast(); return; }
         var sug = e.target.closest('.ai-sug[data-prompt]');
         if (sug) {
           if (!S.busy) sendText(sug.dataset.prompt);
@@ -725,12 +734,35 @@
         return;
       }
       S.busy = false;
-      S.err = e && e.message ? e.message : '请求失败';
+      S.err = explain(e && e.message ? e.message : '请求失败');
       if (S.err.indexOf('还没配置') >= 0) S.err += '，去「设置」填一下。';
       S.streamText = '';
       var b = TW.$('#ai-send'); if (b) b.classList.remove('stop');
       paintMsgs();
     });
+  }
+
+  /** 把人话补在报错后面：1015/1020 是上游 Cloudflare 的限流页，看着像「我们坏了」，其实不是 */
+  function explain(msg) {
+    var s = String(msg || '');
+    if (/1015|1020|1010/.test(s)) {
+      return s + '\n（这是上游 Cloudflare 的限流/拦截，不是本站出错：多半是转发出口 IP 被限，' +
+        '已自动改用浏览器直连重试过；还不行就等一两分钟再点「重试」，或换一个接口/Key）';
+    }
+    if (/429|rate limit|too many requests/i.test(s)) {
+      return s + '\n（上游限流：等一会儿再点「重试」）';
+    }
+    return s;
+  }
+
+  /** 重试上一次提问：把那条用户消息从历史里拿出来重发（上游限流时等一会儿点一下就行） */
+  function retryLast() {
+    if (S.busy || !S.messages.length) return;
+    var last = S.messages[S.messages.length - 1];
+    if (!last || last.role !== 'user') return;
+    S.err = '';
+    S.messages.pop();
+    sendText(last.content);
   }
 
   function finishStream(text, note) {
@@ -767,6 +799,7 @@
 
     /* 写回学习记录：AI 练习与普通练习共用一套通路 */
     var wmap = idByWord();
+    var detail = [];
     q.exercises.forEach(function (ex, i) {
       var id = ex.id || wmap[String(ex.word || '').toLowerCase()];
       if (!id) return;
@@ -775,6 +808,7 @@
       if (!word) return;
       var src = (w && w.book) || '';
       var brief = (w && TW.data.brief) ? TW.data.brief(w) : '';
+      detail.push({ id: id, word: word, ok: q.items[i].ok ? 1 : 0 });
       try {
         if (q.items[i].ok) {
           TW.store.markRight(id);
@@ -789,7 +823,8 @@
       TW.store.addSession({
         mode: 'ai', src: 'ai',
         total: q.exercises.length, right: right,
-        wrong: q.exercises.length - right, acc: q.acc
+        wrong: q.exercises.length - right, acc: q.acc,
+        detail: detail
       });
     } catch (e) {}
 

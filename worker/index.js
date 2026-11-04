@@ -985,13 +985,32 @@ async function handleAiChat(request) {
     return fail('连不上模型服务：' + String((e && e.message) || 'network'), 502);
   }
 
+  /** 把上游错误整理成人能看懂的一句：原文 + HTTP 状态 + 主机名 + 针对性提示。
+      主机名和状态很关键——用户要能自己判断「是 Key 不对（401）、路径不对（404），
+      还是上游 Cloudflare 把这次请求限流了（1015/1020）」。 */
+  function upstreamErr(msg, res, url) {
+    let host = '';
+    try { host = new URL(url).host; } catch (e) {}
+    const text = String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 300);
+    let hint = '';
+    if (/1015|1020|1010/.test(text)) {
+      hint = '（上游 Cloudflare 限流/拦截：多为出口 IP 被限，稍后重试；本站前端会改用浏览器直连再试一次）';
+    } else if (res.status === 404) {
+      hint = '（路径不对：多数接口的地址要以 /v1 结尾）';
+    } else if (res.status === 429) {
+      hint = '（上游限流：等一会儿再试）';
+    }
+    return '模型侧返回错误：' + text +
+      ' · HTTP ' + res.status + (host ? ' · ' + host : '') + hint;
+  }
+
   if (wantStream) {
     if (!res.ok) {
       const errText = await res.text();
       let errData = null;
       try { errData = errText ? JSON.parse(errText) : null; } catch (e) {}
       const msg = (errData && errData.error && (errData.error.message || errData.error)) || errText || ('HTTP ' + res.status);
-      return jsonBody({ error: '模型侧返回错误：' + String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 400) },
+      return jsonBody({ error: upstreamErr(msg, res, url) },
         (res.status === 401 || res.status === 403) ? 401 : 502);
     }
     return new Response(res.body, {
@@ -1010,8 +1029,7 @@ async function handleAiChat(request) {
 
   if (!res.ok) {
     const msg = (data && data.error && (data.error.message || data.error)) || text || ('HTTP ' + res.status);
-    const out = String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 400);
-    return jsonBody({ error: '模型侧返回错误：' + out }, (res.status === 401 || res.status === 403) ? 401 : 502);
+    return jsonBody({ error: upstreamErr(msg, res, url) }, (res.status === 401 || res.status === 403) ? 401 : 502);
   }
   if (!data) return fail('模型返回的不是 JSON', 502);
 

@@ -97,6 +97,20 @@
     return Math.round((db - da) / 86400000);
   }
 
+  /* 「最近学过」的时间范围（生词本筛选 + 按范围练习共用一套口径） */
+  var RANGES = [
+    { id: '1h', name: '1 小时', ms: 3600 * 1000 },
+    { id: '1d', name: '1 天', ms: 24 * 3600 * 1000 },
+    { id: '3d', name: '3 天', ms: 3 * 24 * 3600 * 1000 },
+    { id: '7d', name: '1 周', ms: 7 * 24 * 3600 * 1000 },
+    { id: '30d', name: '1 月', ms: 30 * 24 * 3600 * 1000 }
+  ];
+  function rangeMs(id) {
+    var i = RANGES.length - 1;
+    RANGES.forEach(function (r) { if (r.id === id) i = RANGES.indexOf(r); });
+    return RANGES[i].ms;
+  }
+
   /* ---------- 进度读写 ---------- */
   function rec(id) {
     return state.progress[id] || (state.progress[id] = { w: 0, r: 0, seen: 0, fav: false, master: false, ts: 0 });
@@ -187,9 +201,11 @@
      看不到单场波动，所以每轮 finish 时记一条 {t,mode,src,total,right,wrong,acc}。
      🔴 定位与 recentWrong 相同：只影响展示，故意不进同步协议（换设备从零开始记也无所谓）。 */
   var SESSIONS_MAX = 60;
+  var SESS_DETAIL_MAX = 60;   // 每场最多记 60 题明细（够一轮用，再长就截断，别把 localStorage 塞满）
 
   function addSession(s) {
     s.t = s.t || Date.now();
+    if (s.detail && s.detail.length > SESS_DETAIL_MAX) s.detail = s.detail.slice(0, SESS_DETAIL_MAX);
     state.sessions.unshift(s);
     if (state.sessions.length > SESSIONS_MAX) state.sessions.length = SESSIONS_MAX;
     save();
@@ -329,6 +345,7 @@
     var k = srsKey(word);
     if (!k) return;
     var r = state.srs[k];
+    var existed = !!r;                    // 是不是「本轮才新入队」的（新入队允许当天补练一次）
     if (!r) {
       if (ok) return;                     // 一次就答对的词不打扰
       if (!state.settings.srsAuto) return;
@@ -342,7 +359,14 @@
       r.ok++;
     } else {
       r.b = 0;
-      r.d = today();                      // 今天再来
+      /* 🔴 同一个词一天最多抓两次（sunfleeting：「为什么我每一轮复习词里面都有 enroll」）：
+         答错 → 今天再来（补练一次）；**如果今天已经判过一次**（ok/bad 有数且 ts 是今天），
+         说明补练机会用掉了，顺延到明天。否则一个总拼错的词会被每一轮复习反复抓进来、
+         占满整组，其它到期词反而排不上。
+         判据用 ts / ok / bad 而不新增字段：这些本来就在同步协议里，换设备一致，worker/D1 不用迁移。
+         注意别把「今天刚手动加入队列」当成「今天已练过」——那种 ok=bad=0，仍给当天补练机会。 */
+      var reviewedToday = existed && (r.ok > 0 || r.bad > 0) && ymd(new Date(r.ts || 0)) === today();
+      r.d = reviewedToday ? addDays(today(), 1) : today();
       r.bad++; r.lapses++;
     }
     r.ts = Date.now();
@@ -509,7 +533,7 @@
     recentWrong: function () { return state.recentWrong.slice(); },
     addSession: addSession, sessions: sessions,
     setSetting: setSetting, counts: counts, srcStats: srcStats, today: today,
-    addDays: addDays, diffDays: diffDays,
+    addDays: addDays, diffDays: diffDays, RANGES: RANGES, rangeMs: rangeMs,
     applyRemote: applyRemote,
     dirty: {
       peek: function () { return dirty; },

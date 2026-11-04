@@ -1,5 +1,5 @@
 /* 复习页：艾宾浩斯遗忘曲线队列
-   答错的词自动进入队列；答对升档（1/2/4/7/15/30/60 天），答错归零、当天重新回到队列。 */
+   答错的词自动进入队列；答对升档（1/2/4/7/15/30/60 天），答错归零档、当天再练一次（当天再错就顺延到明天）。 */
 (function () {
   'use strict';
   var TW = window.TW = window.TW || {};
@@ -38,8 +38,8 @@
         sentenceCard +
         '<div class="card card-pad">' + TW.ui.empty('复习队列还是空的') +
           '<div class="muted small" style="text-align:center;max-width:560px;margin:0 auto 1rem">' +
-            '在「练习」里答错的单词会自动进入复习队列：<b>当天重新回到队列</b>，之后每答对一次，' +
-            '间隔就按 <b>' + intervals.join(' / ') + '</b> 天逐档拉长；答错则归零重来。' +
+            '在「练习」里答错的单词会自动进入复习队列：<b>当天再练一次</b>，之后每答对一次，' +
+            '间隔就按 <b>' + intervals.join(' / ') + '</b> 天逐档拉长；答错则归零重来（当天已练过就顺延到明天）。' +
             '你也可以在任意单词详情页点 <b>' + TW.icon('refresh', 13) + '</b> 手动加入。</div>' +
           '<div class="row" style="justify-content:center">' +
             '<button class="btn primary" id="sr-go-practice">' + TW.icon('play', 16) + ' 去练习</button>' +
@@ -158,7 +158,9 @@
 
       '<div class="card card-pad muted small" style="margin-top:1rem">' +
         '<b>复习规则</b>：练习中答错的词自动进入队列。答对一次升一档，下次复习时间 = 今天 + ' +
-        '<b>1 / 2 / 4 / 7 / 15 / 30 / 60</b> 天；答错则归零档，当天重新回到队列。可在「设置」里关闭自动入队。' +
+        '<b>1 / 2 / 4 / 7 / 15 / 30 / 60</b> 天；答错归零档，<b>当天再练一次</b>' +
+        '（当天第二次还错就顺延到明天，昨天/更早入队的词同样顺延到明天——避免同一个词把每一轮都占满）。' +
+        '可在「设置」里关闭自动入队。' +
         (stats.total ? ' <button class="btn sm ghost" id="sr-clear" style="margin-left:.4rem">' + TW.icon('trash', 14) + ' 清空队列</button>' : '') +
       '</div>' +
     '</div>';

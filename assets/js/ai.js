@@ -134,13 +134,17 @@
   }
 
   function directModels(pack) {
-    return fetch(pack.baseUrl + '/models', {
+    return fetch(baseOf(pack) + '/models', {
       headers: pack.apiKey ? { 'Authorization': 'Bearer ' + pack.apiKey } : {}
     }).then(function (res) {
       return res.text().then(function (t) {
         var d = null;
         try { d = t ? JSON.parse(t) : null; } catch (e) {}
-        if (!res.ok) throw new Error('获取模型失败：' + ((d && d.error && (d.error.message || d.error)) || ('HTTP ' + res.status)));
+        if (!res.ok) {
+          var e2 = new Error('获取模型失败：' + ((d && d.error && (d.error.message || d.error)) || ('HTTP ' + res.status)));
+          e2.status = res.status;
+          throw e2;
+        }
         var arr = (d && (d.data || d.models)) || [];
         var ids = arr.map(function (m) { return typeof m === 'string' ? m : (m && (m.id || m.name)); });
         var list = sortModels(ids);
@@ -148,7 +152,9 @@
         return list;
       });
     }, function () {
-      throw new Error('连不上本地接口（检查地址，以及是否允许跨域）');
+      var e3 = new Error('连不上该接口（检查地址，以及是否允许跨域）');
+      e3.network = true;
+      throw e3;
     });
   }
 
@@ -186,10 +192,30 @@
     });
   }
 
-  /* ---------------- 请求 ---------------- */
+  /* ---------------- 请求 ----------------
+
+     🔴 自定义接口走哪条通道：**先浏览器直连，CORS 不通再退回 Worker 转发**。
+     免费/中转网关大多挂在 Cloudflare 后面，并按「来源 IP」限流——Worker 的出口 IP 是
+     成千上万个 Worker 共用的，特别容易吃到 1015（You are being rate limited）；
+     换成用户自己家宽的 IP 往往就没事。直连还顺带省一次转发。
+     通道结果按 baseUrl 记在内存里（transportMemo），别每条消息都去试探一遍。 */
+
+  var transportMemo = {};   // baseUrl -> 'direct' | 'worker'
+
+  /** 这条错误值不值得换通道再试一次？
+      网络/CORS 被拦 → 值得；上游 1015/1020/429（按 IP 限流）→ 也值得，换个出口 IP 可能就通了；
+      401/403（Key 无效）、404（路径不对）、400（参数错）→ 换通道没用，直接抛给用户看。 */
+  function retryOther(e) {
+    if (!e) return false;
+    if (e.network) return true;
+    if (e.status === 429) return true;
+    return /1015|1020|1010|rate limit|too many requests/i.test(String(e.message || ''));
+  }
+
+  function baseOf(pack) { return String(pack.baseUrl || '').replace(/\/+$/, ''); }
 
   function directFetch(pack) {
-    var url = String(pack.baseUrl || '').replace(/\/+$/, '') + '/chat/completions';
+    var url = baseOf(pack) + '/chat/completions';
     var headers = { 'Content-Type': 'application/json' };
     if (pack.apiKey) headers['Authorization'] = 'Bearer ' + pack.apiKey;
     var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -210,15 +236,23 @@
       return res.text().then(function (t) {
         var d = null;
         try { d = t ? JSON.parse(t) : null; } catch (e) {}
-        if (!res.ok) throw new Error('本地模型返回错误：' + ((d && d.error && (d.error.message || d.error)) || t || ('HTTP ' + res.status)));
+        if (!res.ok) {
+          var msg = (d && d.error && (d.error.message || d.error)) || t || ('HTTP ' + res.status);
+          var e = new Error(String(msg).slice(0, 300));
+          e.status = res.status;
+          throw e;
+        }
         var ch = d && d.choices && d.choices[0];
         var out = ch && ch.message ? ch.message.content : '';
-        if (!out) throw new Error('本地模型没有返回内容');
+        if (!out) throw new Error('模型没有返回内容');
         return { text: String(out).trim(), model: d.model || pack.model };
       });
     }, function (err) {
       if (timer) clearTimeout(timer);
-      throw new Error('连不上本地接口（' + ((err && err.message) || 'network') + '）——检查地址、是否允许跨域');
+      /* 真正的网络差/CORS 拦截才标 network —— 上层据此决定换 Worker 再试一次 */
+      var e = new Error('连不上该接口（' + ((err && err.message) || 'network') + '）——检查地址、是否允许跨域');
+      e.network = true;
+      throw e;
     });
   }
 
@@ -247,20 +281,33 @@
     }
     if (!pack.model) return Promise.reject(new Error('还没填模型名'));
 
-    /* 本地自定义接口由浏览器直连：Worker 有 SSRF 防护，会拒绝 127.0.0.1 */
-    if (c.provider === 'custom' && isLocal(pack.baseUrl)) return directFetch(pack);
-
-    if (!TW.api || !TW.api.configured || !TW.api.configured()) {
-      return Promise.reject(new Error('后端地址未配置，AI 转发不可用（可在「账号」页填写后端地址）'));
-    }
-    return TW.api.request('POST', '/api/ai/chat', pack, { timeout: 95000 }).then(function (r) {
-      if (!r || !r.text) throw new Error('模型没有返回内容');
-      return { text: r.text, model: r.model, usage: r.usage };
-    }, function (err) {
-      if (err && err.status === 404) {
-        throw new Error('后端还是旧版本（没有 /api/ai/chat），请等部署更新后再试');
+    /* 自定义接口：先直连（用自己的出口 IP），换成 Worker 再试一次的条件见 retryOther() */
+    function viaWorker() {
+      if (!TW.api || !TW.api.configured || !TW.api.configured()) {
+        return Promise.reject(new Error('后端地址未配置，AI 转发不可用（可在「账号」页填写后端地址）'));
       }
-      throw err;
+      return TW.api.request('POST', '/api/ai/chat', pack, { timeout: 95000 }).then(function (r) {
+        if (!r || !r.text) throw new Error('模型没有返回内容');
+        return { text: r.text, model: r.model, usage: r.usage };
+      }, function (err) {
+        if (err && err.status === 404) {
+          throw new Error('后端还是旧版本（没有 /api/ai/chat），请等部署更新后再试');
+        }
+        throw err;
+      });
+    }
+
+    var custom = c.provider === 'custom';
+    var burl = baseOf(pack);
+    if (!custom || !burl) return viaWorker();
+    if (transportMemo[burl] === 'worker') return viaWorker();
+    return directFetch(pack).then(function (r) {
+      transportMemo[burl] = 'direct';
+      return r;
+    }, function (e) {
+      if (!retryOther(e) || !/^https:/i.test(burl)) throw e;   // http 的本地接口 Worker 进不去，别白跑
+      transportMemo[burl] = 'worker';
+      return viaWorker();
     });
   }
 
@@ -354,29 +401,41 @@
     };
     if (!pack.model) return Promise.reject(new Error('还没填模型名'));
 
-    var local = c.provider === 'custom' && isLocal(pack.baseUrl);
-    var url, headers;
-    if (local) {
-      url = pack.baseUrl + '/chat/completions';
-      headers = { 'Content-Type': 'application/json' };
-      if (pack.apiKey) headers['Authorization'] = 'Bearer ' + pack.apiKey;
-    } else {
+    var bodyDirect = {
+      model: pack.model,
+      messages: (pack.system ? [{ role: 'system', content: pack.system }] : []).concat(pack.messages),
+      temperature: pack.temperature, max_tokens: pack.maxTokens, stream: true
+    };
+
+    function viaWorker() {
       if (!TW.api || !TW.api.configured || !TW.api.configured()) {
         return Promise.reject(new Error('后端地址未配置，AI 转发不可用（可在「账号」页填写后端地址）'));
       }
-      url = TW.api.base() + '/api/ai/chat';
-      headers = { 'Content-Type': 'application/json' };
+      var headers = { 'Content-Type': 'application/json' };
       if (TW.api.token && TW.api.token()) headers['Authorization'] = 'Bearer ' + TW.api.token();
+      return streamOnce(TW.api.base() + '/api/ai/chat', headers, pack, opts, onDelta);
     }
 
-    var body = local
-      ? {
-        model: pack.model,
-        messages: (pack.system ? [{ role: 'system', content: pack.system }] : []).concat(pack.messages),
-        temperature: pack.temperature, max_tokens: pack.maxTokens, stream: true
-      }
-      : pack;
+    var custom = c.provider === 'custom';
+    var burl = baseOf(pack);
+    if (!custom || !burl || transportMemo[burl] === 'worker') return viaWorker();
 
+    var dHeaders = { 'Content-Type': 'application/json' };
+    if (pack.apiKey) dHeaders['Authorization'] = 'Bearer ' + pack.apiKey;
+    return streamOnce(burl + '/chat/completions', dHeaders, bodyDirect, opts, onDelta).then(function (r) {
+      transportMemo[burl] = 'direct';
+      return r;
+    }, function (e) {
+      /* 已经吐了一半内容就别重来了（会把同一段话显示两遍）；http 的本地接口 Worker 也进不去 */
+      if (e && e.partial) throw e;
+      if (!retryOther(e) || !/^https:/i.test(burl)) throw e;
+      transportMemo[burl] = 'worker';
+      return viaWorker();
+    });
+  }
+
+  /** 一次流式请求。网络层失败标 err.network，已吐过字标 err.partial —— 上层据此决定要不要换通道 */
+  function streamOnce(url, headers, body, opts, onDelta) {
     var acc = '';
     return fetch(url, {
       method: 'POST',
@@ -388,8 +447,8 @@
         return res.text().then(function (t) {
           var d = null;
           try { d = t ? JSON.parse(t) : null; } catch (e) {}
-          var msg = (d && d.error) || t || ('HTTP ' + res.status);
-          var err = new Error(String(msg).slice(0, 300));
+          var msg = (d && d.error && (d.error.message || d.error)) || d && d.error || t || ('HTTP ' + res.status);
+          var err = new Error(String(typeof msg === 'string' ? msg : JSON.stringify(msg)).slice(0, 300));
           err.status = res.status;
           throw err;
         });
@@ -406,10 +465,14 @@
       }
       var e2 = new Error(err && err.message && err.message !== 'Failed to fetch'
         ? err.message : '网络不可用（或浏览器拦截了跨域请求）');
+      e2.network = true;
       throw e2;
     }).then(function (r) {
       if (r && !r.text) throw new Error('模型没有返回内容');
       return { text: (r && r.text) || acc };
+    }, function (e) {
+      if (e && !e.aborted && acc) e.partial = true;
+      throw e;
     });
   }
 
