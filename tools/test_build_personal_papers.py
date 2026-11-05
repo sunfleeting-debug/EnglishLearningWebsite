@@ -57,6 +57,15 @@ class Questions(unittest.TestCase):
         self.assertEqual(len(bank), 15)
         self.assertEqual(questions[-1]['answer'], 'J')
 
+    def test_cloze_keeps_numeric_text_when_blanks_have_underscores(self):
+        words = '\n'.join(chr(65+i) + ') word' + str(i) for i in range(15))
+        blanks = ' '.join('___' + str(n) + '___' for n in range(26, 36))
+        source = 'more than once.\n' + blanks + ' record 30 seconds\n' + words + '\nSection B'
+        body, _, _ = parse_exam_cloze(source, 'ABCDEFGHIJ')
+        self.assertIn('record 30 seconds', body)
+        self.assertIn('【30】', body)
+        self.assertNotIn('___', body)
+
     def test_pdf_listening_matches_columns_by_position(self):
         page = [(20, 10, '1. A) first'), (20, 20, 'B)'), (45, 20, 'second'), (250, 9, 'C) third'),
                 (250, 20, 'D) fourth'), (20, 30, '2. А) one'), (20, 40, 'B) two'),
