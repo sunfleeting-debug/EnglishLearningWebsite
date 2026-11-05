@@ -280,7 +280,7 @@ def collect_subjective():
     seen = set()
     for directory in sorted(base.iterdir()):
         date = re.match(r'(20\d\d)年(\d{2})月', directory.name)
-        if not date or int(date.group(1)) < 2020:
+        if not date or int(date.group(1)) < 2019:
             continue
         for path in sorted(directory.rglob('*.docx')):
             doc = Document(path)
@@ -786,6 +786,86 @@ def build():
                          'test': f'2022年12月六级真题 · 第{paper_number}套', 'no': number,
                          'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
                          'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # 2020.07 Word 丢失了段落和题号，依据原卷顺序恢复后再校验。
+    document_202007 = next((MATERIALS / '六级真题' / '六级真题').glob(
+        '2020年07*/**/2020年07月六级真题（全1套）.docx'))
+    rows_202007 = [paragraph.text.strip() for paragraph in Document(document_202007).paragraphs if paragraph.text.strip()]
+    reading_202007 = next(i for i, value in enumerate(rows_202007) if 'Reading Comprehension' in value)
+    section_a = next(i for i in range(reading_202007, len(rows_202007)) if rows_202007[i] == 'Section A')
+    section_b = next(i for i in range(section_a, len(rows_202007)) if rows_202007[i] == 'Section B')
+    section_c = next(i for i in range(section_b, len(rows_202007)) if rows_202007[i] == 'Section C')
+    body_text = '\n'.join(value for value in rows_202007[section_a + 1:section_b]
+                          if not value.startswith(('Directions:', 'Questions 26')))
+    words = 'capacity declaration deteriorating determined disaster eroding grabbed inventory junction monotonous overwhelming stagnation stake stifled urgent'.split()
+    bank_text = '\n'.join(chr(65 + i) + ') ' + word for i, word in enumerate(words))
+    body, bank, questions = parse_exam_cloze('more than once.\n' + body_text + '\n' + bank_text + '\nSection B', 'GBMKCFEDOA')
+    sets.append({'id': 'personal-cet6-202007-1-cloze', 'type': 'cloze',
+                 'test': '2020年7月六级真题 · 全1套', 'no': 0, 'title': '选词填空',
+                 'source': '本机星火六级资料 · 对照配套解析',
+                 'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+    match_rows = rows_202007[section_b + 3:section_c]
+    if len(match_rows) != 23:
+        raise ValueError('2020.07 matching passage or questions incomplete')
+    match_text = ('more than once.\nSection B\n' +
+                  '\n'.join(chr(65 + i) + ') ' + value for i, value in enumerate(match_rows[:13])) + '\n' +
+                  '\n'.join(str(36 + i) + '. ' + value for i, value in enumerate(match_rows[13:])) + '\nSection C')
+    paragraphs, questions = parse_exam_match(match_text, 'CJFAGEMHBL')
+    sets.append({'id': 'personal-cet6-202007-1-match', 'type': 'match',
+                 'test': '2020年7月六级真题 · 全1套', 'no': 0, 'title': '段落匹配',
+                 'source': '本机星火六级资料 · 对照配套解析',
+                 'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
+    for passage, first, key in [(1, 46, 'BDADC'), (2, 51, 'BCAAC')]:
+        body, questions = parse_docx_reading(rows_202007[section_c:], first, key)
+        sets.append({'id': f'personal-cet6-202007-1-reading-{passage}', 'type': 'reading',
+                     'test': '2020年7月六级真题 · 全1套', 'no': passage,
+                     'title': f'仔细阅读 · Passage {passage}', 'source': '本机星火六级资料 · 对照配套解析',
+                     'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    listening = next(i for i, value in enumerate(rows_202007[:reading_202007]) if 'Listening Comprehension' in value)
+    questions = parse_listening(rows_202007[listening:reading_202007], 'ADBCBDACADBADCBADCDBACDBB')
+    audio = next((MATERIALS / '六级真题' / '六级真题').glob('2020年07*/**/202007-CET6 听力.mp3'))
+    sets.append({'id': 'personal-cet6-202007-1-listening', 'type': 'listening',
+                 'test': '2020年7月六级真题 · 全1套', 'no': 0,
+                 'title': '听力真题 · 全1套', 'source': '本机星火六级资料 · 对照配套解析',
+                 'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': questions})
+    # 2020.09 的 Word 包含题目，缺失的词库与答案根据配套解析补齐。
+    for paper_number, words, cloze_key, match_key, reading_keys in [
+            (1, 'contrary fatigue heavily heaving hospitalized labeled legacies mastering momentum obsessed potential realms reciprocal ruin viciously',
+             'LCHBEJFNKA', 'HCJDMEBPGN', ('BABDC', 'ADADC')),
+            (2, 'bond contemplated dawned hierarchy insight legislative leverage logistical magically outcomes patterns rarely saturated stereotypes undoubtedly',
+             'CHEMLOJAIK', 'DHEBKOGFIN', ('CAACB', 'BDCBD'))]:
+        document = next((MATERIALS / '六级真题' / '六级真题').glob(
+            f'2020年09*/**/2020年09月六级真题（第{paper_number}套）.docx'))
+        rows = [paragraph.text.strip() for paragraph in Document(document).paragraphs if paragraph.text.strip()]
+        reading = next(i for i, value in enumerate(rows) if 'Reading Comprehension' in value)
+        section_a = next(i for i in range(reading, len(rows)) if rows[i] == 'Section A')
+        section_b = next(i for i in range(section_a, len(rows)) if rows[i] == 'Section B')
+        body_text = '\n'.join(value for value in rows[section_a + 1:section_b]
+                              if not value.startswith(('Directions:', 'Questions 26')))
+        bank_text = '\n'.join(chr(65 + i) + ') ' + word for i, word in enumerate(words.split()))
+        body, bank, questions = parse_exam_cloze('more than once.\n' + body_text + '\n' + bank_text + '\nSection B', cloze_key)
+        sets.append({'id': f'personal-cet6-202009-{paper_number}-cloze', 'type': 'cloze',
+                     'test': f'2020年9月六级真题 · 第{paper_number}套', 'no': 0, 'title': '选词填空',
+                     'source': '本机星火六级资料 · 对照配套解析',
+                     'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+        paragraphs, questions = parse_exam_match('more than once.\n' + '\n'.join(rows[section_b:]), match_key)
+        sets.append({'id': f'personal-cet6-202009-{paper_number}-match', 'type': 'match',
+                     'test': f'2020年9月六级真题 · 第{paper_number}套', 'no': 0, 'title': '段落匹配',
+                     'source': '本机星火六级资料 · 对照配套解析',
+                     'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
+        for passage, first, key in [(1, 46, reading_keys[0]), (2, 51, reading_keys[1])]:
+            body, questions = parse_docx_reading(rows[section_b:], first, key)
+            sets.append({'id': f'personal-cet6-202009-{paper_number}-reading-{passage}', 'type': 'reading',
+                         'test': f'2020年9月六级真题 · 第{paper_number}套', 'no': passage,
+                         'title': f'仔细阅读 · Passage {passage}', 'source': '本机星火六级资料 · 对照配套解析',
+                         'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+        if paper_number == 1:
+            listening = next(i for i, value in enumerate(rows[:reading]) if 'Listening Comprehension' in value)
+            questions = parse_listening(rows[listening:reading], 'ADABBCDCABDADCBADCBDABCAC')
+            audio = next((MATERIALS / '六级真题' / '六级真题').glob('2020年09*/**/2020年09月六级听力全1套.mp3'))
+            sets.append({'id': 'personal-cet6-202009-1-listening', 'type': 'listening',
+                         'test': '2020年9月六级真题 · 听力全1套', 'no': 0,
+                         'title': '听力真题 · 全1套', 'source': '本机星火六级资料 · 对照配套解析',
+                         'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': questions})
     # 2020.12 Word 原卷自带逐题答案表，先校验题号完整性再构造题目。
     for paper_number in (1, 2, 3):
         document = next((MATERIALS / '六级真题' / '六级真题').glob(
