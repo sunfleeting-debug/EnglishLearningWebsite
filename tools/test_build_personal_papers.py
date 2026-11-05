@@ -1,5 +1,6 @@
 import unittest
 from build_personal_papers import parse_questions, parse_listening, extract_writing_sections, parse_docx_reading, parse_exam_cloze, parse_pdf_listening, repair_pdf_text
+from build_scanned_personal import make_cloze, make_reading
 
 class Questions(unittest.TestCase):
     def test_reads_wrapped_stems_and_options(self):
@@ -65,6 +66,35 @@ class Questions(unittest.TestCase):
         self.assertIn('record 30 seconds', body)
         self.assertIn('【30】', body)
         self.assertNotIn('___', body)
+
+    def test_scanned_cloze_cleans_blank_marks_and_preserves_answers(self):
+        lines = ['more than once.', 'Start _ 26_ and _ 27.-:']
+        lines.extend(f'Blank _{number}_.' for number in range(28, 36))
+        lines.extend(f'{chr(65 + number)}) word{number}' for number in range(15))
+        lines.append('Section B')
+        pages = [{'items': [{'text': line} for line in lines]}]
+        result = make_cloze(1, pages, 'ABCDEFGHIJ')
+        self.assertIn('【27】.', result['body'][0])
+        self.assertNotIn('_', result['body'][0])
+        self.assertEqual(result['questions'][0]['answer'], 'A')
+        self.assertEqual(result['questions'][-1]['answer'], 'J')
+
+    def test_scanned_reading_keeps_next_passage_out_of_last_option(self):
+        lines = ['Section B', 'A) A matching paragraph with enough text.']
+        lines.extend(f'{number}. Matching statement {number}.' for number in range(36, 46))
+        lines.extend(['Section C', 'Passage One', 'Questions 46 to 50 are based on the following passage.',
+                      'The first reading passage has enough text.'])
+        for number in range(46, 51):
+            lines.extend([f'{number}. Question {number}?', 'A) first', 'B) second', 'C) third', 'D) fourth'])
+        lines.extend(['PassageTwo', 'Questions 51 to 55 are based on the following passage.',
+                      'The second reading passage has enough text.'])
+        for number in range(51, 56):
+            lines.extend([f'{number}. Question {number}?', 'A) first', 'B) second', 'C) third', 'D) fourth'])
+        lines.append('Part Translation')
+        pages = [{'page': 3, 'items': [{'y': i * 20, 'text': line} for i, line in enumerate(lines)]}]
+        low = [{'items': []}, {'items': []}, {'items': []}]
+        result = make_reading(1, pages, low, 'AAAAAAAAAA', ('AAAAA', 'AAAAA'))
+        self.assertEqual(result[1]['questions'][-1]['options'][3]['t'], 'fourth')
 
     def test_pdf_listening_matches_columns_by_position(self):
         page = [(20, 10, '1. A) first'), (20, 20, 'B)'), (45, 20, 'second'), (250, 9, 'C) third'),

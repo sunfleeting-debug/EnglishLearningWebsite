@@ -980,6 +980,21 @@ def build():
                      'test': '2026年6月六级真题 · 第3套', 'no': number, 'title': f'仔细阅读 · Passage {number}',
                      'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
                      'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # Optional scanned supplements remain in the user's local material directory.
+    scanned = MATERIALS / '英语学习站-扫描题库-202606.json'
+    if scanned.exists():
+        supplement = json.loads(scanned.read_text(encoding='utf-8'))
+        if supplement.get('version') != 1 or not isinstance(supplement.get('sets'), list):
+            raise ValueError('Invalid local scanned question supplement')
+        existing_ids = {item['id'] for item in sets}
+        for item in supplement['sets']:
+            if item.get('id') in existing_ids or item.get('type') not in ('cloze', 'listening', 'match', 'reading'):
+                raise ValueError('Duplicate or invalid scanned question set')
+            existing_ids.add(item['id'])
+            sets.append(item)
+    all_ids = [item['id'] for item in sets]
+    if len(all_ids) != len(set(all_ids)):
+        raise ValueError('Duplicate personal question set ID')
     writing = collect_subjective()
     payload = {'version': 1, 'source': str(paper.relative_to(MATERIALS)), 'sets': sets, 'writing': writing}
     OUTPUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
