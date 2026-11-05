@@ -23,6 +23,13 @@
   };
 
   var TYPE_TAG = { cloze: '选词填空', match: '段落匹配', reading: '仔细阅读', mixed: 'AI 出题' };
+  var activeHost = null, activeQuery = null;
+  window.addEventListener('tw-personal-quiz-change', function () {
+    if (!activeHost || !activeHost.isConnected || !/^#\/quiz(?:\?|$)/.test(window.location.hash)) return;
+    if (activeQuery && activeQuery.set) {
+      if (TW.quiz.get(activeQuery.set)) renderSet(activeHost, activeQuery.set);
+    } else renderList(activeHost);
+  });
 
   /* ---------------- 计时器（sunfleeting 2026-11-05） ----------------
      「做题目的时候加一个计时器…超过十分钟就提醒，这个在设置那里可以关掉」。
@@ -156,8 +163,7 @@
       (sum.error ? '<div class="card card-pad small" style="color:var(--err)">' + esc(sum.error) + '</div>' : '') +
       body + pubBlock +
       '<div class="card card-pad muted small" style="margin-top:1rem">' +
-        '<b>说明</b>：题目来自《简·六级阅读》扫描件 OCR，个别空格/选项在扫描时缺失已按原文尽量补全；' +
-        '解析保留书上的【定位】与【解析】原文，仔细阅读另附整篇参考译文。' +
+        '<b>说明</b>：内置阅读练习来自扫描资料，部分文字可能存在识别误差；本机导入的题目另行标注来源。' +
       '</div>' +
     '</div>';
     if (TW.personalMaterials) TW.personalMaterials.mount(host, 'quiz');
@@ -448,6 +454,8 @@
   }
 
   function render(host, query) {
+    activeHost = host; activeQuery = query || {};
+    if (query && query.set && /^personal-/.test(query.set) && TW.personalMaterials) TW.personalMaterials.restore();
     if (query && query.set) renderSet(host, query.set);
     else { S.id = ''; T.id = ''; stopTimer(); renderList(host); }
   }

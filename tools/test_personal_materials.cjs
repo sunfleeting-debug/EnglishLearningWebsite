@@ -26,5 +26,13 @@ function dir(name, entries) { return { kind:'directory', name, async *values() {
  assert.equal(by('四级模拟卷.pdf').level,'cet4');
  assert.equal(by('2024年六级试题.pdf').level,'cet6');
  assert.equal(result.errors,0);
+ const sample={version:1,sets:[{id:'personal-test-1',type:'reading',test:'Test',title:'Passage',body:['Text'],questions:[{n:1,stem:'Question?',options:['A','B','C','D'].map(k=>({k,t:k})),answer:'B'}]}]};
+ assert.equal(api.validateQuizBundle(sample).length,1);
+ const missingAnswer=JSON.parse(JSON.stringify(sample)); missingAnswer.sets[0].questions[0].answer='';
+ assert.throws(()=>api.validateQuizBundle(missingAnswer));
+ const missingOption=JSON.parse(JSON.stringify(sample)); missingOption.sets[0].questions[0].options.pop();
+ assert.throws(()=>api.validateQuizBundle(missingOption));
+ const duplicate=JSON.parse(JSON.stringify(sample)); duplicate.sets.push(duplicate.sets[0]);
+ assert.throws(()=>api.validateQuizBundle(duplicate));
  console.log('PASS local material scan preserves paths and categorizes papers, writing and audio');
 })().catch(e=>{console.error(e);process.exitCode=1});

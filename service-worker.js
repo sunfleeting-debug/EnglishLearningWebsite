@@ -1,5 +1,5 @@
 /* Versioned app-shell cache for the installable mobile web app. */
-const CACHE_VERSION = 'english-learning-v1.9.2-local-materials';
+const CACHE_VERSION = 'english-learning-v1.9.3-personal-quiz';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const SHELL = [

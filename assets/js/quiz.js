@@ -44,6 +44,7 @@
     if (a && Array.isArray(a.sets)) out = out.concat(a.sets);
     var b = window.TW_QUIZ_MORE;
     if (b && Array.isArray(b.sets)) out = out.concat(b.sets);
+    if (TW.personalMaterials) out = out.concat(TW.personalMaterials.quizSets());
     return out;
   }
 
