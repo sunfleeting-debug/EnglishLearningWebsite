@@ -544,8 +544,8 @@ def quote_score(paper_text: str, ans_text: str) -> int:
     return len(a & b)
 
 
-def load_answers(paper: pathlib.Path, paper_text: str) -> tuple[dict, dict, str]:
-    """返回 (answers, keySample, 说明)。"""
+def load_answers(paper: pathlib.Path, paper_text: str) -> tuple[dict, dict, str, dict]:
+    """返回 (answers, keySample, 说明, 逐题解析)。"""
     files = find_answer(paper)
     ov = ANSRC_OVERRIDE.get(paper.name)
     if ov:
@@ -580,15 +580,44 @@ def load_answers(paper: pathlib.Path, paper_text: str) -> tuple[dict, dict, str]
             if best is None or cand[0] > best[0]:
                 best = cand
     if not best:
-        return {}, {}, ""
+        return {}, {}, "", {}
     score, a, sample, fname, kind = best
     # 速查的「题号直绑字母」自带校验（每个答案都绑死在题号上），不需要引用命中；
     # 只要求套号一致，防止拿别的套的答案。解析册则必须过引用命中这一关。
     keyed = kind.startswith("速查") and set_no(fname) == set_no(paper.name)
     if not ov and score < 6 and not keyed:
-        return {}, {}, "解析引用对不上（%d 处），丢弃" % score
+        return {}, {}, "解析引用对不上（%d 处），丢弃" % score, {}
     tag = "人工核对映射" if ov else ("速查套号一致" if keyed else "引用命中 %d 处" % score)
-    return a, sample, "%s · %s（%s）" % (tag, fname, kind)
+    letters = {n: (v.get("ans") if isinstance(v, dict) else v) for n, v in a.items()}
+    return a, sample, "%s · %s（%s）" % (tag, fname, kind), load_explain(paper, letters)
+
+
+def load_explain(paper: pathlib.Path, letters: dict) -> dict:
+    """把解析册里逐题的【定位】/【精析】也带上（速查只给字母，没有解析）。
+
+    安全性靠一条硬约束：**解析里给出的答案字母必须和我们这套采用的答案一致**
+    才收。文件夹里往往同时躺着好几套的解析，字母对不上就说明不是这套的，
+    宁可这题没有解析，也不把别的套的解析贴过来。"""
+    out = {}
+    for f in find_answer(paper):
+        try:
+            t = pdf_text(f)
+        except Exception:
+            continue
+        if not re.search(r"精析|语法判断|定位", t):
+            continue
+        for seg in answer_segments(t):
+            for n, d in parse_explain(seg).items():
+                if n in out or n not in letters:
+                    continue
+                if d["ans"] != letters[n]:
+                    continue
+                exp = (d.get("exp") or "").strip()
+                # 切完标记词常剩一个孤零零的「】」或「)」，去掉再入库
+                exp = re.sub(r"^[】\]\)）】:：、,，.。\s]+", "", exp)
+                if len(exp) >= 24:
+                    out[n] = exp
+    return out
 
 
 # ---------------------------------------------------------------- 生成题目集
@@ -613,7 +642,7 @@ def build_sets(paper: pathlib.Path) -> list:
         return []
     sec = sections(t)
     wr = parse_writing(sec["writing"])
-    answers, keySample, note = load_answers(paper, t)
+    answers, keySample, note, exps = load_answers(paper, t)
     if len(answers) < 18:
         return []
     label, tag, no = test_info(paper)
@@ -633,7 +662,7 @@ def build_sets(paper: pathlib.Path) -> list:
             if not a or a not in bankK:
                 continue
             qs.append({"n": n, "stem": "第 %d 空" % (n - 25), "options": [],
-                       "answer": a, "key": bankK[a], "explain": ""})
+                       "answer": a, "key": bankK[a], "explain": exps.get(n, "")})
         if len(qs) >= 9:
             out.append({
                 "id": base + "-cloze", "test": label, "no": 3, "type": "cloze",
@@ -652,7 +681,8 @@ def build_sets(paper: pathlib.Path) -> list:
             a = answers.get(q["n"], {}).get("ans") if isinstance(answers.get(q["n"]), dict) else answers.get(q["n"])
             if not a or a not in legal:
                 continue
-            qs.append({"n": q["n"], "stem": q["stem"], "options": [], "answer": a, "explain": ""})
+            qs.append({"n": q["n"], "stem": q["stem"], "options": [], "answer": a,
+                       "explain": exps.get(q["n"], "")})
         if len(qs) >= 9:
             out.append({
                 "id": base + "-match", "test": label, "no": 2, "type": "match",
@@ -670,7 +700,7 @@ def build_sets(paper: pathlib.Path) -> list:
             if not a or a not in "ABCD" or len(q["options"]) != 4:
                 continue
             qs.append({"n": q["n"], "stem": q["stem"], "options": q["options"],
-                       "answer": a, "explain": ""})
+                       "answer": a, "explain": exps.get(q["n"], "")})
         if len(qs) == 5:
             out.append({
                 "id": base + "-p%d" % (i + 1), "test": label, "no": 1, "type": "reading",
@@ -887,7 +917,7 @@ def main():
             row.append("写作ERR " + str(e)[:30])
         try:
             t = pdf_text(f)
-            ans, _s, _n = load_answers(f, t)
+            ans, _s, _n, _e = load_answers(f, t)
             if ans:
                 ls = build_listening(f, ans)
                 if ls:

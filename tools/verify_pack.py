@@ -59,6 +59,19 @@ with sync_playwright() as p:
     check("阅读页有选项", page.evaluate("document.querySelectorAll('.qz-opt').length") >= 4,
           page.evaluate("document.querySelectorAll('.qz-opt').length"))
 
+    # ---- 解析：解析册有的月份必须真的显示出来（2026-11-05 补的：
+    #      之前只抽了答案，explain 全是空串，交卷后满屏「这题没有解析」）
+    page.goto(BASE + "#/quiz?set=zt2212-1-match", wait_until="load")
+    page.wait_for_timeout(800)
+    page.evaluate("var b=document.querySelector('#qz-submit'); if(b) b.click()")
+    page.wait_for_timeout(600)
+    exp_n = page.evaluate("document.querySelectorAll('.qz-exp-t').length")
+    exp_len = page.evaluate("((document.querySelector('.qz-exp-t')||{}).textContent||'').length")
+    check("真题交卷后显示解析", exp_n >= 9 and exp_len >= 20, (exp_n, exp_len))
+    check("解析不以孤立括号开头",
+          not page.evaluate("((document.querySelector('.qz-exp-t')||{}).textContent||'').trim().startsWith('】')"),
+          "")
+
     # ---- 作文
     page.goto(BASE + "#/writing", wait_until="load")
     page.wait_for_timeout(900)

@@ -22,8 +22,8 @@
     keySound: true,        // 键盘音效
     srsAuto: true,         // 答错的词自动加入复习队列
     autoMaster: true,      // 连对 5 次自动标记「已掌握」（sunfleeting 要求的自动化）
-    quizTimer: true,       // 题目板块做题计时（单套超过 quizTimerMin 分钟提醒一次）
-    quizTimerMin: 10       // 提醒阈值（分钟）
+    quizTimer: true,       // 题目板块做题计时（按单题计时，单题超过 quizTimerMin 分钟提醒一次）
+    quizTimerMin: 10       // 提醒阈值（分钟／每题）
   };
 
   var state = {

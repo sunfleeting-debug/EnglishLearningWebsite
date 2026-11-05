@@ -134,7 +134,19 @@ def main():
                     if (s.type === 'match' && (s.paras || []).length < 8) out.bad.push(s.id + ':段落' + (s.paras || []).length);
                     s.questions.forEach(q => {
                         if (!q.answer) out.bad.push(s.id + '#' + q.n + ':无答案');
-                        if (!q.explain || q.explain.length < 30) out.bad.push(s.id + '#' + q.n + ':解析不足');
+                        const exp = (q.explain || '').trim();
+                        // 真题（zt*）的解析来自解析册，有的月份资料包根本没配解析册
+                        // （2024年6月只有「答案速查 + 真题」，没有解析），所以真题只要求
+                        // 「有解析就必须是完整句子」，覆盖率另用一条断言判下限。
+                        if (s.id.indexOf('zt') === 0) {
+                            out.ztQ = (out.ztQ || 0) + 1;
+                            if (exp) {
+                                out.ztExp = (out.ztExp || 0) + 1;
+                                if (exp.length < 20) out.bad.push(s.id + '#' + q.n + ':解析过短');
+                            }
+                        } else if (exp.length < 30) {
+                            out.bad.push(s.id + '#' + q.n + ':解析不足');
+                        }
                         if (s.type === 'reading' && q.options.length < 3) out.bad.push(s.id + '#' + q.n + ':选项不足');
                         if (q.options && q.options.length && !q.options.some(o => o.k === q.answer)) {
                             out.bad.push(s.id + '#' + q.n + ':答案不在选项里');
@@ -143,20 +155,30 @@ def main():
                 });
                 return out;
             }""")
-            check("题库 13 组（扫描件 8 + 新增真题/模拟 5）", data["n"], 13, data["n"])
+            # 数量类断言一律写下限：题库会持续加（2026-11-05 又并进 22 套真题），
+            # 写死具体数字每加一次数据就假失败一次。
+            check("题库 >= 13 组（扫描件 8 + 真题/模拟 5 起步）", data["n"] >= 13, True, data["n"])
             check("题目总数 >= 95", data["total"] >= 95, True, data["total"])
-            check("三种题型都有（cloze 3 / match 3 / reading 7）",
-                  data["types"], {"cloze": 3, "match": 3, "reading": 7}, data["types"])
-            check("每道题都有答案 + 完整解析，空位/词库/段落数对得上", data["bad"], [], data["bad"][:5])
+            check("三种题型都有且不少于原有数量",
+                  (data["types"].get("cloze") or 0) >= 3
+                  and (data["types"].get("match") or 0) >= 3
+                  and (data["types"].get("reading") or 0) >= 7, True, data["types"])
+            check("每道题都有答案 + 解析够长（真题无解析册的月份除外）", data["bad"], [], data["bad"][:5])
+            check("真题解析覆盖率 >= 40%（解析册有的月份都抽到了）",
+                  data.get("ztExp", 0) >= (data.get("ztQ", 1) * 0.4), True,
+                  "%s/%s" % (data.get("ztExp", 0), data.get("ztQ", 0)))
             check("仔细阅读都带参考译文", data["trans"] >= 4, True, data["trans"])
 
             # ---------------- B. 做一组选词填空 ----------------
             log("B) 题目板块：选词填空全对流程")
             pg.goto(BASE + "#/quiz", wait_until="domcontentloaded")
             pg.wait_for_selector(".qz-card", timeout=8000)
-            check("列表卡片 13 张", pg.locator(".qz-card").count(), 13)
-            check("分组 6 个（MT1 / MT2 / 真题 / 模拟9 / 模拟10 / AI 出题）",
-                  pg.locator(".qz-group-h h3").count(), 6)
+            n_cards = pg.locator(".qz-card").count()
+            n_bank = pg.evaluate("() => TW.quiz.bank().length")
+            check("列表卡片数 = 题库组数，且 >= 13",
+                  n_cards == n_bank and n_cards >= 13, True, (n_cards, n_bank))
+            n_group = pg.locator(".qz-group-h h3").count()
+            check("分组 >= 6 个（MT1 / MT2 / 真题 / 模拟 / AI 出题）", n_group >= 6, True, n_group)
 
             pg.goto(BASE + "#/quiz?set=mt1-p1", wait_until="domcontentloaded")
             pg.wait_for_selector(".qz-blank", timeout=8000)
@@ -246,7 +268,12 @@ def main():
 
             pg.goto(BASE + "#/quiz", wait_until="domcontentloaded")
             pg.wait_for_selector(".qz-card", timeout=8000)
-            check("列表里出现 AI 组（13+1）", pg.locator(".qz-card").count(), 14)
+            n_cards2 = pg.locator(".qz-card").count()
+            n_bank2 = pg.evaluate("() => TW.quiz.bank().length")
+            # 列表 = 题库 + AI 发布的那几组（publish 的存在 typingcet.quiz.v1，不进 bank()），
+            # 所以只能判下限，不能判等。
+            check("列表里出现 AI 组（卡片数 >= 题库组数 + 1）",
+                  n_cards2 >= n_bank2 + 1 and n_cards2 >= 14, True, (n_cards2, n_bank2))
             check("AI 组的卡片在「AI 出题」分组下",
                   pg.locator(".qz-group").last.locator(".qz-card").count(), 1)
             pg.locator(".qz-group").last.locator(".qz-card").first.click()
@@ -334,18 +361,45 @@ def main():
                   "本次检索失败或结果为空" in sys_txt, True)
             check("system 要求标注来源域名", "句末标一个来源域名" in sys_txt, True)
 
-            # ---------------- G. 做题计时器（2026-11-05 新增） ----------------
-            log("G) 做题计时器与超时提醒")
+            # ---------------- G. 做题计时器（2026-11-05 新增；同日改单题计时 + 可暂停） ----------------
+            log("G) 做题计时器（单题计时 / 可暂停 / 超时提醒）")
             pg.goto(BASE + "#/quiz?set=mt1-p4", wait_until="domcontentloaded")
             pg.wait_for_selector("#qz-timer", timeout=8000)
             t0 = pg.inner_text("#qz-timer")
-            check("题面顶部出现计时条", bool(re.match(r"^\d\d:\d\d$", t0.strip())), True, t0)
+            check("计时条按「第几题 + 该题用时」显示",
+                  bool(re.match(r"^第\s*\d+\s*题\s*\d\d:\d\d$", t0.strip())), True, t0)
             pg.wait_for_timeout(1400)
             t1 = pg.inner_text("#qz-timer")
             check("计时在走（1.4 秒后数字变了）", t1 != t0, True, (t0, t1))
             check("默认不超标、没有红色态", pg.locator(".qz-timer.over").count(), 0)
+            check("有「暂停」按钮", pg.locator("#qz-timer-toggle").count(), 1)
 
-            # 把阈值压到 0.02 分钟（1.2 秒）验证「超时提醒」这条逻辑本身
+            # 切到另一道题：计时条换成那道题，且从 0 起算（单题计时而不是整套累计）
+            nums = pg.evaluate("() => [...new Set([...document.querySelectorAll('[data-q]')]"
+                               ".map(e => e.dataset.q))]")
+            check("这组题至少有 2 道", len(nums) >= 2, True, nums[:5])
+            pg.locator('[data-q="%s"]' % nums[1]).first.click()
+            pg.wait_for_timeout(400)
+            t2 = pg.inner_text("#qz-timer")
+            check("切题后计时条跟着换题号", ("第 %s 题" % nums[1]) in t2.replace("  ", " "), True, t2)
+            check("新题从 0 起算（不是整套累计）",
+                  bool(re.match(r"^第\s*%s\s*题\s*00:0\d$" % nums[1], t2.strip())), True, t2)
+
+            # 手动暂停：2 秒内数字必须一动不动；恢复后继续走
+            pg.click("#qz-timer-toggle")
+            pg.wait_for_timeout(300)
+            p0 = pg.inner_text("#qz-timer")
+            check("暂停后标注「已暂停」", "已暂停" in p0, True, p0)
+            pg.wait_for_timeout(2200)
+            p1 = pg.inner_text("#qz-timer")
+            check("暂停期间不计时（2.2 秒后数字不变）", p1 == p0, True, (p0, p1))
+            check("暂停态有虚线灰样式", pg.locator(".qz-timer.paused").count(), 1)
+            pg.click("#qz-timer-toggle")
+            pg.wait_for_timeout(1400)
+            p2 = pg.inner_text("#qz-timer")
+            check("点「继续」后重新走表", p2 != p1 and "已暂停" not in p2, True, (p1, p2))
+
+            # 把阈值压到 0.02 分钟（1.2 秒）验证「单题超时提醒」这条逻辑本身
             # 🔴 store.save() 有 120ms 防抖：写完立刻 reload 会丢，必须等一下
             pg.evaluate("() => TW.store.setSetting('quizTimerMin', 0.02)")
             pg.wait_for_timeout(350)
@@ -354,7 +408,17 @@ def main():
             pg.wait_for_timeout(2600)
             check("超时后计时条变红", pg.locator(".qz-timer.over").count(), 1)
             toast = pg.evaluate("() => (document.querySelector('#toast-host .toast') || {}).textContent || ''")
-            check("超时弹一次提醒", "分钟" in toast and "往下走" in toast, True, toast)
+            check("超时弹一次提醒（点名是哪一题）",
+                  "分钟" in toast and "往下走" in toast and "第" in toast, True, toast)
+
+            # 交卷后停表，改成显示整套总用时，暂停按钮消失
+            pg.click("#qz-submit")
+            pg.wait_for_timeout(500)
+            f0 = pg.inner_text("#qz-timer")
+            check("交卷后显示总用时并停表", bool(re.match(r"^总用时\s*\d\d:\d\d$", f0.strip())), True, f0)
+            check("交卷后没有暂停按钮", pg.locator("#qz-timer-toggle").count(), 0)
+            pg.wait_for_timeout(1400)
+            check("交卷后时间不再跳", pg.inner_text("#qz-timer") == f0, True)
 
             # 设置里关掉 → 计时条不再出现（也不跑定时器）
             pg.evaluate("""() => { TW.store.setSetting('quizTimer', false);
@@ -378,6 +442,9 @@ def main():
             check("关掉状态回显正确", row and row["on"] is False, True, row and row["on"])
             check("说明里写清 10 分钟阈值", row and "10 分钟" in row["txt"], True,
                   row and row["txt"][:60])
+            check("说明里写明是单题计时、可暂停",
+                  row and "单题" in row["txt"] and "暂停" in row["txt"], True,
+                  row and row["txt"][:80])
             pg.click('[data-switch="quizTimer"]')
             pg.wait_for_timeout(200)
             check("点一下能重新打开",

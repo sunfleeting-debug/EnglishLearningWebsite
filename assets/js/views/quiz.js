@@ -38,14 +38,23 @@
     } else renderList(activeHost);
   });
 
-  /* ---------------- 计时器（sunfleeting 2026-11-05） ----------------
-     「做题目的时候加一个计时器…超过十分钟就提醒，这个在设置那里可以关掉」。
-     按「一套题」计时，不是按单道小题：六级阅读本来就是一篇十分钟，
-     一道题一道题掐反而打断读文章。阈值走设置里的 quizTimerMin（默认 10 分钟），
-     总开关是 settings.quizTimer（默认开）。
-     状态放在模块级 T 里：renderSet 会整块重渲染（点选项就重渲），
-     计时起点必须活在渲染之外，否则每点一次就归零。 */
-  var T = { id: '', start: 0, end: 0, warned: false, tick: 0 };
+  /* ---------------- 计时器（2026-11-05 新增，同日晚改为「单题计时 + 可暂停」） ----------------
+     sunfleeting 的原话：「改成按单题计时、每题 10 分钟，而且那个计时器可以手动停止，
+     防止中间有事情」。所以：
+       · 每道题各算各的账 —— 切到哪题就记哪题，单题累计超过 quizTimerMin（默认 10 分钟）
+         提醒一次（每题只提醒一次，不打断作答）；
+       · 可以手动「暂停」：暂停期间一秒都不计，回来点「继续」接着走，
+         中途要接电话/去开会不用一边心算一边做题；
+       · 交卷后停表，显示整套题的总用时。
+     状态放模块级 T：renderSet 点一次选项就整块重渲染，计时起点绝不能活在渲染函数里，
+     否则每点一次就归零。
+       acc[n]  第 n 题已累计毫秒
+       mark    当前这一段从何时开始（0 = 没在跑）
+       cur     正在计时的题号
+       paused  手动暂停中（暂停时 mark 归 0，acc 不再增长）
+       warned  { 题号: 1 } 每题只提醒一次
+  */
+  var T = { id: '', cur: 0, acc: {}, mark: 0, paused: false, warned: {}, tick: 0, done: false };
 
   function timerOn() {
     var st = TW.store.settings || {};
@@ -65,12 +74,71 @@
     return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
   }
 
-  function startTimer(id) {
-    T.id = id; T.start = Date.now(); T.end = 0; T.warned = false;
+  /** 还没答的第一题；都答过就回到第一题 */
+  function firstOpen() {
+    var n = 0;
+    var qs = (TW.quiz.get(T.id) || {}).questions || [];
+    qs.forEach(function (q) { if (!n && !S.answers[q.n]) n = q.n; });
+    return n || (qs[0] && qs[0].n) || 0;
   }
 
-  function stopTimer() {
-    if (T.start && !T.end) T.end = Date.now();
+  /** 把当前这一段结账进 acc */
+  function settle() {
+    if (T.mark && T.cur) T.acc[T.cur] = (T.acc[T.cur] || 0) + (Date.now() - T.mark);
+    T.mark = 0;
+  }
+
+  function startTimer(id) {
+    T.id = id; T.cur = firstOpen(); T.acc = {}; T.warned = {};
+    T.paused = false; T.done = false; T.mark = Date.now();
+  }
+
+  /** 切到第 n 题：旧题结账、新题起表（暂停中就只切不跑） */
+  function touchQ(n) {
+    n = Number(n) || 0;
+    if (T.done || !n) return;
+    if (T.cur === n) { if (!T.mark && !T.paused) T.mark = Date.now(); return; }
+    if (!T.cur) { T.cur = n; if (!T.paused) T.mark = Date.now(); return; }
+    settle();
+    T.cur = n;
+    if (!T.paused) T.mark = Date.now();
+  }
+
+  function qMs(n) {
+    var ms = T.acc[n] || 0;
+    if (T.mark && T.cur === n) ms += Date.now() - T.mark;
+    return ms;
+  }
+
+  function totalMs() {
+    var t = 0;
+    Object.keys(T.acc).forEach(function (k) { t += T.acc[k]; });
+    if (T.mark && T.cur) t += Date.now() - T.mark;
+    return t;
+  }
+
+  function pauseTimer() { if (!T.done) { settle(); T.paused = true; } }
+  function resumeTimer() { if (!T.done) { T.paused = false; T.mark = Date.now(); } }
+  function stopTimer() { settle(); T.done = true; }
+
+  function resetTimer() {
+    T.id = ''; T.cur = 0; T.acc = {}; T.mark = 0;
+    T.paused = false; T.warned = {}; T.done = false;
+    if (T.tick) { clearInterval(T.tick); T.tick = 0; }
+  }
+
+  /** 计时条文案：做题中＝第几题+该题用时；交卷后＝总用时 */
+  function chipText() {
+    if (T.done) return '总用时 ' + fmtClock(totalMs());
+    return '第 ' + T.cur + ' 题 ' + fmtClock(qMs(T.cur)) + (T.paused ? ' · 已暂停' : '');
+  }
+
+  function paint(el) {
+    if (!el) return;
+    el.textContent = chipText();
+    el.classList.toggle('over', !T.done && qMs(T.cur) >= timerLimit() * 60000);
+    el.classList.toggle('frozen', !!T.done);
+    el.classList.toggle('paused', !T.done && T.paused);
   }
 
   /** 只在页面里真有 #qz-timer 时才跑；视图一走（元素没了）自己把定时器关掉，不留后台任务 */
@@ -79,24 +147,22 @@
     T.tick = setInterval(function () {
       var el = document.getElementById('qz-timer');
       if (!el) { clearInterval(T.tick); T.tick = 0; return; }
-      if (T.end) return;                       // 已交卷：定住，不再跳
-      var ms = Date.now() - T.start;
-      el.textContent = fmtClock(ms);
-      if (!T.warned && ms >= timerLimit() * 60000) {
-        T.warned = true;
-        el.classList.add('over');
-        TW.toast('这套题已经做了 ' + timerLimit() + ' 分钟，先把不确定的标记掉，往下走', 'warn');
+      if (T.done || T.paused) return;          // 交卷或暂停：不动
+      if (!T.warned[T.cur] && qMs(T.cur) >= timerLimit() * 60000) {
+        T.warned[T.cur] = 1;
+        TW.toast('第 ' + T.cur + ' 题已经用了 ' + timerLimit() + ' 分钟，卡住就先标记、往下走', 'warn');
       }
+      paint(el);
     }, 1000);
   }
 
   function esc(s) { return TW.esc(s); }
 
-  /* 换路由就作废计时：下次进来重新开始，别把在别的页面待的时间算进来 */
+  /* 换路由就作废计时：下次进来重新开始，别把在别的页面待的时间算进来
+     （只是中途要接个电话，用计时条上的「暂停」，不要离开页面） */
   window.addEventListener('hashchange', function () {
     releaseAudio();
-    T.id = ''; stopTimer();
-    if (T.tick) { clearInterval(T.tick); T.tick = 0; }
+    resetTimer();
   });
 
   /* ---------------- 列表页 ---------------- */
@@ -281,7 +347,7 @@
           (q.key ? '（' + esc(q.key) + '）' : '')) + '</span>';
       exp = '<div class="qz-exp">' + head + '<div class="qz-exp-t">' + esc(q.explain || '（这题没有解析）') + '</div></div>';
     }
-    return '<div class="qz-q' + it + '">' +
+    return '<div class="qz-q' + it + (T.cur === q.n && !S.graded ? ' cur' : '') + '">' +
       '<div class="qz-q-h"><span class="qz-q-no">' + q.n + '</span>' +
         (q.word ? '<span class="small muted">' + esc(q.word) + '</span>' : '') + '</div>' +
       (set.type === 'cloze' && q.stem && q.stem !== '第 ' + q.n + ' 空'
@@ -307,8 +373,10 @@
       S.pick = S.pick || 0;
     }
 
-    /* 计时器：换套题才重置；同一套重渲染（点选项、展开材料）保持计时 */
+    /* 计时器：换套题才重置；同一套重渲染（点选项、展开材料）保持计时。
+       选词填空一进来就在某个空位上，把当前题对齐到那个空。 */
     if (T.id !== id) startTimer(id);
+    if (!S.graded && set.type === 'cloze' && S.pick) touchQ(S.pick);
     if (S.graded) stopTimer();
 
     var meta = [];
@@ -349,13 +417,16 @@
         ((TW.biling && TW.biling.html(TW.biling.parasOf(set), set.translation)) || esc(set.translation)) +
         '</div>' : '';
 
-    /* 计时小条：交卷后定住显示总用时，超时后变红（提醒只弹一次） */
+    /* 计时小条：显示「第几题 + 这题用了多久」，交卷后换成整套总用时；
+       超时变红（每题只提醒一次），旁边给一个「暂停/继续」按钮——
+       中途要走开就按暂停，回来接着计，别让等待时间算进做题时间里。 */
     var chip = '';
     if (timerOn()) {
-      var used = T.start ? ((T.end || Date.now()) - T.start) : 0;
-      chip = '<span class="qz-timer' + (T.warned ? ' over' : '') + (T.end ? ' frozen' : '') +
-        '" id="qz-timer" title="单套题超过 ' + timerLimit() + ' 分钟会提醒（设置里可关）">' +
-        fmtClock(used) + '</span>';
+      chip = '<span class="qz-timer" id="qz-timer" title="每题单独计时，超过 ' + timerLimit() +
+        ' 分钟提醒一次；中间有事可以按右边暂停（设置里可关）">' + chipText() + '</span>' +
+        (S.graded ? '' : '<button type="button" class="btn sm ghost qz-timer-btn" id="qz-timer-toggle" ' +
+          'title="暂停后不计时，回来点「继续」接着走">' +
+          (T.paused ? TW.icon('play', 12) + ' 继续' : TW.icon('pause', 12) + ' 暂停') + '</button>');
     }
 
     if (localAudio && localAudioId === set.id && localAudio.parentNode) localAudio.parentNode.removeChild(localAudio);
@@ -402,7 +473,15 @@
   }
 
   function bind(host, set) {
-    if (timerOn()) ensureTick();       // 元素在就每秒刷新，元素不在自己停
+    if (timerOn()) {
+      ensureTick();                    // 元素在就每秒刷新，元素不在自己停
+      paint(document.getElementById('qz-timer'));
+      var tg = TW.$('#qz-timer-toggle', host);
+      if (tg) tg.addEventListener('click', function () {
+        if (T.paused) resumeTimer(); else pauseTimer();
+        renderSet(host, set.id);       // 按钮文案「暂停/继续」跟着状态走
+      });
+    }
     var tb = TW.$('#qz-toggle-body', host);
     if (tb) tb.addEventListener('click', function () { S.showBody = !S.showBody; renderSet(host, set.id); });
     var tt = TW.$('#qz-toggle-tr', host);
@@ -421,6 +500,7 @@
       b.addEventListener('click', function () {
         if (S.graded) return;
         var n = Number(b.dataset.q);
+        touchQ(n);                     // 动到哪题就把计时切到哪题
         S.answers[n] = b.dataset.val;
         /* 选词填空：选中某个词就自动跳到下一个空，符合「一路填下去」的手感 */
         if (set.type === 'cloze') {
@@ -435,6 +515,7 @@
       b.addEventListener('click', function () {
         if (S.graded) return;
         var n = Number(b.dataset.blank);
+        touchQ(n);
         if (S.answers[n]) { delete S.answers[n]; }
         S.pick = n;
         renderSet(host, set.id);
@@ -449,6 +530,7 @@
           set.questions.forEach(function (q) { if (!target && !S.answers[q.n]) target = q.n; });
         }
         if (!target) return;
+        touchQ(target);
         /* 同一个词已经占着别的空 → 先把旧位置腾出来，一个词只能用一次 */
         Object.keys(S.answers).forEach(function (n) { if (S.answers[n] === k && Number(n) !== target) delete S.answers[n]; });
         S.answers[target] = k;
@@ -460,7 +542,11 @@
     });
     var inputs = TW.$$('.qz-input', host);
     inputs.forEach(function (el) {
-      el.addEventListener('input', function () { S.answers[Number(el.dataset.q)] = el.value; });
+      el.addEventListener('focus', function () { touchQ(Number(el.dataset.q)); });
+      el.addEventListener('input', function () {
+        touchQ(Number(el.dataset.q));
+        S.answers[Number(el.dataset.q)] = el.value;
+      });
     });
 
     var sub = TW.$('#qz-submit', host);

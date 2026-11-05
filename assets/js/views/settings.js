@@ -62,8 +62,8 @@
         '<div class="card card-pad" style="margin-bottom:1rem">' +
           '<div class="card-title" style="margin-bottom:.3rem">题目板块</div>' +
           switchRow('quizTimer', '做题计时与超时提醒',
-            '做阅读/完形/匹配时右上角显示计时；单套题超过 ' + (TW.store.settings.quizTimerMin || 10) +
-            ' 分钟弹一次提醒（做完交卷后定住显示总用时）') +
+            '做阅读/完形/匹配时右上角按<b>单题</b>计时；每题超过 ' + (TW.store.settings.quizTimerMin || 10) +
+            ' 分钟弹一次提醒。计时条旁边可以随时「暂停」，中间有事回来再继续（暂停期间不计时）') +
         '</div>' +
 
         '<div class="card card-pad" style="margin-bottom:1rem">' +

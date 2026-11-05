@@ -1838,6 +1838,21 @@ html.dark .ai-send.stop::after { background: #fff; }
   background: color-mix(in srgb, var(--warn) 12%, transparent);
 }
 .qz-timer.frozen { color: var(--text-2); }
+/* 暂停态：整条变灰虚线，一眼能看出「现在没在计时」 */
+.qz-timer.paused {
+  color: var(--text-2); border-style: dashed;
+  background: transparent;
+}
+/* 暂停按钮：和计时条同一种小药丸外观（.btn.ghost 会把边框设成透明，
+   所以要抬一级选择器才能覆盖） */
+.btn.ghost.qz-timer-btn {
+  font-size: 12px; padding: 0.1rem 0.55rem;
+  border: 1px solid var(--line-soft); border-radius: 999px;
+  color: var(--text-3); background: transparent;
+}
+.btn.ghost.qz-timer-btn:hover {
+  color: var(--text); border-color: var(--line); background: var(--bg-soft);
+}
 .qz-mat {
   border: 1px solid var(--line-soft); background: var(--bg-soft);
   border-radius: var(--radius); padding: 0.8rem 0.9rem; margin-bottom: 0.9rem;
@@ -1883,6 +1898,9 @@ html.dark .ai-send.stop::after { background: #fff; }
 .qz-q { border: 1px solid var(--line-soft); border-radius: var(--radius); padding: 0.7rem 0.8rem; background: var(--card); }
 .qz-q.ok { border-color: rgba(27, 166, 75, 0.4); }
 .qz-q.err { border-color: rgba(226, 61, 61, 0.4); }
+/* 当前正在计时的那道题（2026-11-05 单题计时）：只在左侧加一道细标记，
+   不要把整块边框点亮——25 道听力题一起排下来会晃眼 */
+.qz-q.cur { box-shadow: inset 3px 0 0 var(--accent); }
 .qz-q-h { display: flex; align-items: center; gap: 0.45rem; margin-bottom: 0.35rem; }
 .qz-q-no {
   display: inline-flex; align-items: center; justify-content: center;
