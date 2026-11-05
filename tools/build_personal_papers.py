@@ -280,7 +280,7 @@ def collect_subjective():
     seen = set()
     for directory in sorted(base.iterdir()):
         date = re.match(r'(20\d\d)年(\d{2})月', directory.name)
-        if not date or int(date.group(1)) < 2021:
+        if not date or int(date.group(1)) < 2020:
             continue
         for path in sorted(directory.rglob('*.docx')):
             doc = Document(path)
@@ -291,7 +291,7 @@ def collect_subjective():
             for index, section in sections:
                 paper_number = str(index + 1) if index is not None else None
                 if paper_number is None:
-                    m = re.search(r'第([123一二三])套', path.name)
+                    m = re.search(r'(?:第|全)([123一二三])套', path.name)
                     if not m:
                         continue
                     paper_number = {'一':'1', '二':'2', '三':'3'}.get(m.group(1), m.group(1))
@@ -786,6 +786,58 @@ def build():
                          'test': f'2022年12月六级真题 · 第{paper_number}套', 'no': number,
                          'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
                          'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # 2020.12 Word 原卷自带逐题答案表，先校验题号完整性再构造题目。
+    for paper_number in (1, 2, 3):
+        document = next((MATERIALS / '六级真题' / '六级真题').glob(
+            f'2020年12*/**/2020年12月六级真题（第{paper_number}套）.docx'))
+        doc = Document(document)
+        rows = [paragraph.text.strip() for paragraph in doc.paragraphs if paragraph.text.strip()]
+        answer_index = next(i for i, value in enumerate(rows) if re.sub(r'\s+', '', value) == '参考答案')
+        pairs = re.findall(r'(?<!\d)(\d{1,2})\s*[.．]\s*([A-Q])\b', '\n'.join(rows[answer_index:]))
+        answers = {int(number): answer for number, answer in pairs}
+        required = set(range(26, 56)) | (set(range(1, 26)) if paper_number < 3 else set())
+        if len(pairs) != len(answers) or set(answers) != required:
+            raise ValueError(f'Incomplete or duplicate 2020.12 answer table: {paper_number}')
+        reading = next(i for i, value in enumerate(rows[:answer_index])
+                       if value.startswith('Part III') and 'Reading Comprehension' in value)
+        section_a = next(i for i in range(reading, answer_index) if rows[i] == 'Section A')
+        section_b = next(i for i in range(section_a, answer_index) if rows[i] == 'Section B')
+        bank_start = next(i for i in range(section_a, section_b) if re.match(r'^A\)', rows[i]))
+        body_text = '\n'.join(value for value in rows[section_a + 1:bank_start] if not value.startswith('Directions:'))
+        bank_text = ' '.join(rows[bank_start:section_b])
+        marks = list(re.finditer(r'(?<![A-Za-z])([A-O])\)\s*', bank_text))
+        bank_lines = [mark.group(1) + ') ' + bank_text[mark.end():marks[i+1].start() if i+1 < len(marks) else len(bank_text)].strip()
+                      for i, mark in enumerate(marks)]
+        cloze_key = ''.join(answers[number] for number in range(26, 36))
+        body, bank, questions = parse_exam_cloze('more than once.\n' + body_text + '\n' + '\n'.join(bank_lines) + '\nSection B', cloze_key)
+        sets.append({'id': f'personal-cet6-202012-{paper_number}-cloze', 'type': 'cloze',
+                     'test': f'2020年12月六级真题 · 第{paper_number}套', 'no': 0, 'title': '选词填空',
+                     'source': '本机星火六级资料 · 对照原卷答案表',
+                     'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+        match_key = ''.join(answers[number] for number in range(36, 46))
+        reading_rows = rows[section_b:answer_index]
+        paragraphs, questions = parse_exam_match('more than once.\n' + '\n'.join(reading_rows), match_key)
+        sets.append({'id': f'personal-cet6-202012-{paper_number}-match', 'type': 'match',
+                     'test': f'2020年12月六级真题 · 第{paper_number}套', 'no': 0, 'title': '段落匹配',
+                     'source': '本机星火六级资料 · 对照原卷答案表',
+                     'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
+        for passage, first in [(1, 46), (2, 51)]:
+            key = ''.join(answers[number] for number in range(first, first + 5))
+            body, questions = parse_docx_reading(reading_rows, first, key)
+            sets.append({'id': f'personal-cet6-202012-{paper_number}-reading-{passage}', 'type': 'reading',
+                         'test': f'2020年12月六级真题 · 第{paper_number}套', 'no': passage,
+                         'title': f'仔细阅读 · Passage {passage}', 'source': '本机星火六级资料 · 对照原卷答案表',
+                         'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+        if paper_number < 3:
+            listening = next(i for i, value in enumerate(rows[:reading]) if 'Listening Comprehension' in value)
+            key = ''.join(answers[number] for number in range(1, 26))
+            questions = parse_listening(rows[listening:reading], key)
+            audio = next((MATERIALS / '六级真题' / '六级真题').glob(
+                f'2020年12*/**/2020年12月六级听力第{paper_number}套.mp3'))
+            sets.append({'id': f'personal-cet6-202012-{paper_number}-listening', 'type': 'listening',
+                         'test': f'2020年12月六级真题 · 第{paper_number}套', 'no': 0,
+                         'title': f'听力真题 · 第{paper_number}套', 'source': '本机星火六级资料 · 对照原卷答案表',
+                         'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': questions})
     # 2021.06 题库由配套 Word 和逐题解析核对；题库选项保存在 Word 表格中。
     for paper_number, cloze_key, match_key, reading_keys, listening_key in [
             (1, 'FEIHKCBGAL', 'FIDJCEKGBH', ('DABAD', 'BCDAC'), 'ABCABDDCBCBADCDDBADACBCBA'),
