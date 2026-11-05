@@ -740,6 +740,101 @@ def build():
                          'test': f'2023年03月六级真题 · 第{paper_number}套', 'no': number,
                          'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
                          'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # 2022.12 阅读答案核对自相应解析册。
+    for paper_number, cloze_key, match_key, keys in [
+            (1, 'FAEKGNCBIO', 'EDDAFKHDCG', ('ABBAD', 'BCACD')),
+            (2, 'BDALIJOGME', 'FAJCGPEMDN', ('BBACC', 'DAACD')),
+            (3, 'KALBNMIFJC', 'ELAMDHBOKN', ('ABCBD', 'BAADC'))]:
+        pdf = next((MATERIALS / '六级真题' / '六级真题').glob(f'2022年12*/**/2022年12月英语六级真题第{paper_number}套.pdf'))
+        with fitz.open(pdf) as doc_202212:
+            rows = []
+            audio_pages = []
+            for page in doc_202212:
+                page_lines = []
+                for block in page.get_text('dict')['blocks']:
+                    for line in block.get('lines', []):
+                        value = ''.join(span['text'] for span in line['spans']).strip()
+                        if value:
+                            page_lines.append((line['bbox'][0], line['bbox'][1], value))
+                audio_pages.append(page_lines)
+                for line in page.get_text().splitlines():
+                    if (re.fullmatch(r'\s*\d{1,2}\s*', line) and int(line.strip()) not in range(26, 36)) or re.match(r'^\s*(?:试题册.*2022年12月六级真题|2022\s*年\s*12\s*月英语六级真题第)', line):
+                        continue
+                    rows.append(repair_pdf_text(line))
+        if paper_number in (1, 2):
+            audio_key = {1: 'ABADCCDBBACDDBADABCABBCCD', 2: 'AADCCDBBABCACDBCABBDADAAC'}[paper_number]
+            audio = next((MATERIALS / '六级真题' / '六级真题').glob(f'2022年12*/**/2022.12六级真题第{paper_number}套听力.mp3'))
+            listen_questions = parse_pdf_listening(audio_pages[:3], audio_key)
+            sets.append({'id': f'personal-cet6-202212-{paper_number}-listening', 'type': 'listening',
+                         'test': f'2022年12月六级真题 · 第{paper_number}套', 'no': 0,
+                         'title': f'听力真题 · 第{paper_number}套', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                         'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': listen_questions})
+        text = '\n'.join(rows)
+        body, bank, questions = parse_exam_cloze(text, cloze_key)
+        sets.append({'id': f'personal-cet6-202212-{paper_number}-cloze', 'type': 'cloze',
+                     'test': f'2022年12月六级真题 · 第{paper_number}套', 'no': 0,
+                     'title': '选词填空', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+        paragraphs, questions = parse_exam_match(text, match_key)
+        sets.append({'id': f'personal-cet6-202212-{paper_number}-match', 'type': 'match',
+                     'test': f'2022年12月六级真题 · 第{paper_number}套', 'no': 0,
+                     'title': '段落匹配', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
+        for number, first, key in [(1, 46, keys[0]), (2, 51, keys[1])]:
+            body, questions = parse_docx_reading(rows, first, key)
+            sets.append({'id': f'personal-cet6-202212-{paper_number}-reading-{number}', 'type': 'reading',
+                         'test': f'2022年12月六级真题 · 第{paper_number}套', 'no': number,
+                         'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                         'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # 2022.09 为同一套客观题；PDF 的个别填空编号损坏，以配套 Word 正文校正。
+    root_202209 = MATERIALS / '六级真题' / '六级真题'
+    pdf_202209 = next(root_202209.glob('2022年09*/**/2022.09英语六级真题第1套*.pdf'))
+    docx_202209 = next(root_202209.glob('2022年09*/**/2022.09英语六级真题第1套.docx'))
+    with fitz.open(pdf_202209) as exam_202209:
+        text_202209 = '\n'.join(page.get_text() for page in exam_202209)
+        rows_202209, listening_pages = [], []
+        for page_index, page in enumerate(exam_202209):
+            lines = []
+            for block in page.get_text('dict')['blocks']:
+                for line in block.get('lines', []):
+                    value = ''.join(span['text'] for span in line['spans']).strip()
+                    value = re.sub(r'(?<![A-Za-z])([A-D])\s+\)', r'\1)', value)
+                    value = re.sub(r'^(\d+)\s+\.', r'\1.', value)
+                    value = re.sub(r'^\.\s*([A-D]\))', r'\1', value)
+                    if value:
+                        lines.append((line['bbox'][0], line['bbox'][1], value))
+            cutoff = min([y for x, y, value in lines if page_index == 2 and re.match(r'^Part\s*\]\[', value)] or [float('inf')])
+            listening_pages.append([(x, y, value) for x, y, value in lines if y < cutoff])
+            for line in page.get_text().splitlines():
+                if re.fullmatch(r'\s*第\s*\d+\s*页\s*', line):
+                    continue
+                rows_202209.append(repair_pdf_text(line))
+    audio = next(root_202209.glob('2022年09*/**/2022年09月六级听力（全1套）听力.mp3'))
+    listen_questions = parse_pdf_listening(listening_pages[:3], 'CDABCBBDDCADCBADAABCDBCAB')
+    sets.append({'id': 'personal-cet6-202209-1-listening', 'type': 'listening',
+                 'test': '2022年9月六级真题 · 共用听力', 'no': 0, 'title': '听力真题',
+                 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                 'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': listen_questions})
+    doc_rows = [paragraph.text.strip() for paragraph in Document(docx_202209).paragraphs if paragraph.text.strip()]
+    begin = next(i for i, value in enumerate(doc_rows) if value.startswith('The now extinct passenger pigeon'))
+    end = next(i for i, value in enumerate(doc_rows[begin:], begin) if value == 'Section B')
+    pdf_region = text_202209.split('more than once.', 1)[1].split('Section B', 1)[0]
+    options = re.findall(r'(?m)^\s*([A-O0])\s*\)\s*([^\n]+)', pdf_region)
+    cloze_source = 'more than once.\n' + '\n'.join(doc_rows[begin:end]) + '\n' + '\n'.join(f'{key}) {value}' for key, value in options) + '\nSection B'
+    body, bank, questions = parse_exam_cloze(cloze_source, 'LAIMOBCHND')
+    sets.append({'id': 'personal-cet6-202209-1-cloze', 'type': 'cloze', 'test': '2022年9月六级真题 · 第1套', 'no': 0,
+                 'title': '选词填空', 'source': '本机星火六级资料 · 对照 Word 和 PDF',
+                 'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+    paragraphs, questions = parse_exam_match('\n'.join(rows_202209), 'LEKGDHBJCN')
+    sets.append({'id': 'personal-cet6-202209-1-match', 'type': 'match', 'test': '2022年9月六级真题 · 第1套', 'no': 0,
+                 'title': '段落匹配', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                 'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
+    for number, first, key in [(1, 46, 'DCABC'), (2, 51, 'DBDAC')]:
+        body, questions = parse_docx_reading(rows_202209, first, key)
+        sets.append({'id': f'personal-cet6-202209-1-reading-{number}', 'type': 'reading',
+                     'test': '2022年9月六级真题 · 第1套', 'no': number, 'title': f'仔细阅读 · Passage {number}',
+                     'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [body], 'paras': [], 'bank': [], 'questions': questions})
     writing = collect_subjective()
     payload = {'version': 1, 'source': str(paper.relative_to(MATERIALS)), 'sets': sets, 'writing': writing}
     OUTPUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
