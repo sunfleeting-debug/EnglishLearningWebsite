@@ -786,6 +786,30 @@ def build():
                          'test': f'2022年12月六级真题 · 第{paper_number}套', 'no': number,
                          'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
                          'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # 2019.12 的词库和答案来自对应解析，原 Word 提供正文及段落匹配题。
+    for paper_number, words, cloze_key, match_key in [
+            (1, 'assessed assigned consequences conspicuously deficits designated detrimental digestion excelling indulging loopholes rapidly redundant regularly similar',
+             'GJEALBOCDN', 'GCHDBEJFIA'),
+            (2, 'alternate crown determine generated locating merged miniatures opting particles peak prematurely simply switching synonymous trend',
+             'KCNMDIHJOL', 'CEAFMGBHDL')]:
+        document = next((MATERIALS / '六级真题' / '六级真题').glob(
+            f'2019年12*/**/2019年12月六级真题（第{paper_number}套）.docx'))
+        rows = [paragraph.text.strip() for paragraph in Document(document).paragraphs if paragraph.text.strip()]
+        reading = next(i for i, value in enumerate(rows) if 'Reading Comprehension' in value)
+        cloze_start = next(i for i in range(reading, len(rows)) if rows[i].startswith('Questions 26 to 35'))
+        section_b = next(i for i in range(cloze_start, len(rows)) if rows[i] == 'Section B')
+        bank_text = '\n'.join(chr(65 + i) + ') ' + word for i, word in enumerate(words.split()))
+        body, bank, questions = parse_exam_cloze('more than once.\n' + '\n'.join(rows[cloze_start + 1:section_b]) +
+                                                 '\n' + bank_text + '\nSection B', cloze_key)
+        sets.append({'id': f'personal-cet6-201912-{paper_number}-cloze', 'type': 'cloze',
+                     'test': f'2019年12月六级真题 · 第{paper_number}套', 'no': 0, 'title': '选词填空',
+                     'source': '本机星火六级资料 · 对照配套解析',
+                     'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+        paragraphs, questions = parse_exam_match('more than once.\n' + '\n'.join(rows[section_b:]), match_key)
+        sets.append({'id': f'personal-cet6-201912-{paper_number}-match', 'type': 'match',
+                     'test': f'2019年12月六级真题 · 第{paper_number}套', 'no': 0, 'title': '段落匹配',
+                     'source': '本机星火六级资料 · 对照配套解析',
+                     'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
     # 2020.07 Word 丢失了段落和题号，依据原卷顺序恢复后再校验。
     document_202007 = next((MATERIALS / '六级真题' / '六级真题').glob(
         '2020年07*/**/2020年07月六级真题（全1套）.docx'))
