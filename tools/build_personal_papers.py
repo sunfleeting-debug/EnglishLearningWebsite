@@ -786,6 +786,60 @@ def build():
                          'test': f'2022年12月六级真题 · 第{paper_number}套', 'no': number,
                          'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
                          'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # 2021.12 的 Word 保留了 PDF 中损坏的选项和空格编号。
+    doc_202112 = next((MATERIALS / '六级真题' / '六级真题').glob('2021年12*/**/2021年12月六级真题全3套.docx'))
+    doc_rows_202112 = [paragraph.text.strip() for paragraph in Document(doc_202112).paragraphs if paragraph.text.strip()]
+    for paper_number, body_prefix, title_prefix, cloze_key, match_key, reading_keys in [
+            (2, 'According to psychologist Sharon', 'Do music lessons', 'BDOAIEGJMF', 'ENCGOHDJFI', ('ADDCB', 'BBDCA')),
+            (3, None, 'Why facts don’t change', None, 'DGMFNEICOH', ('DBBCC', 'AABCD'))]:
+        title_index = next(i for i, value in enumerate(doc_rows_202112) if value.startswith(title_prefix))
+        end_index = next((i for i in range(title_index + 1, len(doc_rows_202112))
+                          if doc_rows_202112[i].startswith('Part I') and 'Writing' in doc_rows_202112[i]), len(doc_rows_202112))
+        rows = doc_rows_202112[title_index:end_index]
+        paragraphs, questions = parse_exam_match('more than once.\nSection B\n' + '\n'.join(rows), match_key)
+        sets.append({'id': f'personal-cet6-202112-{paper_number}-match', 'type': 'match',
+                     'test': f'2021年12月六级真题 · 第{paper_number}套', 'no': 0, 'title': '段落匹配',
+                     'source': '本机星火六级资料 · Word 文本，建议对照原卷',
+                     'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
+        if body_prefix:
+            begin = next(i for i, value in enumerate(doc_rows_202112) if value.startswith(body_prefix))
+            end = next(i for i in range(begin, len(doc_rows_202112)) if doc_rows_202112[i] == 'Section B')
+            bank_start = next(i for i in range(begin, end) if re.match(r'^A\)', doc_rows_202112[i]))
+            bank_text = ' '.join(doc_rows_202112[bank_start:end])
+            marks = list(re.finditer(r'(?<![A-Za-z])([A-O])\)\s*', bank_text))
+            bank_lines = [mark.group(1) + ') ' + bank_text[mark.end():marks[i+1].start() if i+1 < len(marks) else len(bank_text)].strip()
+                          for i, mark in enumerate(marks)]
+            cloze_source = 'more than once.\n' + '\n'.join(doc_rows_202112[begin:bank_start]) + '\n' + '\n'.join(bank_lines) + '\nSection B'
+            body, bank, questions = parse_exam_cloze(cloze_source, cloze_key)
+            sets.append({'id': f'personal-cet6-202112-{paper_number}-cloze', 'type': 'cloze',
+                         'test': f'2021年12月六级真题 · 第{paper_number}套', 'no': 0, 'title': '选词填空',
+                         'source': '本机星火六级资料 · Word 文本，建议对照原卷',
+                         'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+        if reading_keys:
+            for number, first, key in [(1, 46, reading_keys[0]), (2, 51, reading_keys[1])]:
+                body, questions = parse_docx_reading(rows, first, key)
+                sets.append({'id': f'personal-cet6-202112-{paper_number}-reading-{number}', 'type': 'reading',
+                             'test': f'2021年12月六级真题 · 第{paper_number}套', 'no': number,
+                             'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · Word 文本，建议对照原卷',
+                             'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+        if paper_number == 2:
+            pdf = next((MATERIALS / '六级真题' / '六级真题').glob('2021年12*/**/2021.12六级真题第2套.pdf'))
+            pages = []
+            with fitz.open(pdf) as exam:
+                for page in list(exam)[:3]:
+                    lines = []
+                    for block in page.get_text('dict')['blocks']:
+                        for line in block.get('lines', []):
+                            value = ''.join(span['text'] for span in line['spans']).strip()
+                            if value:
+                                lines.append((line['bbox'][0], line['bbox'][1], value))
+                    pages.append(lines)
+            audio = next((MATERIALS / '六级真题' / '六级真题').glob('2021年12*/**/2021.12六级听力第2套.mp3'))
+            questions = parse_pdf_listening(pages, 'ABDADACBCBBCDBACDADCAADCB')
+            sets.append({'id': 'personal-cet6-202112-2-listening', 'type': 'listening',
+                         'test': '2021年12月六级真题 · 第2套', 'no': 0, 'title': '听力真题 · 第2套',
+                         'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                         'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': questions})
     # 2022.06 两套阅读；第 3 套客观题与第 2 套相同，听力共用一套。
     for paper_number, cloze_key, match_key in [(1, 'ABKHJGLDEF', 'EBJDKFCGAH'),
                                                 (2, 'GBFANCMDLE', 'FBHDECGAJE')]:
