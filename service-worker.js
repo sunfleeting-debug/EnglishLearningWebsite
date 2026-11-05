@@ -1,5 +1,5 @@
 /* Versioned app-shell cache for the installable mobile web app. */
-const CACHE_VERSION = 'english-learning-v1.12.7-scanned-notes';
+const CACHE_VERSION = 'english-learning-v1.12.8-listening-stats';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const SHELL = [
@@ -13,10 +13,10 @@ const SHELL = [
   './assets/js/views/practice.js', './assets/js/views/sentences.js', './assets/js/views/review.js',
   './assets/js/views/ai.js', './assets/js/views/quiz.js', './assets/js/views/zhenti.js', './assets/js/views/writing.js', './assets/js/views/listening.js', './assets/js/biling.js',
   './assets/js/views/srs.js', './assets/js/views/audio.js', './assets/js/views/stats.js',
-  './assets/js/views/resources.js', './assets/js/views/reading.js', './assets/js/views/settings.js',
+  './assets/js/views/resources.js', './assets/js/views/reading.js', './assets/js/views/settings.js', './assets/js/study-stats.js',
   './assets/js/views/account.js', './assets/js/views/admin.js',
   './data/books.js', './data/words.js', './data/reading.js', './data/sentences.js', './data/classics.js', './data/quiz.js', './data/quiz-more.js', './data/writing.js', './data/listening.js', './data/listening-extra.js', './data/dicts/index.js',
-  './data/quiz-zhenti.js', './data/writing-zhenti.js', './data/listening-zhenti.js', './data/personal-papers.js', './data/personal-notes.js', './data/personal-scan-notes.js',
+  './data/quiz-zhenti.js', './data/writing-zhenti.js', './data/listening-zhenti.js', './data/personal-papers.js', './data/personal-notes.js', './data/personal-scan-notes.js', './data/personal-listening-text.js',
   './assets/img/icon-180.png', './assets/img/icon-192.png', './assets/img/icon-512.png',
   './assets/img/icon-maskable-512.png', './assets/img/intro-typewriter.webp', './assets/img/shadow-leaves.webp'
 ];

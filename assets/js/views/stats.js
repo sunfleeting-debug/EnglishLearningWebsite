@@ -51,6 +51,19 @@
   /** 柱高 / 折线通用：把数值映射到绘图区 */
   function scale(v, max, h) { return max > 0 ? (v / max) * h : 0; }
 
+  function subjectChart(title, data, href, unit) {
+    var labels = ['未达 60%', '60%–79%', '80%–100%'];
+    var colors = ['var(--warn)', 'var(--accent)', 'var(--ok)'];
+    var max = Math.max(1, data.bins[0], data.bins[1], data.bins[2]);
+    return '<div class="card card-pad st-card" style="margin-top:0"><div class="st-head"><div class="card-title">' + title + '</div>' +
+      '<a class="small muted" href="' + href + '">去练习 ' + TW.icon('arrowRight', 12) + '</a></div>' +
+      '<div class="small muted">' + data.count + ' ' + unit + ' · 平均得分率 ' + (data.average == null ? '—' : data.average + '%') + '</div>' +
+      (data.count ? '<div class="st-lv" style="margin-top:.8rem">' + data.bins.map(function (n, i) {
+        return '<div class="st-lv-row"><span class="st-lv-l">' + labels[i] + '</span><span class="st-lv-bar"><i style="width:' +
+          (n / max * 100) + '%;background:' + colors[i] + '"></i></span><span class="st-lv-n">' + n + '</span></div>';
+      }).join('') + '</div>' : '<p class="small muted">完成并提交后，这里会显示成绩分布。</p>') + '</div>';
+  }
+
   /* ---------------- 图表：趋势（柱=题量，线=正确率） ---------------- */
 
   function trendSvg(days) {
@@ -209,6 +222,7 @@
 
   function render(host) {
     var c = TW.store.counts();
+    var subjectStats = TW.studyStats.summary();
     var daily = TW.store.state.daily || {};
     var sentenceStats = TW.sentences ? TW.sentences.summary() : null;
 
@@ -396,6 +410,12 @@
         ' / ' + sentenceStats.total + ' 组 · 今日完成 ' + sentenceStats.doneToday + ' 组 · 独立答对 ' +
         sentenceStats.rightToday + ' 组 · 到期复习 ' + sentenceStats.due + ' 组（仅本机记录）</p></div>' +
         '<a class="btn" href="#/sentences">查看句子课程 ' + TW.icon('arrowRight', 15) + '</a></div>' : '') +
+
+      '<div class="st-head" style="margin-top:1rem"><div><h3>专项学习</h3><span class="small muted">每套题仅统计最近一次成绩；翻译与作文按已批改的评分统计。</span></div></div>' +
+      '<div class="st-two">' + subjectChart('题目', subjectStats.quiz, '#/quiz', '套') +
+        subjectChart('听力', subjectStats.listening, '#/listening', '套') +
+        subjectChart('翻译', subjectStats.trans, '#/writing', '篇') +
+        subjectChart('作文', subjectStats.essay, '#/writing', '篇') + '</div>' +
 
       /* ---- 指标卡 ---- */
       '<div class="st-kpi">' + kpis.map(function (x) {

@@ -18,7 +18,7 @@
     id: '', answers: {}, items: {}, graded: false, right: 0,
     pick: 0,          // 选词填空：当前选中的空位
     showBody: true,
-    showTrans: false,
+    showTrans: false, showListeningText: false,
     cache: {}         // setId -> {answers, graded, items, right, pick}
   };
 
@@ -384,7 +384,7 @@
       var c = openCache(id);
       S.id = id; S.answers = c.answers || {}; S.items = c.items || {};
       S.graded = !!c.graded; S.right = c.right || 0; S.pick = c.pick || 0;
-      S.showTrans = false; S.showBody = true;
+      S.showTrans = false; S.showBody = true; S.showListeningText = false;
     } else {
       S.pick = S.pick || 0;
     }
@@ -407,6 +407,18 @@
         '<span>答对率 ' + Math.round(S.right / set.questions.length * 100) + '%</span>' +
         '<button class="btn sm" id="qz-again">' + TW.icon('refresh', 14) + ' 再做一遍</button></div>'
       : '';
+
+    var listeningText = set.type === 'listening' && (window.TW_PERSONAL_LISTENING_TEXT || {})[set.id];
+    var listeningPanel = set.type !== 'listening' ? '' : '<div class="card card-pad" style="margin-top:.8rem">' +
+      '<div class="st-head"><div class="card-title">听力原文与译文</div>' +
+      (listeningText && listeningText.length ? '<button class="btn sm ghost" id="qz-listening-text">' +
+        (S.showListeningText ? '收起原文与译文' : '查看原文与译文') + '</button>' : '') + '</div>' +
+      (listeningText && listeningText.length ? '<div class="small muted">已整理 ' + listeningText.length + ' 段，其他段落还在整理。中文为参考翻译。</div>' +
+        (S.showListeningText ? listeningText.map(function (section) {
+          return '<h3>' + esc(section.title) + '</h3>' + section.lines.map(function (line) {
+            return '<div class="qz-p"><p>' + esc(line[0]) + '</p><p class="muted">' + esc(line[1]) + '</p></div>';
+          }).join('');
+        }).join('') : '') : '<div class="small muted">这套听力的原文和译文还在整理。</div>') + '</div>';
 
     var matHead = '<div class="qz-mat-h">' +
       '<button class="btn sm ghost" id="qz-toggle-body">' +
@@ -454,6 +466,7 @@
           esc(back.label) + '</a>') +
       scoreBar +
       (set.type === 'listening' ? '<div class="card card-pad"><div class="card-title">真题录音</div><p class="small muted">请播放录音；问题在录音中，题面提供选项。</p><div id="qz-local-audio">正在读取录音…</div></div>' : '') +
+      listeningPanel +
       '<div class="card card-pad qz-sheet">' +
         '<div class="qz-mat-wrap">' +
           '<div class="qz-mat-h-row"><span class="tag qz">' + esc(TYPE_TAG[set.type] || '题目') + '</span>' +
@@ -509,6 +522,8 @@
     if (tb) tb.addEventListener('click', function () { S.showBody = !S.showBody; renderSet(host, set.id); });
     var tt = TW.$('#qz-toggle-tr', host);
     if (tt) tt.addEventListener('click', function () { S.showTrans = !S.showTrans; renderSet(host, set.id); });
+    var lt = TW.$('#qz-listening-text', host);
+    if (lt) lt.addEventListener('click', function () { S.showListeningText = !S.showListeningText; renderSet(host, set.id); });
 
     var again = TW.$('#qz-again', host);
     if (again) again.addEventListener('click', function () {
