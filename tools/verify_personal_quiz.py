@@ -34,7 +34,7 @@ with static_server() as base, sync_playwright() as playwright:
         }''', bundle)
         page.locator('#pm-choose').wait_for()
         page.locator('#pm-choose').click()
-        page.get_by_text('已加载本机可判分题目：23 组、215 题。').wait_for()
+        page.get_by_text(f'已加载本机可判分题目：{len(bundle["sets"])} 组、{sum(len(s["questions"]) for s in bundle["sets"])} 题。').wait_for()
         page.locator('a[href="#/quiz?set=personal-cet6-202112-1-reading-1"]').click()
         for question in next(x for x in bundle['sets'] if x['id'].endswith('reading-1'))['questions']:
             page.locator(f'[data-q="{question["n"]}"][data-val="{question["answer"]}"]').click()

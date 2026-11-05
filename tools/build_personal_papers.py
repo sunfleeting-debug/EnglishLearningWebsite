@@ -53,6 +53,14 @@ LISTENING_KEY = 'ACBCDDDADCBCABACDBBDBCACA'
 def clean(text):
     return re.sub(r'\s+', ' ', text).strip()
 
+def repair_pdf_text(text):
+    for old, new in [('fbr', 'for'), ('fbcus', 'focus'), ('Ifs', "It's"), ('Thafs', "That's"),
+                     ('whafs', "what's"), ('workers5', "workers'"), ('learners5', "learners'"),
+                     ('Governments5', "Governments'"), ('individuals5', "individuals'"),
+                     ('academics5', "academics'"), ('animals5', "animals'")]:
+        text = text.replace(old, new)
+    return text
+
 def parse_questions(text, start, end, answers):
     result = []
     for number in range(start, end + 1):
@@ -120,7 +128,7 @@ def parse_pdf_listening(pages, answers):
     choices = {}
     previous = None
     for page in pages:
-        cutoffs = [y for x, y, text in page if re.match(r'^Part\s+(?:III|HI|JU|in)\b', text, re.I)]
+        cutoffs = [y for x, y, text in page if re.match(r'^Part\s+(?:III|HI|JU|in|M)\b', text, re.I)]
         cutoff = min(cutoffs) if cutoffs else float('inf')
         headers = []
         for x, y, text in page:
@@ -138,6 +146,13 @@ def parse_pdf_listening(pages, answers):
             for i, match in enumerate(labels):
                 key = match.group(1)
                 value = clean(text[match.end():labels[i+1].start() if i+1 < len(labels) else len(text)])
+                if not value:
+                    # Some PDF text layers separate a label and its text at the same vertical position.
+                    adjacent = sorted((px, candidate) for px, py, candidate in page
+                                      if 0 < px - x < 100 and abs(py - y) < 2 and
+                                      not re.match(r'^(?:\d{1,2}\.\s*)?[A-D]\)', candidate))
+                    if adjacent:
+                        value = clean(adjacent[0][1])
                 if key in choices.setdefault(number, {}):
                     raise ValueError(f'Duplicate PDF listening option {number} {key}')
                 choices[number][key] = value
@@ -150,7 +165,8 @@ def parse_pdf_listening(pages, answers):
             raise ValueError(f'Incomplete PDF listening question {n}: {options}')
         corrections = [(' fbr ', ' for '), ('fbcus', 'focus'), ('foreigns ervice', 'foreign service'),
                        ('his.country', 'his country'), ('agenfs', "agent's"), ('students5', "students'"),
-                       ('animals5', "animals'"), ('get tom off', 'get torn off')]
+                       ('animals5', "animals'"), ('get tom off', 'get torn off'), ('Ifs ', "It's "),
+                       ('individuals5', "individuals'"), ('academics5', "academics'")]
         for key in options:
             for old, new in corrections:
                 options[key] = options[key].replace(old, new)
@@ -169,7 +185,7 @@ def parse_docx_reading(paragraphs, start, answers):
     questions = []
     for n, answer in enumerate(answers, start):
         i = next(i for i, text in enumerate(rows) if re.match(r'^' + str(n) + r'\.', text))
-        end = next((j for j in range(i + 1, len(rows)) if re.match(r'^(?:' + str(n + 1) + r'\.|Passage\s+Two\b|Part\s*IV\b)', rows[j], re.I)), len(rows))
+        end = next((j for j in range(i + 1, len(rows)) if re.match(r'^(?:' + str(n + 1) + r'\.|Passage\s+Two\b|Part\s*(?:IV\b|N\b|Ⅳ)|Translation\b)', rows[j], re.I)), len(rows))
         text = ' '.join(rows[i:end])
         marks = list(re.finditer(r'(?<![A-Za-z])([ABCD])\s*\)\s*', text))
         if sorted(m.group(1) for m in marks) != list('ABCD'):
@@ -444,6 +460,99 @@ def build():
                     option['t'] = option['t'].replace('fbcus', 'focus').replace(' fbr ', ' for ')
             sets.append({'id': f'personal-cet6-202512-{paper_number}-reading-{number}', 'type': 'reading',
                          'test': f'2025年12月六级真题 · 第{paper_number}套', 'no': number,
+                         'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                         'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # 2025.06 阅读答案核对自相应解析册。
+    for paper_number, cloze_key, match_key, keys in [
+            (1, 'JBLFADCEGO', 'GCIDALFHBK', ('CABBC', 'DADCB')),
+            (2, 'KBIAJCDFOE', 'EKHAIMDLCJ', ('ACDAB', 'BBCDB')),
+            (3, 'BEFAIDCGLN', 'CHBIMEOLGN', ('CAADB', 'ACBDB'))]:
+        pdf = next((MATERIALS / '六级真题' / '六级真题').glob(f'2025年06*/**/2025.06六级真题第{paper_number}套*.pdf'))
+        with fitz.open(pdf) as doc_202506:
+            rows = []
+            audio_pages = []
+            for page in doc_202506:
+                page_lines = []
+                for block in page.get_text('dict')['blocks']:
+                    for line in block.get('lines', []):
+                        value = ''.join(span['text'] for span in line['spans']).strip()
+                        if value:
+                            page_lines.append((line['bbox'][0], line['bbox'][1], value))
+                audio_pages.append(page_lines)
+                for line in page.get_text().splitlines():
+                    if (re.fullmatch(r'\s*\d{1,2}\s*', line) and int(line.strip()) not in range(26, 36)) or re.match(r'^\s*[•・■]\s*2025年6\s*月六级真题', line):
+                        continue
+                    rows.append(line)
+        if paper_number in (1, 2):
+            audio_key = {1: 'CBDAADCDCBACCBBDABADCDADB', 2: 'DBADBCABDCBACADCADADBCDBC'}[paper_number]
+            audio = next((MATERIALS / '六级真题' / '六级真题').glob(f'2025年06*/**/2025年6月六级{paper_number}音频.mp3'))
+            listen_questions = parse_pdf_listening(audio_pages[:3], audio_key)
+            sets.append({'id': f'personal-cet6-202506-{paper_number}-listening', 'type': 'listening',
+                         'test': f'2025年6月六级真题 · 第{paper_number}套', 'no': 0,
+                         'title': f'听力真题 · 第{paper_number}套', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                         'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': listen_questions})
+        rows = [repair_pdf_text(line) for line in rows]
+        text = '\n'.join(rows)
+        body, bank, questions = parse_exam_cloze(text, cloze_key)
+        sets.append({'id': f'personal-cet6-202506-{paper_number}-cloze', 'type': 'cloze',
+                     'test': f'2025年6月六级真题 · 第{paper_number}套', 'no': 0,
+                     'title': '选词填空', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+        paragraphs, questions = parse_exam_match(text, match_key)
+        sets.append({'id': f'personal-cet6-202506-{paper_number}-match', 'type': 'match',
+                     'test': f'2025年6月六级真题 · 第{paper_number}套', 'no': 0,
+                     'title': '段落匹配', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
+        for number, first, key in [(1, 46, keys[0]), (2, 51, keys[1])]:
+            body, questions = parse_docx_reading(rows, first, key)
+            sets.append({'id': f'personal-cet6-202506-{paper_number}-reading-{number}', 'type': 'reading',
+                         'test': f'2025年6月六级真题 · 第{paper_number}套', 'no': number,
+                         'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                         'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # 2024.12 阅读答案核对自相应解析册。
+    for paper_number, cloze_key, match_key, keys in [
+            (1, 'OBAJLDEKNM', 'FCGJHODIEK', ('BBACD', 'DCACB')),
+            (2, 'LAFGNHDOMI', 'EKGBHMFNDJ', ('ABDAD', 'ACDBC')),
+            (3, 'JHOAILGCED', 'GCIDMJEHAL', ('BCAAD', 'DBCCD'))]:
+        pdf = next((MATERIALS / '六级真题' / '六级真题').glob(f'2024年12*/**/2024.12六级真题第{paper_number}套*.pdf'))
+        with fitz.open(pdf) as doc_202412:
+            rows = []
+            audio_pages = []
+            for page in doc_202412:
+                page_lines = []
+                for block in page.get_text('dict')['blocks']:
+                    for line in block.get('lines', []):
+                        value = ''.join(span['text'] for span in line['spans']).strip()
+                        if value:
+                            page_lines.append((line['bbox'][0], line['bbox'][1], value))
+                audio_pages.append(page_lines)
+                for line in page.get_text().splitlines():
+                    if (re.fullmatch(r'\s*\d{1,2}\s*', line) and int(line.strip()) not in range(26, 36)) or re.match(r'^\s*试题册.*2024年12月六级真题', line):
+                        continue
+                    rows.append(repair_pdf_text(line))
+        if paper_number in (1, 2):
+            audio_key = {1: 'DDBCAABCDBDCBAACBDADBCCDA', 2: 'ACABDCDBABBDCCADCBACBADDA'}[paper_number]
+            audio = next((MATERIALS / '六级真题' / '六级真题').glob(f'2024年12*/**/2024年12月六级听力音频第{paper_number}套.mp3'))
+            listen_questions = parse_pdf_listening(audio_pages[:3], audio_key)
+            sets.append({'id': f'personal-cet6-202412-{paper_number}-listening', 'type': 'listening',
+                         'test': f'2024年12月六级真题 · 第{paper_number}套', 'no': 0,
+                         'title': f'听力真题 · 第{paper_number}套', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                         'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': listen_questions})
+        text = '\n'.join(rows)
+        body, bank, questions = parse_exam_cloze(text, cloze_key)
+        sets.append({'id': f'personal-cet6-202412-{paper_number}-cloze', 'type': 'cloze',
+                     'test': f'2024年12月六级真题 · 第{paper_number}套', 'no': 0,
+                     'title': '选词填空', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+        paragraphs, questions = parse_exam_match(text, match_key)
+        sets.append({'id': f'personal-cet6-202412-{paper_number}-match', 'type': 'match',
+                     'test': f'2024年12月六级真题 · 第{paper_number}套', 'no': 0,
+                     'title': '段落匹配', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
+        for number, first, key in [(1, 46, keys[0]), (2, 51, keys[1])]:
+            body, questions = parse_docx_reading(rows, first, key)
+            sets.append({'id': f'personal-cet6-202412-{paper_number}-reading-{number}', 'type': 'reading',
+                         'test': f'2024年12月六级真题 · 第{paper_number}套', 'no': number,
                          'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
                          'body': [body], 'paras': [], 'bank': [], 'questions': questions})
     writing = collect_subjective()

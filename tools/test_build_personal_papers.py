@@ -1,5 +1,5 @@
 import unittest
-from build_personal_papers import parse_questions, parse_listening, extract_writing_sections, parse_docx_reading, parse_exam_cloze, parse_pdf_listening
+from build_personal_papers import parse_questions, parse_listening, extract_writing_sections, parse_docx_reading, parse_exam_cloze, parse_pdf_listening, repair_pdf_text
 
 class Questions(unittest.TestCase):
     def test_reads_wrapped_stems_and_options(self):
@@ -41,6 +41,13 @@ class Questions(unittest.TestCase):
         self.assertEqual(questions[0]['stem'], 'What does it mean?')
         self.assertEqual(questions[0]['answer'], 'B')
 
+    def test_reading_option_d_excludes_translation_section(self):
+        rows = ['Questions 55 to 59 are based on the following passage.', 'A passage.',
+                '55. Last question?', 'A) first', 'B) second', 'C) third', 'D) fourth',
+                'Part N', 'Translation', '不属于阅读选项。']
+        _, questions = parse_docx_reading(rows, 55, 'D')
+        self.assertEqual(questions[0]['options'][3]['t'], 'fourth')
+
     def test_cloze_preserves_percentages_and_checks_bank(self):
         words = '\n'.join(chr(65+i) + ') word' + str(i) for i in range(15))
         source = 'more than once.\n' + ' '.join(str(n) for n in range(26, 36)) + ' 32% and 35%\n' + words + '\nSection B'
@@ -51,12 +58,15 @@ class Questions(unittest.TestCase):
         self.assertEqual(questions[-1]['answer'], 'J')
 
     def test_pdf_listening_matches_columns_by_position(self):
-        page = [(20, 10, '1. A) first'), (20, 20, 'B) second'), (250, 9, 'C) third'),
+        page = [(20, 10, '1. A) first'), (20, 20, 'B)'), (45, 20, 'second'), (250, 9, 'C) third'),
                 (250, 20, 'D) fourth'), (20, 30, '2. A) one'), (20, 40, 'B) two'),
                 (250, 30, 'C) three'), (250, 40, 'D) four'), (20, 60, 'Part III'), (20, 70, 'A) unrelated')]
         questions = parse_pdf_listening([page], 'BD')
         self.assertEqual(questions[0]['options'][2]['t'], 'third')
         self.assertEqual(questions[1]['options'][3]['t'], 'four')
+
+    def test_known_pdf_text_errors_are_repaired_without_changing_numbers(self):
+        self.assertEqual(repair_pdf_text("workers5 rights fbr 2025"), "workers' rights for 2025")
 
 if __name__ == "__main__":
     unittest.main()
