@@ -62,7 +62,9 @@ with static_server() as base, sync_playwright() as playwright:
         page.locator('#qz-submit').click()
         assert page.locator('.qz-score b').inner_text() == '10/10'
         page.evaluate("() => location.hash='/listening'")
-        page.get_by_text('本机真题听力').wait_for()
+        page.get_by_role('heading', name='真题听力', exact=True).wait_for()
+        ids = page.evaluate('() => TW.personalMaterials.quizSets().map(s => s.id)')
+        assert len(ids) == len(set(ids))
         page.locator('a[href="#/quiz?set=personal-cet6-202112-1-listening"]').click()
         page.locator('#qz-local-audio audio').wait_for()
         assert page.locator('#qz-local-audio audio').get_attribute('src').startswith('blob:')

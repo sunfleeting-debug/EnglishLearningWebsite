@@ -195,7 +195,7 @@
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead('听力', '新闻 / 长对话 / 讲座，按六级题型出题；用浏览器语音朗读，可调速、可单段重播') +
       '<div id="personal-materials"></div>' +
-      (local.length ? '<div class="qz-group"><div class="qz-group-h"><h3>本机真题听力</h3></div><div class="ls-cards">' + local.map(function (s) {
+      (local.length ? '<div class="qz-group"><div class="qz-group-h"><h3>真题听力</h3></div><div class="ls-cards">' + local.map(function (s) {
         return '<a class="ls-card" href="#/quiz?set=' + encodeURIComponent(s.id) + '"><div class="ls-card-h"><span class="tag qz">真题录音</span></div><div class="ls-card-t">' + esc(s.test + ' · ' + s.title) + '</div><div class="small muted">' + s.questions.length + ' 题 · 自动判分</div></a>';
       }).join('') + '</div></div>' : '') +
       '<div class="grid stats" style="margin-bottom:1.2rem">' +

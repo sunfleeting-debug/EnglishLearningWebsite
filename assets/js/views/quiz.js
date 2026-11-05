@@ -452,7 +452,7 @@
         '<a class="btn ghost" href="' + back.href + '">' + TW.icon('arrowLeft', 15) + ' ' +
           esc(back.label) + '</a>') +
       scoreBar +
-      (set.type === 'listening' ? '<div class="card card-pad"><div class="card-title">真题录音</div><p class="small muted">请播放本机录音；问题在录音中，题面提供选项。</p><div id="qz-local-audio">正在读取录音…</div></div>' : '') +
+      (set.type === 'listening' ? '<div class="card card-pad"><div class="card-title">真题录音</div><p class="small muted">请播放录音；问题在录音中，题面提供选项。</p><div id="qz-local-audio">正在读取录音…</div></div>' : '') +
       '<div class="card card-pad qz-sheet">' +
         '<div class="qz-mat-wrap">' +
           '<div class="qz-mat-h-row"><span class="tag qz">' + esc(TYPE_TAG[set.type] || '题目') + '</span>' +
@@ -473,7 +473,11 @@
     if (set.type === 'listening') {
       var audioHost = TW.$('#qz-local-audio', host);
       if (localAudio && localAudioId === set.id) { audioHost.textContent = ''; audioHost.appendChild(localAudio); }
-      else if (TW.personalMaterials) {
+      else if (set.audioOnline && /^audio\/personal-papers\/[a-z0-9-]+\.mp3$/.test(set.audio)) {
+        localAudioId = set.id;
+        localAudio = document.createElement('audio'); localAudio.controls = true; localAudio.preload = 'metadata'; localAudio.src = set.audio;
+        audioHost.textContent = ''; audioHost.appendChild(localAudio);
+      } else if (TW.personalMaterials) {
         var request = ++localAudioRequest;
         TW.personalMaterials.audioFile(set.audio).then(function (file) {
           if (request !== localAudioRequest || S.id !== set.id) return;

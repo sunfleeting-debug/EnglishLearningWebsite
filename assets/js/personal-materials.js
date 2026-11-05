@@ -245,6 +245,16 @@
     view.draw = draw;
     draw(); restore();
   }
+  function combined(online, local) {
+    var ids = {};
+    return online.concat(local).filter(function (item) {
+      if (!item || !item.id || ids[item.id]) return false;
+      ids[item.id] = true;
+      return true;
+    });
+  }
   TW.personalMaterials = {mount: mount, scanDirectory: scanDirectory, classify: classify, restore: restore,
-    quizSets: function () { return state.quizSets.slice(); }, writingItems: function () { return state.writingItems.slice(); }, validateQuizBundle: validateQuizBundle, audioFile: audioFile};
+    quizSets: function () { return combined(state.quizSets, (window.TW_PERSONAL_PAPERS || {}).sets || []); },
+    writingItems: function () { return combined(state.writingItems, (window.TW_PERSONAL_PAPERS || {}).writing || []); },
+    validateQuizBundle: validateQuizBundle, audioFile: audioFile};
 })();
