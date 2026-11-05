@@ -22,7 +22,14 @@
     cache: {}         // setId -> {answers, graded, items, right, pick}
   };
 
-  var TYPE_TAG = { cloze: '选词填空', match: '段落匹配', reading: '仔细阅读', mixed: 'AI 出题' };
+  var TYPE_TAG = { cloze: '选词填空', match: '段落匹配', reading: '仔细阅读', listening: '听力', mixed: 'AI 出题' };
+  var localAudio = null, localAudioId = '', localAudioUrl = '', localAudioRequest = 0;
+  function releaseAudio() {
+    localAudioRequest++;
+    if (localAudio) { localAudio.pause(); localAudio.removeAttribute('src'); localAudio.load(); }
+    if (localAudioUrl) URL.revokeObjectURL(localAudioUrl);
+    localAudio = null; localAudioId = ''; localAudioUrl = '';
+  }
   var activeHost = null, activeQuery = null;
   window.addEventListener('tw-personal-quiz-change', function () {
     if (!activeHost || !activeHost.isConnected || !/^#\/quiz(?:\?|$)/.test(window.location.hash)) return;
@@ -87,6 +94,7 @@
 
   /* 换路由就作废计时：下次进来重新开始，别把在别的页面待的时间算进来 */
   window.addEventListener('hashchange', function () {
+    releaseAudio();
     T.id = ''; stopTimer();
     if (T.tick) { clearInterval(T.tick); T.tick = 0; }
   });
@@ -350,10 +358,12 @@
         fmtClock(used) + '</span>';
     }
 
+    if (localAudio && localAudioId === set.id && localAudio.parentNode) localAudio.parentNode.removeChild(localAudio);
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead(set.test + (set.no ? ' · Passage ' + set.no : ''), meta.join(' · '),
         '<a class="btn ghost" href="#/quiz">' + TW.icon('arrowLeft', 15) + ' 回题目板块</a>') +
       scoreBar +
+      (set.type === 'listening' ? '<div class="card card-pad"><div class="card-title">真题录音</div><p class="small muted">请播放本机录音；问题在录音中，题面提供选项。</p><div id="qz-local-audio">正在读取录音…</div></div>' : '') +
       '<div class="card card-pad qz-sheet">' +
         '<div class="qz-mat-wrap">' +
           '<div class="qz-mat-h-row"><span class="tag qz">' + esc(TYPE_TAG[set.type] || '题目') + '</span>' +
@@ -371,6 +381,23 @@
     '</div>';
 
     bind(host, set);
+    if (set.type === 'listening') {
+      var audioHost = TW.$('#qz-local-audio', host);
+      if (localAudio && localAudioId === set.id) { audioHost.textContent = ''; audioHost.appendChild(localAudio); }
+      else if (TW.personalMaterials) {
+        var request = ++localAudioRequest;
+        TW.personalMaterials.audioFile(set.audio).then(function (file) {
+          if (request !== localAudioRequest || S.id !== set.id) return;
+          var target = TW.$('#qz-local-audio', host); if (!target) return;
+          localAudioUrl = URL.createObjectURL(file); localAudioId = set.id;
+          localAudio = document.createElement('audio'); localAudio.controls = true; localAudio.preload = 'metadata'; localAudio.src = localAudioUrl;
+          target.textContent = ''; target.appendChild(localAudio);
+        }).catch(function () {
+          var target = TW.$('#qz-local-audio', host);
+          if (request === localAudioRequest && target) target.textContent = '无法读取录音，请重新选择包含该录音的星火六级文件夹。';
+        });
+      }
+    }
     if (TW.studyChat) TW.studyChat.mount(host, function () { return {type: set.type, title: set.title, answers: S.answers, graded: S.graded, results: S.graded ? S.items : undefined, body: set.body, paras: set.paras, questions: set.questions}; }, '题目');
   }
 

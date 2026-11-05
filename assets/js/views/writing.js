@@ -17,6 +17,12 @@
   var KEY = 'typingcet.write.v1';
   var DB = { drafts: {}, results: {} };
   var S = { id: '', busy: false, streamText: '', err: '', tab: 0, showTips: false, sample: false };
+  var personalHost = null, personalQuery = null;
+  window.addEventListener('tw-personal-quiz-change', function () {
+    if (!personalHost || !personalHost.isConnected || !/^#\/writing(?:\?|$)/.test(window.location.hash)) return;
+    if (personalQuery && personalQuery.id) { if (get(personalQuery.id)) renderItem(personalHost, personalQuery.id); }
+    else renderList(personalHost);
+  });
 
   function read() {
     try {
@@ -34,7 +40,7 @@
   }
   read();
 
-  function items() { return ((window.TW_WRITING && window.TW_WRITING.items) || []).concat(TW.aiMaterials ? TW.aiMaterials.list('writing') : []); }
+  function items() { return ((window.TW_WRITING && window.TW_WRITING.items) || []).concat(TW.aiMaterials ? TW.aiMaterials.list('writing') : [], TW.personalMaterials ? TW.personalMaterials.writingItems() : []); }
   function get(id) {
     var l = items();
     for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
@@ -254,12 +260,11 @@
         '<div class="row" style="gap:.5rem;margin-top:.6rem;flex-wrap:wrap">' +
           '<button class="btn primary" id="wr-grade"' + (S.busy ? ' disabled' : '') + '>' +
             TW.icon('spark', 15) + ' ' + (S.busy ? '批改中…' : (ai ? 'AI 批改' : 'AI 批改（需先配 Key）')) + '</button>' +
-          '<button class="btn ghost" id="wr-ref">' + (S.sample ? '收起参考' : (it.type === 'trans' ? '看参考译文' : '看范文')) + '</button>' +
+          (it.sample ? '<button class="btn ghost" id="wr-ref">' + (S.sample ? '收起参考' : (it.type === 'trans' ? '看参考译文' : '看范文')) + '</button>' : '') +
           '<button class="btn ghost" id="wr-clear">清空</button>' +
           (res ? '<span class="small muted">上次批改 ' + (res.score != null ? res.score + '/' + (res.max || 15) : '无分数') + '</span>' : '') +
         '</div>' +
-        (ai ? '' : '<div class="small muted" style="margin-top:.5rem">还没配置 AI：可以先看参考' +
-          (it.type === 'trans' ? '译文' : '范文') + '，或者去 <a href="#/ai">AI 助手</a> 里填一个 Key，回来就能批改。' +
+        (ai ? '' : '<div class="small muted" style="margin-top:.5rem">还没配置 AI：' + (it.sample ? '可以先看参考' + (it.type === 'trans' ? '译文' : '范文') + '，或者' : '请') + '去 <a href="#/ai">AI 助手</a> 里填一个 Key，回来就能批改。' +
           '批改结果只在你的浏览器里，不会上传到别处（只把这段文字发给模型）。</div>') +
         (S.sample ? '<div class="wr-sample-ref"><div class="wr-h">参考' + (it.type === 'trans' ? '译文' : '范文') +
           '<button class="btn sm ghost" data-copy="ref">复制</button></div>' +
@@ -385,6 +390,8 @@
   }
 
   function render(host, query) {
+    personalHost = host; personalQuery = query || {};
+    if (query && query.id && /^personal-/.test(query.id) && TW.personalMaterials) TW.personalMaterials.restore();
     if (query && query.id) renderItem(host, query.id);
     else { S.id = ''; renderList(host); }
   }

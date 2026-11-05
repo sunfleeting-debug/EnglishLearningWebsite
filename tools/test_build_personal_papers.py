@@ -1,5 +1,5 @@
 import unittest
-from build_personal_papers import parse_questions
+from build_personal_papers import parse_questions, parse_listening, extract_writing_sections, parse_docx_reading
 
 class Questions(unittest.TestCase):
     def test_reads_wrapped_stems_and_options(self):
@@ -15,6 +15,31 @@ class Questions(unittest.TestCase):
     def test_rejects_missing_verified_answer(self):
         with self.assertRaises(ValueError):
             parse_questions("46. Why?\nA) one\nB) two\nC) three\nD) four", 46, 46, {})
+
+    def test_listening_options_are_reordered_and_unrelated_paragraphs_excluded(self):
+        items = parse_listening(['1. A) one C) three', 'B) two D) four', 'Section B', 'Directions: ignore', '2. A) x B) y C) z D) w'], 'AB')
+        self.assertEqual([x['t'] for x in items[0]['options']], ['one', 'two', 'three', 'four'])
+        self.assertEqual(items[1]['answer'], 'B')
+
+    def test_listening_rejects_incomplete_options(self):
+        with self.assertRaises(ValueError):
+            parse_listening(['1. A) one C) three D) four'], 'A')
+
+    def test_subjective_sections_and_missing_graph(self):
+        rows = [('Part I Writing', False), ('Directions: write an essay.', False), ('A chart', True),
+                ('Part II Listening', False), ('Part IV Translation', False), ('Directions: translate.', False),
+                ('这是完整的中文翻译题。', False)]
+        essay, translation = extract_writing_sections(rows)
+        self.assertIsNone(essay)
+        self.assertEqual(translation, '这是完整的中文翻译题。')
+
+    def test_docx_reading_preserves_wrapped_questions(self):
+        rows = ['Passage One', 'Questions 46 to 50 are based on the following passage.', 'A passage.',
+                '46. What does', 'it mean?', 'A) first', 'B) second', 'C) third', 'D) fourth', 'Passage Two']
+        body, questions = parse_docx_reading(rows, 46, 'B')
+        self.assertEqual(body, 'A passage.')
+        self.assertEqual(questions[0]['stem'], 'What does it mean?')
+        self.assertEqual(questions[0]['answer'], 'B')
 
 if __name__ == "__main__":
     unittest.main()

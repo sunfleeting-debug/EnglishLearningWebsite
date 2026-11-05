@@ -19,6 +19,10 @@
     id: '', answers: {}, graded: false, showText: false, showTrans: false,
     rate: 1, playing: -1, paused: false, err: ''
   };
+  var personalHost = null, personalQuery = null;
+  window.addEventListener('tw-personal-quiz-change', function () {
+    if (personalHost && personalHost.isConnected && /^#\/listening(?:\?|$)/.test(window.location.hash) && !(personalQuery && personalQuery.id)) renderList(personalHost);
+  });
 
   function read() {
     try {
@@ -119,6 +123,7 @@
 
   function renderList(host) {
     var l = sets();
+    var local = TW.personalMaterials ? TW.personalMaterials.quizSets().filter(function (s) { return s.type === 'listening'; }) : [];
     var qn = 0, done = 0, right = 0, total = 0;
     l.forEach(function (s) {
       qn += totalQ(s);
@@ -129,6 +134,9 @@
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead('听力', '新闻 / 长对话 / 讲座，按六级题型出题；用浏览器语音朗读，可调速、可单段重播') +
       '<div id="personal-materials"></div>' +
+      (local.length ? '<div class="qz-group"><div class="qz-group-h"><h3>本机真题听力</h3></div><div class="ls-cards">' + local.map(function (s) {
+        return '<a class="ls-card" href="#/quiz?set=' + encodeURIComponent(s.id) + '"><div class="ls-card-h"><span class="tag qz">真题录音</span></div><div class="ls-card-t">' + esc(s.test + ' · ' + s.title) + '</div><div class="small muted">' + s.questions.length + ' 题 · 自动判分</div></a>';
+      }).join('') + '</div></div>' : '') +
       '<div class="grid stats" style="margin-bottom:1.2rem">' +
         '<div class="stat-card"><div class="stat-num">' + l.length + '</div><div class="stat-label">套材料</div></div>' +
         '<div class="stat-card"><div class="stat-num">' + qn + '</div><div class="stat-label">题目</div></div>' +
@@ -339,6 +347,7 @@
   }
 
   function render(host, query) {
+    personalHost = host; personalQuery = query || {};
     if (query && query.id) renderItem(host, query.id);
     else { S.id = ''; stopSpeak(); renderList(host); }
   }

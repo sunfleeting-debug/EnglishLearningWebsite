@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var TW = window.TW = window.TW || {};
-  var state = {root: null, files: [], quizSets: [], scanning: false, progress: 0, errors: 0, message: '', loaded: false, generation: 0};
+  var state = {root: null, files: [], quizSets: [], writingItems: [], scanning: false, progress: 0, errors: 0, message: '', loaded: false, generation: 0};
   var mounted = null, activeUrls = {audio: '', viewer: ''}, openCounters = {audio: 0, viewer: 0}, restorePromise = null;
   var KINDS = {pdf: 'PDF', mp3: '音频', wav: '音频', m4a: '音频', doc: 'Word', docx: 'Word', txt: '文本', lrc: '字幕', zip: '压缩包', xls: '表格', xlsx: '表格', png: '图片', jpg: '图片', jpeg: '图片'};
   function classify(path, name) {
@@ -79,9 +79,10 @@
     var ids = {};
     bundle.sets.forEach(function (set) {
       if (!set || typeof set.id !== 'string' || !/^personal-[a-z0-9-]+$/.test(set.id) || ids[set.id] ||
-          ['reading', 'match', 'cloze'].indexOf(set.type) < 0 || typeof set.test !== 'string' || typeof set.title !== 'string' ||
+          ['reading', 'match', 'cloze', 'listening'].indexOf(set.type) < 0 || typeof set.test !== 'string' || typeof set.title !== 'string' ||
           !Array.isArray(set.body) || !set.body.every(function (p) { return typeof p === 'string' && p.trim(); }) ||
           (set.type === 'reading' && !set.body.length) ||
+          (set.type === 'listening' && (typeof set.audio !== 'string' || !set.audio || set.audio.split('/').some(function (p) { return !p || p === '.' || p === '..' || p.indexOf('\\') >= 0; }))) ||
           (set.type === 'cloze' && (!set.body.length || !Array.isArray(set.bank) || !set.bank.length || !set.bank.every(function (b, i) { return b && b.k === 'ABCDEFGHIJKLMNO'[i] && typeof b.w === 'string' && b.w.trim(); }))) ||
           (set.type === 'match' && (!Array.isArray(set.paras) || !set.paras.length || !set.paras.every(function (p, i) { return p && p.k === 'ABCDEFGHIJKLMNO'[i] && typeof p.text === 'string' && p.text.trim(); }))) ||
           !Array.isArray(set.questions) || !set.questions.length) throw new Error('题库中存在不完整的题组');
@@ -89,7 +90,7 @@
       var numbers = {};
       set.questions.forEach(function (q) {
         if (!q || !Number.isInteger(q.n) || numbers[q.n] || typeof q.stem !== 'string' || !q.stem.trim() ||
-            !Array.isArray(q.options) || (set.type === 'reading' && (q.options.length !== 4 || !/^[ABCD]$/.test(q.answer) ||
+            !Array.isArray(q.options) || ((set.type === 'reading' || set.type === 'listening') && (q.options.length !== 4 || !/^[ABCD]$/.test(q.answer) ||
             !q.options.every(function (o, i) { return o && o.k === 'ABCD'[i] && typeof o.t === 'string' && o.t.trim(); }))) ||
             (set.type === 'match' && (q.options.length !== 0 || !set.paras.some(function (p) { return p.k === q.answer; }))) ||
             (set.type === 'cloze' && (q.options.length !== 0 || !set.bank.some(function (b) { return b.k === q.answer; }) || set.body.join('').indexOf('【' + q.n + '】') < 0)))
@@ -102,21 +103,38 @@
   async function loadQuizBundle(root) {
     var handle;
     try { handle = await root.getFileHandle('英语学习站-自动判分题库.json'); }
-    catch (error) { if (error.name === 'NotFoundError') return []; throw error; }
+    catch (error) { if (error.name === 'NotFoundError') return {sets: [], writing: []}; throw error; }
     var file = await handle.getFile();
     if (file.size > 20 * 1024 * 1024) throw new Error('本机题库文件过大');
-    return validateQuizBundle(JSON.parse(await file.text()));
+    var data = JSON.parse(await file.text()), sets = validateQuizBundle(data);
+    var writing = data.writing == null ? [] : data.writing;
+    var ids = {};
+    if (!Array.isArray(writing) || !writing.every(function (it) {
+      if (!it || !/^personal-[a-z0-9-]+$/.test(it.id) || ids[it.id] || ['essay', 'trans'].indexOf(it.type) < 0 ||
+          typeof it.title !== 'string' || typeof it.prompt !== 'string' || !it.prompt.trim() ||
+          typeof it.sub !== 'string' || typeof it.require !== 'string' || typeof it.sample !== 'string' || !Array.isArray(it.tips)) return false;
+      ids[it.id] = true; return true;
+    })) throw new Error('本机写作题数据不完整');
+    return {sets: sets, writing: writing};
+  }
+  async function audioFile(path) {
+    if (!state.root || typeof path !== 'string') throw new Error('请先选择资料文件夹');
+    var parts = path.split('/');
+    if (parts.some(function (p) { return !p || p === '.' || p === '..' || p.indexOf('\\') >= 0; })) throw new Error('录音路径无效');
+    var directory = state.root;
+    for (var i = 0; i < parts.length - 1; i++) directory = await directory.getDirectoryHandle(parts[i]);
+    return (await directory.getFileHandle(parts[parts.length - 1])).getFile();
   }
   function cleanupUrl(target) { if (activeUrls[target]) { URL.revokeObjectURL(activeUrls[target]); activeUrls[target] = ''; } }
   window.addEventListener('hashchange', function () { cleanupUrl('audio'); cleanupUrl('viewer'); mounted = null; });
   async function indexRoot(root) {
     var gen = ++state.generation;
-    state.root = root; state.files = []; state.quizSets = []; state.scanning = true; state.progress = 0; state.errors = 0; state.message = ''; notify(); quizChanged();
+    state.root = root; state.files = []; state.quizSets = []; state.writingItems = []; state.scanning = true; state.progress = 0; state.errors = 0; state.message = ''; notify(); quizChanged();
     try {
       try {
-        var quizSets = await loadQuizBundle(root);
+        var data = await loadQuizBundle(root);
         if (state.generation !== gen) return;
-        state.quizSets = quizSets; quizChanged();
+        state.quizSets = data.sets; state.writingItems = data.writing; quizChanged();
       } catch (error) {
         if (state.generation !== gen) return;
         state.message = '本机自动判分题库未能加载：' + (error.message || '请检查题库文件');
@@ -228,5 +246,5 @@
     draw(); restore();
   }
   TW.personalMaterials = {mount: mount, scanDirectory: scanDirectory, classify: classify, restore: restore,
-    quizSets: function () { return state.quizSets.slice(); }, validateQuizBundle: validateQuizBundle};
+    quizSets: function () { return state.quizSets.slice(); }, writingItems: function () { return state.writingItems.slice(); }, validateQuizBundle: validateQuizBundle, audioFile: audioFile};
 })();
