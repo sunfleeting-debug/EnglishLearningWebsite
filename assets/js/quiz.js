@@ -60,6 +60,20 @@
     return (c && Array.isArray(c)) ? c.slice() : [];
   }
 
+  /** 选项是不是「一串字母编号」——那不是选项，是没出完的废题 */
+  function lettersOnly(opts) {
+    if (!opts || !opts.length) return false;
+    return opts.every(function (o) { return /^[A-Oa-o]$/.test(String(o).trim()); });
+  }
+
+  /** 题面是不是几乎全中文（四选一/填空题面必须英文，中文只该在解析里） */
+  function mostlyChinese(s) {
+    var t = String(s || '');
+    var cjk = (t.match(/[\u4e00-\u9fa5]/g) || []).length;
+    var lat = (t.match(/[A-Za-z]/g) || []).length;
+    return cjk >= 6 && cjk > lat;
+  }
+
   /** AI 发布出来的题：结构补齐成和真题一样的形状 */
   function publishedSets() {
     return S.published.map(function (p) {
@@ -69,18 +83,24 @@
         minutes: 0, body: Array.isArray(p.body) ? p.body : [], paras: [], bank: [],
         /* kind 是 2026-11-05 才加的字段：更早发布的记录里没有，
            按「有选项＝choice / 有 target word＝spell / 其余＝fill」补一个，
-           不然老数据在新作答页上认不出题型、也就没有「中文提示」的说明条。 */
+           不然老数据在新作答页上认不出题型、也就没有「中文提示」的说明条。
+           顺手把废题（选项是 A/B/C/D、题面中文的「下列哪个词表示…」）过滤掉——
+           它们在新规则下根本发不出来，是旧版本留下的，留着只会让人对着字母发呆。 */
         questions: (p.questions || []).map(function (q) {
-          if (q && q.kind) return q;
-          var kind = (q && q.options && q.options.length) ? 'choice' : ((q && q.word) ? 'spell' : 'fill');
           var copy = {};
           Object.keys(q || {}).forEach(function (k) { copy[k] = q[k]; });
-          copy.kind = kind;
+          if (!copy.kind) {
+            copy.kind = (copy.options && copy.options.length) ? 'choice' : (copy.word ? 'spell' : 'fill');
+          }
           return copy;
+        }).filter(function (q) {
+          if (lettersOnly(q.options)) return false;
+          if (q.kind !== 'spell' && mostlyChinese(q.stem)) return false;
+          return true;
         }),
         ai: true, ts: p.ts
       };
-    });
+    }).filter(function (s) { return s.questions.length > 0; });
   }
 
   function all() {

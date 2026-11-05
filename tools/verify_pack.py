@@ -185,6 +185,42 @@ with sync_playwright() as p:
     heads = p2.eval_on_selector_all(".qz-q-h", "e => e.map(x => x.textContent.trim())")
     check("AI 拼写题题头不泄露答案", all("application" not in h for h in heads), heads)
     check("AI 选择题正常渲染 4 个选项", p2.locator(".qz-opt").count() == 4, p2.locator(".qz-opt").count())
+
+    # 仿完形：发布带 body 的题，材料区要显示原文、选项要是真单词（用户反馈过「没材料、选项是字母」）
+    rid = p2.evaluate("""() => {
+      var r = TW.quiz.publish({
+        body: ['Researchers have long puzzled over why some executives ___ huge bonuses.'],
+        exercises: [{type:'choice', question:'Which word best fits the first blank in Paragraph 1?',
+                     options:['receive','refuse','relay','renew'], answer:'receive', word:'',
+                     explanation:'receive a bonus'}],
+        title: 'AI 出题 · 仿完形'
+      });
+      return r ? r.id : '';
+    }""")
+    p2.goto(BASE + "#/quiz?set=" + rid, wait_until="load")
+    p2.wait_for_timeout(600)
+    mat = p2.inner_text(".qz-mat") if p2.locator(".qz-mat").count() else ""
+    check("AI 仿完形带原文材料", "Researchers" in mat, mat[:40])
+    opts = p2.eval_on_selector_all(".qz-opt span", "e => e.map(x => x.textContent)")
+    check("AI 仿完形选项是真单词", opts == ["receive", "refuse", "relay", "renew"], opts)
+    check("AI 仿真题题面无 JS 异常", not errs, "")
+
+    # 旧版废题（选项是 A/B/C/D 字母、题面中文）应被过滤掉，不再出现在列表里
+    ctx3 = b.new_context(viewport={"width": 1180, "height": 900})
+    ctx3.add_init_script("localStorage.setItem('typingcet.guest','1')")
+    legacy = {"published": [{"id": "ai-old", "title": "AI 出题 · 旧", "ts": 1, "word": "", "body": ["仿 Model Test 1。"],
+               "questions": [{"n": 1, "stem": "根据第 1 段，研究___执行高管的报酬情况。",
+                              "options": [{"k": "A", "t": "N"}, {"k": "B", "t": "A"},
+                                          {"k": "C", "t": "H"}, {"k": "D", "t": "M"}],
+                              "answer": "A", "explain": "", "word": ""}]}], "results": {}}
+    ctx3.add_init_script("localStorage.setItem('typingcet.quiz.v1', %s)"
+                         % json.dumps(json.dumps(legacy, ensure_ascii=False), ensure_ascii=False))
+    p3 = ctx3.new_page()
+    p3.goto(BASE + "#/quiz", wait_until="load")
+    p3.wait_for_timeout(700)
+    check("旧版废题被过滤", p3.evaluate("TW.quiz.published().length") == 0,
+          p3.evaluate("TW.quiz.published().length"))
+
     check("AI 题作答无 JS 异常", not errs, "")
 
     b.close()

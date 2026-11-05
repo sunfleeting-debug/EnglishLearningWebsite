@@ -71,6 +71,10 @@
     '```quiz',
     '{"exercises":[{"id":"","word":"","type":"choice|spell|fill","question":"","options":[],"answer":"","explanation":""}]}',
     '```',
+    '仿阅读/完形要**多带一个 body 放原文段落**，选项里写真实的英文词（不是字母）：',
+    '```quiz',
+    '{"body":["Paragraph 1 ...","Paragraph 2 ..."],"exercises":[{"word":"","type":"choice","question":"Which word best fits the first blank in Paragraph 1?","options":["cope","curb","cite","cast"],"answer":"cope","explanation":"中文解析"}]}',
+    '```',
     '生成的练习卡支持点击发布保存到当前浏览器。写作或听力练习请使用下述 material 代码块，用户点击发布后才会保存，不要声称已经保存。',
     '写作示例：```material\n{\"kind\":\"writing\",\"type\":\"essay\",\"title\":\"标题\",\"prompt\":\"题目\",\"require\":\"要求\",\"sample\":\"参考范文\"}\n```',
     '听力示例：```material\n{\"kind\":\"listening\",\"title\":\"标题\",\"transcript\":\"英文听力原文\",\"translation\":\"中文译文\",\"questions\":[{\"stem\":\"Question?\",\"options\":[\"A选项\",\"B选项\",\"C选项\",\"D选项\"],\"answer\":\"A\",\"explain\":\"中文解析\"}]}\n```',
@@ -87,9 +91,13 @@
     '「词性 + 中文释义 + 首字母与字母数」的提示格式，不要写成「下列哪个词表示……」这类中文问句。',
     '中文只出现在 explanation 和 spell 的释义提示里。',
     'explanation 用中文一句话讲清 + 一个高频搭配。默认 8 题，用户指定题量时按用户的。',
-    '「按考试题型出题」（仿照某套真题/模拟题写阅读、完形、匹配）：正文里先把材料写完整，',
-    '再在 quiz 块里给四选一，word 与 id 都写空字符串 ""；这类题只判分、不写回单词记录，',
-    '所以题面必须自带定位信息（如「根据第 2 段」「第【3】空」）。',
+    '「按考试题型出题」（仿照某套真题/模拟题写阅读、完形、匹配）：',
+    '必须把材料原文**放进 quiz 块**，写成 {"body":["第一段","第二段"],"exercises":[...]}，',
+    'body 里每个空位写成 ___（三个以上下划线）。**没有 body 就不要出这类题**，改成单词题。',
+    '这类题的 question 用英文自带定位信息，例如 "Which word best fits the first blank in Paragraph 1?"；',
+    'options 必须是四个**真实的英文单词或短语**，绝对不要写 A/B/C/D 或词库编号——',
+    '那等于没有选项，发到题目板块就是一道没法做的废题。',
+    '这类题 word 与 id 都写空字符串 ""，只判分、不写回单词记录。',
     '',
     '【关于联网】',
     '你本身不能主动浏览网页；本站会在需要时（问最新消息、考试时间、政策变化这类）把实时检索结果贴进【联网检索结果】。',
@@ -175,6 +183,20 @@
     return { text: text, raw: m[1] };
   }
 
+  /** 题面是不是「基本全中文」（真四选一的题面必须是英文，中文只该出现在解析里） */
+  function mostlyChinese(s) {
+    var t = String(s || '');
+    var cjk = (t.match(/[\u4e00-\u9fa5]/g) || []).length;
+    var lat = (t.match(/[A-Za-z]/g) || []).length;
+    return cjk >= 6 && cjk > lat;
+  }
+
+  /** 选项是不是「一串字母编号」（A / B / C / D …）：那不是选项，是词库编号，属于无效题 */
+  function lettersOnly(opts) {
+    if (!opts || !opts.length) return false;
+    return opts.every(function (o) { return /^[A-Oa-o]$/.test(String(o).trim()); });
+  }
+
   function normalizeExercises(raw) {
     var data;
     try { data = TW.ai.parseJson(raw); } catch (e) { return null; }
@@ -195,6 +217,11 @@
       var strip = function (s) { return String(s).replace(/^\s*[A-Da-d][.、)．]\s*/, '').trim(); };
       var opts = Array.isArray(raw2.options) ? raw2.options.map(function (o) { return strip(o); }).slice(0, 5) : [];
       if (type === 'choice' && opts.length < 2) return;
+      /* 2026-11-05：两类废题直接丢，别发到题目板块里让人对着 A/B/C/D 发呆。
+         ① 选项是字母编号（AI 仿完形时把词库字母当选项了）——真正的选项得是英文单词；
+         ② 四选一/填空题面几乎是中文（「下列哪个词表示…」）——题面必须英文。 */
+      if (lettersOnly(opts)) return;
+      if (type !== 'spell' && mostlyChinese(q)) return;
       if (!/^[A-Da-d]$/.test(ans)) ans = strip(ans);
       if (!word) {
         var hit = null;
@@ -230,6 +257,15 @@
     return out.slice(0, 20);
   }
 
+  /** 从 quiz 块里取材料原文（仿阅读/完形的题干必须配原文，否则选项再对也没法做） */
+  function quizBody(raw) {
+    var data;
+    try { data = TW.ai.parseJson(raw); } catch (e) { return []; }
+    var b = data && (data.body || data.passage || data.material || data.text);
+    var arr = Array.isArray(b) ? b : (typeof b === 'string' ? b.split(/\n\s*\n/) : []);
+    return arr.map(function (x) { return String(x || '').trim(); }).filter(Boolean).slice(0, 20);
+  }
+
   /** 消息完成后解析一次：把 quiz 块从正文摘掉，挂到 msg.quiz 上 */
   function parseMsg(m) {
     if (m._parsed || m.role !== 'assistant') return;
@@ -247,8 +283,9 @@
     if (sp.raw == null) return;
     m.content = sp.text;
     var list = normalizeExercises(sp.raw);
-    if (list) m.quiz = { exercises: list, answers: {}, graded: false, items: [], right: 0, acc: 0 };
-    else m.content += '\n\n（这组练习的格式没解析出来，可以让我重新出一遍。）';
+    if (list) m.quiz = { exercises: list, body: quizBody(sp.raw), answers: {}, graded: false, items: [], right: 0, acc: 0 };
+    else m.content += '\n\n（这组练习没解析出来：题面要用英文、选项要写真实的英文单词而不是 A/B/C/D，' +
+      '仿阅读/完形还得把原文放进 body。可以让我重新出一遍。）';
   }
 
   function answerOf(ex) {
@@ -1100,9 +1137,14 @@
     if (!TW.quiz) { TW.toast('题目板块没加载成功，刷新一下试试'); return; }
     var n = m.quiz.exercises.length;
     var d = new Date();
+    /* 材料优先用 quiz 块里的 body（真正的原文）；没有才退回正文段落。
+       之前一律用正文，结果仿完形/仿阅读发布出去只剩一句「这套题仿照…」，看着就是「没材料」。 */
+    var passage = (m.quiz.body && m.quiz.body.length)
+      ? m.quiz.body.slice(0, 20)
+      : String(m.content || '').slice(0, 12000).split(/\n\s*\n/).filter(Boolean);
     var rec = TW.quiz.publish({
       exercises: m.quiz.exercises,
-      body: String(m.content || '').slice(0, 12000).split(/\n\s*\n/).filter(Boolean),
+      body: passage,
       title: 'AI 出题 · ' + (d.getMonth() + 1) + '/' + d.getDate() + ' · ' + n + ' 题'
     });
     if (!rec) { TW.toast('这组题没有可用题目'); return; }

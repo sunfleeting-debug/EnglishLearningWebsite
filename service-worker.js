@@ -1,5 +1,5 @@
 /* Versioned app-shell cache for the installable mobile web app. */
-const CACHE_VERSION = 'english-learning-v1.12.1-zhenti-sections';
+const CACHE_VERSION = 'english-learning-v1.12.2-ai-quiz-body';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const SHELL = [
