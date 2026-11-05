@@ -95,6 +95,31 @@
           paras: [], ai: true, ts: p.ts
         };
       }
+      /* 整篇阅读 / 段落匹配：同样还原成原生 type，作答页直接认 */
+      if (p && (p.kind === 'reading' || p.kind === 'match') &&
+          Array.isArray(p.questions) && p.questions.length) {
+        return {
+          id: p.id, type: p.kind, test: 'AI 出题', no: 0,
+          title: p.title || ('AI 出题 · ' + (p.kind === 'match' ? '段落匹配' : '仔细阅读')),
+          source: 'AI 教练',
+          topic: p.kind === 'match'
+            ? ((p.paras || []).length + ' 段')
+            : ((p.body || []).length + ' 段'),
+          minutes: p.kind === 'match' ? 12 : 9,
+          heading: p.heading || '',
+          body: Array.isArray(p.body) ? p.body.slice() : [],
+          paras: Array.isArray(p.paras) ? p.paras.slice() : [],
+          questions: p.questions.map(function (q) {
+            return {
+              n: Number(q.n) || 0, stem: String(q.stem || ''),
+              options: (q.options || []).slice(),
+              answer: String(q.answer || '').toUpperCase(),
+              explain: String(q.explain || '')
+            };
+          }).filter(function (q) { return q.n > 0 && q.answer; }),
+          ai: true, ts: p.ts
+        };
+      }
       return {
         id: p.id, type: 'mixed', test: 'AI 出题', no: 0,
         title: p.title || 'AI 出题', source: 'AI 教练', topic: p.word || '',
@@ -222,6 +247,59 @@
     return { body: body, bank: bank, questions: questions };
   }
 
+  /** 整篇阅读 / 段落匹配（AI 出的）：阅读是「一篇 + 5 道四选一」，
+      匹配是「A~O 十几段 + 10 道找段落」，两种都必须自带材料，否则发布出去没法做。 */
+  function normalizePaperSet(kind, set) {
+    var heading = String(set.heading || '').slice(0, 300);
+    var body = (set.body || []).map(function (x) { return String(x || '').slice(0, 6000); }).filter(Boolean);
+    var paras = [];
+    (set.paras || []).forEach(function (p, i) {
+      var k = String((p && p.k) || String.fromCharCode(65 + i)).toUpperCase();
+      var text = String((p && (p.text || p.t)) || (typeof p === 'string' ? p : '')).trim();
+      if (k && text) paras.push({ k: k, text: text.slice(0, 4000) });
+    });
+    if (kind === 'reading' && !body.length) return null;
+    if (kind === 'match' && paras.length < 6) return null;
+
+    var questions = [];
+    (set.exercises || set.questions || []).forEach(function (ex, i) {
+      if (!ex) return;
+      var stem = String(ex.question || ex.stem || ex.q || '').trim();
+      var ans = String(ex.answer || ex.a || '').trim();
+      if (!stem || !ans) return;
+      var explain = String(ex.explanation || ex.explain || ex.why || '').trim();
+      if (kind === 'match') {
+        /* 匹配题没有选项，答案就是一个段落字母；写单词/中文一律丢弃 */
+        ans = ans.replace(/[^A-Oa-o]/g, '').toUpperCase();
+        var okPara = paras.some(function (p) { return p.k === ans; });
+        if (!okPara) return;
+        questions.push({ n: i + 1, stem: stem, options: [], answer: ans, explain: explain });
+        return;
+      }
+      var opts = Array.isArray(ex.options) ? ex.options.map(function (o) {
+        return String(o && typeof o === 'object' ? (o.t || o.text || o.label || '') : o).trim();
+      }).filter(Boolean) : [];
+      if (opts.length < 3) return;
+      var optKeys = 'ABCD'.split('').slice(0, opts.length);
+      var letter = ans.toUpperCase();
+      if (!/^[A-D]$/.test(letter) || letter.charCodeAt(0) - 65 >= opts.length) {
+        /* 答案写成了选项文本 → 反查字母；反查不到就丢，不猜 */
+        var hit = -1;
+        opts.forEach(function (t, oi) { if (t.toLowerCase() === ans.toLowerCase()) hit = oi; });
+        if (hit < 0) return;
+        letter = optKeys[hit];
+      }
+      questions.push({
+        n: i + 1, stem: stem,
+        options: opts.map(function (t, oi) { return { k: optKeys[oi], t: t }; }),
+        answer: letter, explain: explain
+      });
+    });
+    var need = kind === 'match' ? 5 : 3;
+    if (questions.length < need) return null;
+    return { kind: kind, heading: heading, body: body, paras: paras, questions: questions };
+  }
+
   /** 发布一组 AI 题；同一批题重复发布会复用同一条（按内容哈希判重） */
   function publish(set) {
     /* 整篇选词填空走单独分支：它没有「题干」，只有正文里的空位和字母答案 */
@@ -245,6 +323,30 @@
       if (S.published.length > 60) S.published.length = 60;
       write();
       return crec;
+    }
+
+    /* 整篇阅读 / 段落匹配：也是「材料 + 一整套题」，走原生 type 才能用作答页的渲染 */
+    if (set.kind === 'reading' || set.kind === 'match') {
+      var pp = normalizePaperSet(set.kind, set);
+      if (pp) {
+        var pid = 'ai-' + set.kind.charAt(0) + '-' + hash(
+          (pp.body.join('#') + pp.paras.map(function (p) { return p.k + p.text; }).join('#') +
+            pp.questions.map(function (q) { return q.stem + q.answer; }).join('#')));
+        for (var m = 0; m < S.published.length; m++) {
+          if (S.published[m].id === pid) return S.published[m];
+        }
+        var prec = {
+          id: pid, kind: set.kind,
+          title: set.title || ('AI 出题 · ' + (set.kind === 'match' ? '段落匹配' : '仔细阅读')),
+          ts: Date.now(), word: '',
+          heading: pp.heading, body: pp.body, paras: pp.paras, questions: pp.questions
+        };
+        S.published.unshift(prec);
+        if (S.published.length > 60) S.published.length = 60;
+        write();
+        return prec;
+      }
+      return null;   // 材料或题不够，宁可发不出去，也别发一套做不了的
     }
 
     var questions = fromExercises(set.exercises || set.questions || []);

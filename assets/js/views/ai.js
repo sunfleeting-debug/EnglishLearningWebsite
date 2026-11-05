@@ -36,7 +36,7 @@
   var HOST = null;
   var keyTimer = null;   // 粘贴 Key 后延迟拉列表的定时器（见 syncKey）
 
-  var TYPE_NAMES = { choice: '选择', spell: '拼写', fill: '填空', trans: '翻译' };
+  var TYPE_NAMES = { choice: '选择', spell: '拼写', fill: '填空', trans: '翻译', match: '段落匹配' };
 
   var SYSTEM = [
     '你是「英语学习站」里的 AI 英语教练，界面是一个聊天窗口。用户在准备六级，用「打字背单词」练习。',
@@ -111,6 +111,22 @@
     '```',
     '出题前先自己在心里核对一遍：正文里【1】到【10】十个空都在、每个空的答案字母在 bank 里、词库 15 项字母连续。',
     '文章要像六级真题的选词填空（学术/社会话题的说明文），不要写成十句互不相干的句子。',
+    '',
+    '【整篇仔细阅读】用户要「一整篇阅读 + 几道题」时：setType 写 "reading"，',
+    'body 是 3-5 段连贯文章（约 350-450 词，可以带一个英文 heading），',
+    'exercises 给 5 题，每题 {question(英文提问),options(4 个**英文选项原文**,别写 "A." 前缀),answer(字母 A-D),explanation(中文解析+原文定位)}；',
+    '```quiz',
+    '{"setType":"reading","title":"为什么短会开得更久","heading":"Why short meetings last longer","body":["Paragraph 1 ...","Paragraph 2 ...","Paragraph 3 ..."],"exercises":[{"question":"What does the author say about short meetings?","options":["They are easier to schedule","They tend to expand","They reduce attendance","They suit large teams"],"answer":"B","explanation":"第二段：short meetings expand to fill the time given。定位 short meetings + expand"}]}',
+    '```',
+    '【整篇段落匹配】用户要「段落匹配」「找段落」「信息匹配」时：setType 写 "match"，',
+    'paras 给 10-15 段（每段 40-80 词）：[{"k":"A","text":"..."},{"k":"B","text":"..."}]，',
+    'exercises 给 10 题，每题 {question(一句英文陈述),answer(段落字母),explanation(中文定位依据)}，**没有 options**；',
+    '每条陈述必须能在某一段里找到明确对应，不要出「哪段都沾一点」的题。',
+    '```quiz',
+    '{"setType":"match","title":"城市 15 分钟生活圈","heading":"The 15-minute city","paras":[{"k":"A","text":"The idea is simple ..."},{"k":"B","text":"Critics point out ..."}],"exercises":[{"question":"A professor in Paris is credited with developing the concept.","answer":"A","explanation":"A 段：developed by Carlos Moreno, a professor based in Paris"}]}',
+    '```',
+    '这三种整套题（cloze / reading / match）都必须「材料 + 题」一次给全：材料缺段、答案对不上材料，',
+    '我会把整卷丢掉，不用残卷糊弄人。听力练习仍用下面的 material 块（浏览器朗读，不要冒充真题录音）。',
     '',
     '【关于联网】',
     '你本身不能主动浏览网页；本站会在需要时（问最新消息、考试时间、政策变化这类）把实时检索结果贴进【联网检索结果】。',
@@ -304,10 +320,18 @@
     });
     var list = data.exercises || data.items || data.questions || [];
     var out = [];
-    list.forEach(function (q) {
+    list.forEach(function (q, qi) {
       if (!q || typeof q !== 'object') return;
+      /* 模型常见两种写歪：① 漏了 n（按顺序给）；② answer 写成单词而不是字母。
+         都就地纠正——按空号对齐这条铁律不变，纠不回来才丢。 */
       var n = Number(q.n != null ? q.n : q.no) || 0;
-      var ans = String(q.answer || q.a || '').trim().toUpperCase();
+      if (!n && holes[qi + 1]) n = qi + 1;
+      var rawAns = String(q.answer || q.a || '').trim();
+      var ans = rawAns.toUpperCase();
+      if (!/^[A-O]$/.test(ans) && rawAns) {
+        var want = rawAns.toLowerCase();
+        bank.forEach(function (b) { if (b.w.toLowerCase() === want) ans = b.k; });
+      }
       if (!n || !holes[n] || !/^[A-O]$/.test(ans) || !seenK[ans]) return;
       var hit = '';
       bank.forEach(function (b) { if (b.k === ans) hit = b.w; });
@@ -323,6 +347,70 @@
     return {
       cloze: { body: body.slice(0, 20), bank: bank, title: String(data.title || '').trim() },
       exercises: out
+    };
+  }
+
+  /** 整篇仔细阅读 / 段落匹配（setType=reading|match）：一篇材料 + 一整套题
+      reading：body 是文章段落，每题四选一；
+      match：paras 是 A~O 十几段，每题答案是一个段落字母。 */
+  function normalizePaper(raw) {
+    var data;
+    try { data = TW.ai.parseJson(raw); } catch (e) { return null; }
+    if (!data) return null;
+    var kind = String(data.setType || data.set_type || '').toLowerCase();
+    if (kind !== 'reading' && kind !== 'match') return null;
+    var title = String(data.title || '').trim();
+    var heading = String(data.heading || '').trim();
+    var body = (data.body || data.passage || []).map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+    var paras = [];
+    (data.paras || data.paragraphs || []).forEach(function (p, i) {
+      var k = String((p && p.k) || String.fromCharCode(65 + i)).toUpperCase();
+      var text = String((p && (p.text || p.t)) || (typeof p === 'string' ? p : '')).trim();
+      if (k && text) paras.push({ k: k, text: text });
+    });
+    /* 材料是这类题的地基：阅读没正文、匹配没段落，一律当废题 */
+    if (kind === 'reading' && body.length < 2) return null;
+    if (kind === 'match' && paras.length < 6) return null;
+
+    var out = [];
+    (data.exercises || data.items || data.questions || []).forEach(function (ex, i) {
+      if (!ex || typeof ex !== 'object') return;
+      var stem = String(ex.question || ex.stem || ex.q || '').trim();
+      var ans = String(ex.answer || ex.a || '').trim();
+      if (!stem || !ans) return;
+      if (mostlyChinese(stem)) return;      // 题面必须英文，中文只进解析
+      var exp = String(ex.explanation || ex.explain || ex.why || '').trim();
+      if (kind === 'match') {
+        var letter = ans.replace(/[^A-Oa-o]/g, '').toUpperCase();
+        if (!paras.some(function (p) { return p.k === letter; })) return;
+        out.push({
+          id: '', word: '', type: 'match', question: stem, options: [],
+          answer: letter, explanation: exp
+        });
+        return;
+      }
+      var opts = Array.isArray(ex.options) ? ex.options.map(function (o) {
+        return String(o && typeof o === 'object' ? (o.t || o.text || o.label || '') : o)
+          .replace(/^\s*[A-Da-d][.、)．]\s*/, '').trim();
+      }).filter(Boolean) : [];
+      if (opts.length < 3) return;
+      var up = ans.toUpperCase();
+      if (!/^[A-D]$/.test(up) || up.charCodeAt(0) - 65 >= opts.length) {
+        /* 答案写成了选项原文：只要能在选项里唯一定位就换成字母，定位不到就丢 */
+        var at = -1;
+        opts.forEach(function (t, oi) { if (t.toLowerCase() === ans.toLowerCase()) at = oi; });
+        if (at < 0) return;
+        up = 'ABCD'.charAt(at);
+      }
+      out.push({
+        id: '', word: '', type: 'choice', question: stem, options: opts,
+        answer: up, explanation: exp
+      });
+    });
+    if (out.length < (kind === 'match' ? 5 : 3)) return null;
+    return {
+      paper: { kind: kind, title: title, heading: heading, body: body, paras: paras },
+      exercises: out.slice(0, 20)
     };
   }
 
@@ -350,11 +438,12 @@
     var sp = splitQuiz(m.content);
     if (sp.raw == null) return;
     m.content = sp.text;
-    /* 先认「整篇选词填空」：它没有题干，套用散题解析器会被当成废题全丢 */
-    var cz = normalizeCloze(sp.raw);
+    /* 先认「整套题」：选词填空 / 整篇阅读 / 段落匹配都没有独立题干，
+       套用散题解析器会被当成废题全丢 */
+    var cz = normalizeCloze(sp.raw) || normalizePaper(sp.raw);
     if (cz) {
       m.quiz = {
-        exercises: cz.exercises, cloze: cz.cloze, body: cz.cloze.body,
+        exercises: cz.exercises, cloze: cz.cloze, paper: cz.paper, body: quizBody(sp.raw),
         answers: {}, graded: false, items: [], right: 0, acc: 0, pick: 0
       };
       return;
@@ -362,7 +451,7 @@
     var list = normalizeExercises(sp.raw);
     if (list) m.quiz = { exercises: list, body: quizBody(sp.raw), answers: {}, graded: false, items: [], right: 0, acc: 0 };
     else m.content += '\n\n（这组练习没解析出来：题面要用英文、选项要写真实的英文单词而不是 A/B/C/D，' +
-      '仿阅读/完形还得把原文放进 body。可以让我重新出一遍。）';
+      '整套阅读/选词/匹配还得把材料放进 body 或 paras。可以让我重新出一遍。）';
   }
 
   function answerOf(ex) {
@@ -488,11 +577,9 @@
       tip + detail + foot + '</div>';
   }
 
-  function quizCard(m, mi) {
-    var q = m.quiz;
-    if (!q) return '';
-    if (q.cloze) return clozeCard(m, mi);
-    var body = q.exercises.map(function (ex, i) {
+  /** 一组题卡的公共渲染：散题、整套阅读/匹配都用它，省得两套逻辑各改一遍 */
+  function exList(q, mi) {
+    return q.exercises.map(function (ex, i) {
       var it = q.graded ? q.items[i] : null;
       var cls = 'ai-q' + (it ? (it.ok ? ' ok' : ' err') : '');
       var inner = '';
@@ -506,6 +593,18 @@
           }
           return '<button type="button" class="' + ocls + '" data-mi="' + mi + '" data-i="' + i +
             '" data-val="' + esc(o) + '"><i>' + String.fromCharCode(65 + oi) + '</i><span>' + esc(o) + '</span></button>';
+        }).join('') + '</div>';
+      } else if (ex.type === 'match' && q.paper) {
+        /* 段落匹配：选项就是段落字母，走同一条 .ai-opt 通路，点选与判分不用另写 */
+        inner = '<div class="ai-opts ai-letters">' + q.paper.paras.map(function (x) {
+          var sel2 = norm(q.answers[i]) === norm(x.k);
+          var lcls = 'ai-opt' + (sel2 ? ' sel' : '');
+          if (it) {
+            if (norm(x.k) === norm(answerOf(ex))) lcls += ' ok';
+            else if (sel2) lcls += ' err';
+          }
+          return '<button type="button" class="' + lcls + '" data-mi="' + mi + '" data-i="' + i +
+            '" data-val="' + esc(x.k) + '"><i>' + esc(x.k) + '</i></button>';
         }).join('') + '</div>';
       } else {
         inner = '<input class="field ai-input" data-mi="' + mi + '" data-i="' + i + '" type="text" ' +
@@ -524,6 +623,48 @@
         (it && ex.word ? '<span class="ai-q-word">' + esc(ex.word) + '</span>' : '') +
         '</div><div class="ai-q-text">' + esc(ex.question) + '</div>' + inner + foot + '</div>';
     }).join('');
+  }
+
+  /** 整篇阅读 / 段落匹配的卡片：材料在上、题在下，跟真题作答页一个顺序 */
+  function paperCard(m, mi) {
+    var q = m.quiz;
+    var p = q.paper;
+    var isMatch = p.kind === 'match';
+    var mat = '';
+    if (isMatch) {
+      mat = (p.heading ? '<h3 class="qz-h3">' + esc(p.heading) + '</h3>' : '') +
+        p.paras.map(function (x) {
+          return '<p class="qz-p"><b class="qz-pl">' + esc(x.k) + ')</b>' + esc(x.text) + '</p>';
+        }).join('');
+    } else {
+      mat = (p.heading ? '<h3 class="qz-h3">' + esc(p.heading) + '</h3>' : '') +
+        p.body.map(function (x) { return '<p class="qz-p">' + esc(x) + '</p>'; }).join('');
+    }
+    var head = '<div class="ai-quizbox-h"><span>' +
+      (isMatch ? '整篇段落匹配 · ' + q.exercises.length + ' 题'
+               : '整篇仔细阅读 · ' + q.exercises.length + ' 题') + '</span>' +
+      (q.graded ? '<span class="ai-score">答对 <b>' + q.right + '</b>/' + q.exercises.length +
+        ' · ' + q.acc + '%</span>' : '') + '</div>';
+    var foot = q.graded
+      ? '<div class="ai-quizbox-f">' +
+        '<button class="btn sm primary" data-mi="' + mi + '" data-act="review">让教练讲讲错题</button>' +
+        '<button class="btn sm ghost" data-mi="' + mi + '" data-act="publish">发布到题目板块</button>' +
+        '<span class="small muted">这类题只判分，不记单词</span></div>'
+      : '<div class="ai-quizbox-f"><button class="btn sm primary" data-mi="' + mi + '" data-act="grade">交卷判分</button>' +
+        '<button class="btn sm ghost" data-mi="' + mi + '" data-act="publish">发布到题目板块</button>' +
+        '<span class="small muted">这类题只判分，不记单词</span></div>';
+    return '<div class="ai-quizbox ai-paper">' + head +
+      (p.title ? '<div class="ai-cloze-t">' + esc(p.title) + '</div>' : '') +
+      '<div class="qz-mat">' + mat + '</div>' +
+      '<div class="ai-qs">' + exList(q, mi) + '</div>' + foot + '</div>';
+  }
+
+  function quizCard(m, mi) {
+    var q = m.quiz;
+    if (!q) return '';
+    if (q.cloze) return clozeCard(m, mi);
+    if (q.paper) return paperCard(m, mi);
+    var body = exList(q, mi);
 
     var head = '<div class="ai-quizbox-h"><span>练习 · ' + q.exercises.length + ' 题</span>' +
       (q.graded ? '<span class="ai-score">答对 <b>' + q.right + '</b>/' + q.exercises.length + ' · ' + q.acc + '%</span>' : '') +
@@ -1361,6 +1502,19 @@
         bank: cz.bank,
         questions: m.quiz.exercises.map(function (ex) {
           return { n: ex.n, answer: ex.answer, key: ex.key, explain: ex.explanation };
+        })
+      });
+    } else if (m.quiz.paper) {
+      /* 整篇阅读 / 段落匹配：材料跟题一起发，题目板块按原生 type 存 */
+      var pp = m.quiz.paper;
+      rec = TW.quiz.publish({
+        kind: pp.kind,
+        title: pp.title || ('AI 出题 · ' + (pp.kind === 'match' ? '段落匹配' : '仔细阅读')),
+        heading: pp.heading,
+        body: pp.body,
+        paras: pp.paras,
+        exercises: m.quiz.exercises.map(function (ex) {
+          return { question: ex.question, options: ex.options, answer: ex.answer, explanation: ex.explanation };
         })
       });
     } else {
