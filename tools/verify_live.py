@@ -182,7 +182,9 @@ def main():
         pg.set_viewport_size({"width": 1440, "height": 900})
         pg.goto(URL + "#/listening", wait_until="load", timeout=60000)
         pg.wait_for_timeout(1000)
-        check("线上听力板块可打开（3 套）", pg.locator(".ls-card").count(), 3)
+        # 只判下限：听力素材会持续增加（真题录音导入后从 3 套变 9 套），
+        # 写死具体套数会每次加数据都假失败。
+        check("线上听力板块可打开（>=3 套）", pg.locator(".ls-card").count() >= 3, True)
         # 导航是 <button class="nav-item" data-path="/listening">，不是 <a href>
         check("线上导航有「听力」",
               pg.locator('button.nav-item[data-path="/listening"]').count() >= 1, True)
@@ -196,7 +198,8 @@ def main():
         pg.click("#qz-toggle-tr")
         pg.wait_for_timeout(500)
         check("线上译文逐句对照（多行英中）", pg.locator(".qz-tr .bi-row").count() >= 12, True)
-        check("线上题库 13 套", pg.evaluate("() => TW.quiz.bank().length"), 13)
+        # 同理只判下限：题库 = 手写 13 套 + 真题 22 套，以后还会加
+        check("线上题库 >= 13 套", pg.evaluate("() => TW.quiz.bank().length") >= 13, True)
 
         # 移动端
         pg.set_viewport_size({"width": 390, "height": 844})
