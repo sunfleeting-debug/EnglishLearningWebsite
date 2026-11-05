@@ -1,5 +1,5 @@
 /* Versioned app-shell cache for the installable mobile web app. */
-const CACHE_VERSION = 'english-learning-v1.9.5-personal-matching';
+const CACHE_VERSION = 'english-learning-v1.10.0-zhenti';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const SHELL = [
@@ -16,6 +16,7 @@ const SHELL = [
   './assets/js/views/resources.js', './assets/js/views/reading.js', './assets/js/views/settings.js',
   './assets/js/views/account.js', './assets/js/views/admin.js',
   './data/books.js', './data/words.js', './data/reading.js', './data/sentences.js', './data/classics.js', './data/quiz.js', './data/quiz-more.js', './data/writing.js', './data/listening.js', './data/listening-extra.js', './data/dicts/index.js',
+  './data/quiz-zhenti.js', './data/writing-zhenti.js', './data/listening-zhenti.js',
   './assets/img/icon-180.png', './assets/img/icon-192.png', './assets/img/icon-512.png',
   './assets/img/icon-maskable-512.png', './assets/img/intro-typewriter.webp', './assets/img/shadow-leaves.webp'
 ];

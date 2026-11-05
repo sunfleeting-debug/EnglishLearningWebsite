@@ -37,13 +37,16 @@
   }
 
   /** 题库里的真题（静态数据，可能因为脚本没加载而缺席）
-      2026-11-05 起两处来源：data/quiz.js（扫描件生成）+ data/quiz-more.js（真题/模拟，手写） */
+      2026-11-05 起三处来源：data/quiz.js（扫描件生成）+ data/quiz-more.js（真题/模拟，手写）
+      + data/quiz-zhenti.js（tools/build_pack.py 从真题 PDF 抽取，答案已交叉校验） */
   function bank() {
     var out = [];
     var a = window.TW_QUIZ;
     if (a && Array.isArray(a.sets)) out = out.concat(a.sets);
     var b = window.TW_QUIZ_MORE;
     if (b && Array.isArray(b.sets)) out = out.concat(b.sets);
+    var c = window.TW_QUIZ_ZHENTI;
+    if (c && Array.isArray(c)) out = out.concat(c);
     if (TW.personalMaterials) out = out.concat(TW.personalMaterials.quizSets());
     return out;
   }

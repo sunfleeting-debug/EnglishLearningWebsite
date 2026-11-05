@@ -38,7 +38,11 @@
   read();
 
   function esc(s) { return TW.esc(s); }
-  function sets() { return ((window.TW_LISTENING && window.TW_LISTENING.sets) || []).concat(TW.aiMaterials ? TW.aiMaterials.list('listening') : []); }
+  function sets() {
+    return ((window.TW_LISTENING && window.TW_LISTENING.sets) || [])
+      .concat(window.TW_LISTENING_ZHENTI || [])
+      .concat(TW.aiMaterials ? TW.aiMaterials.list('listening') : []);
+  }
   function get(id) {
     var l = sets();
     for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
@@ -51,6 +55,48 @@
     return n;
   }
 
+  /** 真题听力走真音频（mp3），模拟材料走浏览器语音 */
+  function hasAudio(set) {
+    return (set.segments || []).some(function (s) { return !!s.file; });
+  }
+  function hasText(set) {
+    return (set.segments || []).some(function (s) { return (s.transcript || []).length > 0; });
+  }
+
+  /* ---------------- 真音频 ---------------- */
+
+  /* 整页 re-render 会重建 DOM（点一个选项就整块重画），所以 <audio> 元素必须
+     存在模块里，每次重画后把它「搬」回新插槽，播放进度和播放状态才不会丢。 */
+  var audioEl = null, audioSrc = '';
+
+  function audioOf(set) {
+    var seg = (set.segments || []).filter(function (s) { return s.file; })[0];
+    return seg || null;
+  }
+
+  function mountAudio(host, set) {
+    var seg = audioOf(set);
+    if (!seg) return;
+    if (!audioEl) {
+      audioEl = document.createElement('audio');
+      audioEl.controls = true;
+      audioEl.preload = 'metadata';
+      audioEl.className = 'ls-audio';
+    }
+    if (audioSrc !== seg.file) {
+      audioSrc = seg.file;
+      audioEl.src = seg.file;
+    }
+    audioEl.playbackRate = S.rate || 1;
+    var slot = TW.$('#ls-audio-slot', host);
+    if (!slot) return;
+    var t = audioEl.currentTime, playing = audioEl.paused === false;
+    slot.appendChild(audioEl);          // 同一节点搬过去，不算重建
+    if (t > 0) { try { audioEl.currentTime = t; } catch (e) { /* 元数据还没到 */ } }
+    if (playing) { try { audioEl.play(); } catch (e) { /* 自动播放被拦 */ } }
+  }
+
+
   /* ---------------- 朗读 ---------------- */
 
   var synth = window.speechSynthesis;
@@ -61,6 +107,7 @@
     S.playing = -1;
     S.paused = false;
     try { if (synth) synth.cancel(); } catch (e) { /* 某些环境没有 */ }
+    if (audioEl) { try { audioEl.pause(); audioEl.currentTime = 0; } catch (e) { /* 忽略 */ } }
   }
 
   function speakText(text, rate, onStart, onEnd) {
@@ -79,6 +126,20 @@
 
   /** 播某一段（或从这一段开始把后面的都播完） */
   function playSegment(host, set, segIndex, chain) {
+    var seg0 = (set.segments || [])[segIndex];
+    if (seg0 && seg0.file) {
+      if (!audioEl) mountAudio(host, set);
+      if (audioEl) {
+        try {
+          audioEl.currentTime = 0;
+          audioEl.play();
+          S.playing = segIndex;
+          var tip0 = TW.$('#ls-now', host);
+          if (tip0) tip0.textContent = '正在播放录音…';
+        } catch (e) { /* 浏览器拦了自动播放，用户再点一次原生控件即可 */ }
+      }
+      return;
+    }
     if (!synth) { S.err = '这个浏览器不支持语音朗读，可以用 Chrome / Edge 打开'; render(host, { id: set.id }); return; }
     stopSpeak();
     var seg = set.segments[segIndex];
@@ -157,10 +218,12 @@
 
   function segHtml(set, seg, si) {
     var qs = seg.questions || [];
+    var meta = seg.file ? (qs.length + ' 题 · 真题录音')
+      : ((seg.transcript || []).length + ' 句 · ' + qs.length + ' 题');
     return '<div class="card card-pad ls-seg" data-seg="' + si + '">' +
       '<div class="ls-seg-h">' +
         '<span class="ls-seg-l">' + esc(seg.label) + '</span>' +
-        '<span class="small muted">' + (seg.transcript || []).length + ' 句 · ' + qs.length + ' 题</span>' +
+        '<span class="small muted">' + meta + '</span>' +
         '<button class="btn sm ghost" data-play="' + si + '">' +
           (S.playing === si ? '重新播放' : '播放这一段') + '</button>' +
       '</div>' +
@@ -195,7 +258,9 @@
   }
 
   function textHtml(set) {
-    return (set.segments || []).map(function (seg) {
+    var segs = (set.segments || []).filter(function (s) { return (s.transcript || []).length; });
+    if (!segs.length) return '<div class="small muted">这套题没有原文（卷面只印选项）。做完对答案时，把听错的题号记下来，重听那一段。</div>';
+    return segs.map(function (seg) {
       return '<div class="ls-txt">' +
         '<div class="card-title">' + esc(seg.label) +
           (S.showTrans ? ' · 原文 + 译文' : ' · 原文') + '</div>' +
@@ -244,6 +309,7 @@
           '<span class="small muted" id="ls-now">' + (S.playing >= 0 ? '朗读中…' : '未播放') + '</span>' +
         '</div>' +
         '<div class="small muted" style="margin-top:.5rem">' + esc(set.intro || '') + '</div>' +
+        '<div id="ls-audio-slot" class="ls-audio-slot"></div>' +
         (S.err ? '<div class="ls-err">' + esc(S.err) + '</div>' : '') +
       '</div>' +
 
@@ -255,13 +321,16 @@
             ? '<b class="ls-score">得分 ' + scoreOf(set) + ' / ' + qn + '</b>' +
               '<button class="btn ghost" id="ls-retry">再做一遍</button>'
             : '<button class="btn primary" id="ls-submit">交卷（已答 ' + answered + '/' + qn + '）</button>') +
-          '<button class="btn ghost" id="ls-text">' + (S.showText ? '收起原文' : '看原文') + '</button>' +
-          '<button class="btn ghost" id="ls-trans">' + (S.showTrans ? '只看原文' : '看原文 + 译文') + '</button>' +
+          (hasText(set)
+            ? '<button class="btn ghost" id="ls-text">' + (S.showText ? '收起原文' : '看原文') + '</button>' +
+              '<button class="btn ghost" id="ls-trans">' + (S.showTrans ? '只看原文' : '看原文 + 译文') + '</button>'
+            : '') +
         '</div>' +
-        (S.showText ? '<div class="ls-texts">' + textHtml(set) + '</div>' : '') +
+        (S.showText && hasText(set) ? '<div class="ls-texts">' + textHtml(set) + '</div>' : '') +
       '</div>' + '<div id="study-chat"></div>' +
     '</div>';
 
+    mountAudio(host, set);
     bind(host, set);
     if (TW.studyChat) TW.studyChat.mount(host, function () { return {title: set.title, answers: S.answers, graded: S.graded, score: S.graded ? scoreOf(set) : undefined, segments: set.segments}; }, '听力');
     if (S.playing >= 0) {
@@ -287,6 +356,12 @@
     if (stop) stop.addEventListener('click', function () { stopSpeak(); renderItem(host, set.id); });
     var pause = TW.$('#ls-pause', host);
     if (pause) pause.addEventListener('click', function () {
+      if (audioEl && audioOf(set)) {
+        if (audioEl.paused) { try { audioEl.play(); } catch (e) { /* 忽略 */ } S.paused = false; }
+        else { audioEl.pause(); S.paused = true; }
+        renderItem(host, set.id);
+        return;
+      }
       if (!synth) return;
       if (S.paused) { synth.resume(); S.paused = false; }
       else { synth.pause(); S.paused = true; }
@@ -299,6 +374,11 @@
     TW.$$('[data-rate]', host).forEach(function (b) {
       b.addEventListener('click', function () {
         S.rate = Number(b.dataset.rate);
+        if (audioOf(set)) {                       // 真录音：直接改播放速率，别重头播
+          if (audioEl) audioEl.playbackRate = S.rate;
+          renderItem(host, set.id);
+          return;
+        }
         var was = S.playing;
         renderItem(host, set.id);
         if (was >= 0) playSegment(host, set, was, false);   // 换语速后接着读

@@ -40,7 +40,12 @@
   }
   read();
 
-  function items() { return ((window.TW_WRITING && window.TW_WRITING.items) || []).concat(TW.aiMaterials ? TW.aiMaterials.list('writing') : [], TW.personalMaterials ? TW.personalMaterials.writingItems() : []); }
+  function items() {
+    return ((window.TW_WRITING && window.TW_WRITING.items) || [])
+      .concat(window.TW_WRITING_ZHENTI || [])
+      .concat(TW.aiMaterials ? TW.aiMaterials.list('writing') : [],
+        TW.personalMaterials ? TW.personalMaterials.writingItems() : []);
+  }
   function get(id) {
     var l = items();
     for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
