@@ -59,7 +59,7 @@ class Questions(unittest.TestCase):
 
     def test_pdf_listening_matches_columns_by_position(self):
         page = [(20, 10, '1. A) first'), (20, 20, 'B)'), (45, 20, 'second'), (250, 9, 'C) third'),
-                (250, 20, 'D) fourth'), (20, 30, '2. A) one'), (20, 40, 'B) two'),
+                (250, 20, 'D) fourth'), (20, 30, '2. А) one'), (20, 40, 'B) two'),
                 (250, 30, 'C) three'), (250, 40, 'D) four'), (20, 60, 'Part III'), (20, 70, 'A) unrelated')]
         questions = parse_pdf_listening([page], 'BD')
         self.assertEqual(questions[0]['options'][2]['t'], 'third')
