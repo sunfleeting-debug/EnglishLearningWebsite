@@ -786,6 +786,40 @@ def build():
                          'test': f'2022年12月六级真题 · 第{paper_number}套', 'no': number,
                          'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
                          'body': [body], 'paras': [], 'bank': [], 'questions': questions})
+    # 2022.06 两套阅读；第 3 套客观题与第 2 套相同，听力共用一套。
+    for paper_number, cloze_key, match_key in [(1, 'ABKHJGLDEF', 'EBJDKFCGAH'),
+                                                (2, 'GBFANCMDLE', 'FBHDECGAJE')]:
+        pdf = next((MATERIALS / '六级真题' / '六级真题').glob(f'2022年06*/**/2022.06六级真题第{paper_number}套*.pdf'))
+        rows, pages = [], []
+        with fitz.open(pdf) as exam:
+            for page in exam:
+                lines = []
+                for block in page.get_text('dict')['blocks']:
+                    for line in block.get('lines', []):
+                        value = ''.join(span['text'] for span in line['spans']).strip()
+                        if value:
+                            lines.append((line['bbox'][0], line['bbox'][1], value))
+                pages.append(lines)
+                rows.extend(repair_pdf_text(line) for line in page.get_text().splitlines()
+                            if not re.fullmatch(r'\s*第\s*\d+\s*页\s*', line))
+        if paper_number == 1:
+            audio = next((MATERIALS / '六级真题' / '六级真题').glob('2022年06*/**/2022年06月六级听力（全1套）.mp3'))
+            questions = parse_pdf_listening(pages[:3], 'ABCADDCDABBCDABADCCBAADDB')
+            sets.append({'id': 'personal-cet6-202206-1-listening', 'type': 'listening',
+                         'test': '2022年6月六级真题 · 共用听力', 'no': 0, 'title': '听力真题',
+                         'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                         'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': questions})
+        text = '\n'.join(rows)
+        body, bank, questions = parse_exam_cloze(text, cloze_key)
+        sets.append({'id': f'personal-cet6-202206-{paper_number}-cloze', 'type': 'cloze',
+                     'test': f'2022年6月六级真题 · 第{paper_number}套', 'no': 0, 'title': '选词填空',
+                     'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [body], 'paras': [], 'bank': bank, 'questions': questions})
+        paragraphs, questions = parse_exam_match(text, match_key)
+        sets.append({'id': f'personal-cet6-202206-{paper_number}-match', 'type': 'match',
+                     'test': f'2022年6月六级真题 · 第{paper_number}套', 'no': 0, 'title': '段落匹配',
+                     'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [], 'paras': paragraphs, 'bank': [], 'questions': questions})
     # 2022.09 为同一套客观题；PDF 的个别填空编号损坏，以配套 Word 正文校正。
     root_202209 = MATERIALS / '六级真题' / '六级真题'
     pdf_202209 = next(root_202209.glob('2022年09*/**/2022.09英语六级真题第1套*.pdf'))
