@@ -1700,6 +1700,16 @@ a.ai-chip:hover { border-color: var(--accent); background: var(--accent-2); }
 .ai-quizbox .ai-q:last-of-type { margin-bottom: 0; }
 .ai-quizbox-f { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.7rem; flex-wrap: wrap; }
 
+/* AI 卡片里的「整篇选词填空」：直接复用题目板块的 .qz-* 挖空/词库样式，
+   只把字号与留白收紧一档——聊天气泡比作答页窄，照搬会显得很挤。 */
+.ai-cloze .qz-mat { font-size: 13.8px; line-height: 1.9; padding: 0.7rem 0.8rem; margin-bottom: 0.7rem; }
+.ai-cloze .qz-bank { margin-bottom: 0.7rem; }
+.ai-cloze .qz-word { font-size: 12.5px; padding: 0.18rem 0.5rem; }
+.ai-cloze .qz-hint { margin-bottom: 0.6rem; }
+.ai-cloze .qz-qs { margin-top: 0.7rem; }
+.ai-cloze .qz-q { padding: 0.55rem 0.65rem; }
+.ai-cloze-t { font-family: var(--font-display); font-size: 0.95rem; margin: 0 0 0.5rem; }
+
 @media (max-width: 900px) {
   .ai-shell { height: calc(100dvh - 11.5rem); min-height: 24rem; }
   .ai-bubble { max-width: 92%; }

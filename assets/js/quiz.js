@@ -77,6 +77,24 @@
   /** AI 发布出来的题：结构补齐成和真题一样的形状 */
   function publishedSets() {
     return S.published.map(function (p) {
+      /* 2026-11-05：AI 现在能出「整篇选词填空」（一段完整材料 + 10 个空 + A~O 词库）。
+         这种套题直接还原成题目板块原生的 cloze 形状，交给现成的作答页渲染，
+         而不是塞进 mixed 的散题卡片里（散题卡片没法在正文里挖空）。 */
+      if (p && p.kind === 'cloze' && Array.isArray(p.body) && p.body.length && Array.isArray(p.bank) && p.bank.length) {
+        return {
+          id: p.id, type: 'cloze', test: 'AI 出题', no: 0,
+          title: p.title || 'AI 出题 · 选词填空',
+          source: 'AI 教练', topic: (p.bank.length + ' 词库'), minutes: 0,
+          body: p.body.slice(), bank: p.bank.slice(),
+          questions: (p.questions || []).map(function (q) {
+            return {
+              n: Number(q.n) || 0, stem: '', answer: String(q.answer || '').toUpperCase(),
+              key: String(q.key || ''), explain: String(q.explain || '')
+            };
+          }).filter(function (q) { return q.n > 0 && /^[A-O]$/.test(q.answer); }),
+          paras: [], ai: true, ts: p.ts
+        };
+      }
       return {
         id: p.id, type: 'mixed', test: 'AI 出题', no: 0,
         title: p.title || 'AI 出题', source: 'AI 教练', topic: p.word || '',
@@ -168,8 +186,67 @@
     return out;
   }
 
+  /** 整篇选词填空（AI 出的）：body 里的【n】是空位，bank 是 A~O 词库，questions 按空号给字母答案 */
+  function normalizeClozeSet(set) {
+    var body = (set.body || []).map(function (x) { return String(x || '').slice(0, 4000); }).filter(Boolean);
+    if (!body.length) return null;
+    /* 空号必须真的出现在正文里，否则作答页点不到空位 */
+    var holes = {};
+    body.forEach(function (p) {
+      String(p).replace(/【(\d+)】/g, function (m, n) { holes[Number(n)] = 1; return m; });
+    });
+    var bank = [], seenK = {};
+    (set.bank || []).forEach(function (b) {
+      var k = '', w = '';
+      if (b && typeof b === 'object') { k = String(b.k || '').toUpperCase(); w = String(b.w || ''); }
+      else {
+        var t = String(b || '').trim();
+        var mm = /^([A-Oa-o])\s*[.、)．]\s*(.+)$/.exec(t);
+        if (mm) { k = mm[1].toUpperCase(); w = mm[2].trim(); }
+        else { k = String.fromCharCode(65 + bank.length); w = t; }
+      }
+      if (!k || !w || seenK[k]) return;
+      seenK[k] = 1;
+      bank.push({ k: k, w: w });
+    });
+    var questions = [];
+    (set.questions || []).forEach(function (q) {
+      var n = Number(q && (q.n != null ? q.n : q.no)) || 0;
+      var ans = String((q && q.answer) || '').trim().toUpperCase();
+      if (!n || !holes[n] || !/^[A-O]$/.test(ans) || !seenK[ans]) return;
+      var hit = '';
+      bank.forEach(function (b) { if (b.k === ans) hit = b.w; });
+      questions.push({ n: n, stem: '', answer: ans, key: String((q && (q.key || q.word)) || hit || ''), explain: String((q && (q.explain || q.explanation)) || '') });
+    });
+    if (questions.length < 5) return null;
+    return { body: body, bank: bank, questions: questions };
+  }
+
   /** 发布一组 AI 题；同一批题重复发布会复用同一条（按内容哈希判重） */
   function publish(set) {
+    /* 整篇选词填空走单独分支：它没有「题干」，只有正文里的空位和字母答案 */
+    var cz = set.kind === 'cloze' ? normalizeClozeSet(set) : null;
+    if (cz) {
+      var cid = 'ai-cz-' + hash(cz.body.join('#') + cz.bank.map(function (b) { return b.k + b.w; }).join('#') +
+        cz.questions.map(function (q) { return q.n + q.answer; }).join('#'));
+      for (var j = 0; j < S.published.length; j++) {
+        if (S.published[j].id === cid) return S.published[j];
+      }
+      var crec = {
+        id: cid,
+        kind: 'cloze',
+        title: set.title || ('AI 出题 · 选词填空 ' + cz.questions.length + ' 空'),
+        ts: Date.now(), word: '',
+        body: cz.body, bank: cz.bank, questions: cz.questions,
+        /* exercises 存一份是为了「再做一遍」和列表页统计能直接用，不必认识 cloze 结构 */
+        exercises: cz.questions.map(function (q) { return { n: q.n, answer: q.answer, key: q.key, explanation: q.explain }; })
+      };
+      S.published.unshift(crec);
+      if (S.published.length > 60) S.published.length = 60;
+      write();
+      return crec;
+    }
+
     var questions = fromExercises(set.exercises || set.questions || []);
     if (!questions.length) return null;
     var body = Array.isArray(set.body) ? set.body.slice(0, 30).map(function (x) { return String(x || '').slice(0, 4000); }).filter(Boolean) : [];

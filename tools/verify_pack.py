@@ -205,6 +205,36 @@ with sync_playwright() as p:
     check("AI 仿完形选项是真单词", opts == ["receive", "refuse", "relay", "renew"], opts)
     check("AI 仿真题题面无 JS 异常", not errs, "")
 
+    # 整篇选词填空（用户要的「十个空 + 一段完整材料」）：发布后应变成原生 cloze 套题
+    czid = p2.evaluate("""() => {
+      var body = ['Paragraph one has 【1】 and 【2】 in it.',
+                  'Paragraph two has 【3】 【4】 【5】 【6】 in it.',
+                  'Paragraph three has 【7】 【8】 【9】 【10】 in it.'];
+      var bank = 'ABCDEFGHIJKLMNO'.split('').map(function (k, i) { return k + '. word' + (i + 1); });
+      var qs = [];
+      for (var n = 1; n <= 10; n++) {
+        qs.push({ n: n, answer: 'ABCDEFGHIJ'.charAt(n - 1), key: 'word' + n, explain: '第 ' + n + ' 空的解析' });
+      }
+      var r = TW.quiz.publish({ kind: 'cloze', title: 'AI 出题 · 选词填空 10 空',
+                                body: body, bank: bank, questions: qs });
+      return r ? r.id : '';
+    }""")
+    check("整篇选词填空能发布", bool(czid), czid)
+    if czid:
+        p2.goto(BASE + "#/quiz?set=" + czid, wait_until="load")
+        p2.wait_for_timeout(700)
+        check("整篇选词填空：正文 10 个空位", p2.locator(".qz-mat .qz-blank").count(), 10)
+        check("整篇选词填空：词库 15 项", p2.locator(".qz-bank .qz-word").count(), 15)
+        check("整篇选词填空：题型标签是「选词填空」",
+              "选词填空" in p2.inner_text(".qz-mat-h-row"), True)
+        # 点空位 + 点词库能填上（作答链路通）
+        p2.click('.qz-mat .qz-blank[data-blank="1"]')
+        p2.wait_for_timeout(120)
+        p2.click('.qz-bank .qz-word[data-word="A"]')
+        p2.wait_for_timeout(200)
+        check("整篇选词填空：能点空位填词",
+              p2.inner_text('.qz-mat .qz-blank[data-blank="1"]').strip(), "A")
+
     # 旧版废题（选项是 A/B/C/D 字母、题面中文）应被过滤掉，不再出现在列表里
     ctx3 = b.new_context(viewport={"width": 1180, "height": 900})
     ctx3.add_init_script("localStorage.setItem('typingcet.guest','1')")

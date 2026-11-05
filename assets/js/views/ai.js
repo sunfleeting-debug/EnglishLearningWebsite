@@ -99,6 +99,19 @@
     '那等于没有选项，发到题目板块就是一道没法做的废题。',
     '这类题 word 与 id 都写空字符串 ""，只判分、不写回单词记录。',
     '',
+    '【整篇选词填空（十个空的完形）】',
+    '用户要「完整的十个空」「一整篇材料」「完形填空」「选词填空」时，必须出一整篇，不许拆成一堆独立小题。',
+    '协议：setType 写 "cloze"，body 是**一整篇连贯的文章**（3 段左右，共 200-300 词），',
+    '空位在正文里写成【1】【2】…【10】（中文方括号加数字，不是 ___），一段里可以有好几个空；',
+    'bank 是 15 个词条，格式 "A. alleviate"，字母 A 到 O 连续不能断，其中 10 个是答案、5 个是干扰项；',
+    'exercises 每项只给三样：n（空号，1-10 连续）、answer（词库字母，如 "C"）、explanation（中文解析 + 搭配）；',
+    '词库里的词一律给**原形**，同一题内不要重复；答案必须是 bank 里真实存在的字母。',
+    '```quiz',
+    '{"setType":"cloze","title":"AI 原创 · 选词填空 10 空","body":["In recent years, the way people work has changed 【1】 ... 【2】 ...","Second paragraph ... 【6】 ...","Final paragraph ... 【10】 ..."],"bank":["A. alleviate","B. ambiguous","C. anticipate","D. comply","E. consecutive","F. controversy","G. deteriorate","H. impose","I. inevitable","J. maintain","K. notorious","L. persistent","M. reluctant","N. sustain","O. undermine"],"exercises":[{"n":1,"answer":"C","explanation":"anticipate 预料；anticipate changes 预见变化"},{"n":2,"answer":"H","explanation":"impose ... on 强加于"}]}',
+    '```',
+    '出题前先自己在心里核对一遍：正文里【1】到【10】十个空都在、每个空的答案字母在 bank 里、词库 15 项字母连续。',
+    '文章要像六级真题的选词填空（学术/社会话题的说明文），不要写成十句互不相干的句子。',
+    '',
     '【关于联网】',
     '你本身不能主动浏览网页；本站会在需要时（问最新消息、考试时间、政策变化这类）把实时检索结果贴进【联网检索结果】。',
     '有结果：事实以结果为准，句末标一个来源域名（如「据 neea.edu.cn」），别啰嗦。',
@@ -258,6 +271,61 @@
   }
 
   /** 从 quiz 块里取材料原文（仿阅读/完形的题干必须配原文，否则选项再对也没法做） */
+  /** 整篇选词填空（setType=cloze）：一整篇材料 + 【n】空位 + A~O 词库 + 字母答案
+      2026-11-05 新增。之前的协议只能出「散题卡片」，用户要十个空的完整文章时，
+      AI 只能把文章塞正文、题拆成十张卡，做起来跟真题完全不是一回事。 */
+  function normalizeCloze(raw) {
+    var data;
+    try { data = TW.ai.parseJson(raw); } catch (e) { return null; }
+    if (!data) return null;
+    var kind = String(data.setType || data.set_type || '').toLowerCase();
+    if (kind !== 'cloze') return null;
+    var body = (data.body || data.passage || []).map(function (x) { return String(x || '').trim(); }).filter(Boolean);
+    if (!body.length) return null;
+    /* 空号必须真的写在正文里，否则点不到空位，等于一道做不了的题 */
+    var holes = {};
+    body.forEach(function (p) {
+      String(p).replace(/【(\d+)】/g, function (m, n) { holes[Number(n)] = 1; return m; });
+    });
+    /* 词库：兼容 "A. word" / {k,w} / 纯单词数组（按顺序补字母） */
+    var bank = [], seenK = {};
+    (data.bank || data.words || []).forEach(function (b) {
+      var k = '', w = '';
+      if (b && typeof b === 'object') { k = String(b.k || b.letter || '').toUpperCase(); w = String(b.w || b.word || ''); }
+      else {
+        var t = String(b || '').trim();
+        var mm = /^([A-Oa-o])\s*[.、)．]\s*(.+)$/.exec(t);
+        if (mm) { k = mm[1].toUpperCase(); w = mm[2].trim(); }
+        else if (t) { k = String.fromCharCode(65 + bank.length); w = t; }
+      }
+      if (!k || !w || seenK[k]) return;
+      seenK[k] = 1;
+      bank.push({ k: k, w: w });
+    });
+    var list = data.exercises || data.items || data.questions || [];
+    var out = [];
+    list.forEach(function (q) {
+      if (!q || typeof q !== 'object') return;
+      var n = Number(q.n != null ? q.n : q.no) || 0;
+      var ans = String(q.answer || q.a || '').trim().toUpperCase();
+      if (!n || !holes[n] || !/^[A-O]$/.test(ans) || !seenK[ans]) return;
+      var hit = '';
+      bank.forEach(function (b) { if (b.k === ans) hit = b.w; });
+      out.push({
+        id: '', word: '', type: 'choice', n: n,
+        question: '第 ' + n + ' 空', options: [],
+        answer: ans, key: String(q.key || q.word || hit || ''),
+        explanation: String(q.explanation || q.explain || '')
+      });
+    });
+    if (out.length < 5) return null;
+    out.sort(function (a, b) { return a.n - b.n; });
+    return {
+      cloze: { body: body.slice(0, 20), bank: bank, title: String(data.title || '').trim() },
+      exercises: out
+    };
+  }
+
   function quizBody(raw) {
     var data;
     try { data = TW.ai.parseJson(raw); } catch (e) { return []; }
@@ -282,6 +350,15 @@
     var sp = splitQuiz(m.content);
     if (sp.raw == null) return;
     m.content = sp.text;
+    /* 先认「整篇选词填空」：它没有题干，套用散题解析器会被当成废题全丢 */
+    var cz = normalizeCloze(sp.raw);
+    if (cz) {
+      m.quiz = {
+        exercises: cz.exercises, cloze: cz.cloze, body: cz.cloze.body,
+        answers: {}, graded: false, items: [], right: 0, acc: 0, pick: 0
+      };
+      return;
+    }
     var list = normalizeExercises(sp.raw);
     if (list) m.quiz = { exercises: list, body: quizBody(sp.raw), answers: {}, graded: false, items: [], right: 0, acc: 0 };
     else m.content += '\n\n（这组练习没解析出来：题面要用英文、选项要写真实的英文单词而不是 A/B/C/D，' +
@@ -321,9 +398,100 @@
 
   /* ---------------- 消息渲染 ---------------- */
 
+  /** 整篇选词填空的卡片：正文就地挖空 + 词库点选，和真题板块的作答页同一套交互 */
+  function clozeCard(m, mi) {
+    var q = m.quiz;
+    var cz = q.cloze;
+    var idxByN = {};
+    q.exercises.forEach(function (ex, i) { idxByN[ex.n] = i; });
+
+    /* 正文：把【n】换成可点的空位；交卷后错的空紧跟一个绿色正确答案 */
+    var mat = cz.body.map(function (p) {
+      var html = esc(p).replace(/【(\d+)】/g, function (mt, ns) {
+        var n = Number(ns);
+        var i = idxByN[n];
+        if (i == null) return mt;
+        var mine = q.answers[i] || '';
+        var cls = 'qz-blank';
+        if (q.graded) cls += q.items[i] && q.items[i].ok ? ' ok' : ' err';
+        else if (q.pick === i) cls += ' pick';
+        else if (mine) cls += ' filled';
+        var label = mine || String(n);
+        return '<button type="button" class="' + cls + '" data-mi="' + mi + '" data-cz="' + i + '">' + esc(label) + '</button>' +
+          (q.graded && !(q.items[i] && q.items[i].ok)
+            ? '<span class="qz-fix">' + esc(q.exercises[i].answer) + '</span>' : '');
+      });
+      return '<p class="qz-p">' + html + '</p>';
+    }).join('');
+
+    /* 词库：已用过的标出来，并显示填在第几空 */
+    var bank = cz.bank.map(function (b) {
+      var usedBy = '';
+      q.exercises.forEach(function (ex, i) { if (q.answers[i] === b.k) usedBy = ex.n; });
+      var cls = 'qz-word' + (usedBy ? ' used' : '');
+      if (q.graded && usedBy) {
+        var ii = idxByN[usedBy];
+        if (!(q.items[ii] && q.items[ii].ok)) cls += ' err';
+      }
+      return '<button type="button" class="' + cls + '" data-mi="' + mi + '" data-czb="' + b.k + '">' +
+        '<i>' + b.k + '</i><span>' + esc(b.w) + '</span>' +
+        (usedBy ? '<em>' + usedBy + '</em>' : '') + '</button>';
+    }).join('');
+
+    var done = 0;
+    q.exercises.forEach(function (ex, i) { if (q.answers[i]) done++; });
+    var tip = q.graded
+      ? '<div class="qz-hint">' + (q.right === q.exercises.length
+          ? '全对，这篇可以过了。'
+          : '红色空位是错的，绿色小字是正确答案；下面是逐空解析。') + '</div>'
+      : '<div class="qz-hint"><b>怎么答</b>：先在正文里点一个空位（会被高亮），再点下面词库里对应的词；' +
+        '点已填的空位可以清掉重填。' +
+        '<span class="qz-progress">已填 <b>' + done + '</b>/' + q.exercises.length + '</span></div>';
+
+    /* 交卷后的逐空解析（题号 + 你填的 / 正确的 / 解析） */
+    var detail = '';
+    if (q.graded) {
+      detail = '<div class="qz-qs">' + q.exercises.map(function (ex, i) {
+        var ok = !!(q.items[i] && q.items[i].ok);
+        var mine = q.answers[i] || '';
+        var mineWord = '';
+        cz.bank.forEach(function (b) { if (b.k === mine) mineWord = b.w; });
+        var keyWord = '';
+        cz.bank.forEach(function (b) { if (b.k === ex.answer) keyWord = b.w; });
+        return '<div class="qz-q' + (ok ? ' ok' : ' err') + '">' +
+          '<div class="qz-q-h"><span class="qz-q-no">' + ex.n + '</span>' +
+          '<span class="' + (ok ? 'qz-ok' : 'qz-err') + '">' + (ok
+            ? '✓ ' + esc(ex.answer + '. ' + keyWord)
+            : '✗ 你填 ' + esc(mine ? mine + '. ' + mineWord : '（空）') + '，正确 ' + esc(ex.answer + '. ' + keyWord)) +
+          '</span></div>' +
+          '<div class="qz-exp-t">' + esc(ex.explanation || '（这空没有解析）') + '</div>' +
+        '</div>';
+      }).join('') + '</div>';
+    }
+
+    var head = '<div class="ai-quizbox-h"><span>整篇选词填空 · ' + q.exercises.length + ' 空</span>' +
+      (q.graded ? '<span class="ai-score">答对 <b>' + q.right + '</b>/' + q.exercises.length + ' · ' + q.acc + '%</span>' : '') +
+      '</div>';
+    var foot = q.graded
+      ? '<div class="ai-quizbox-f">' +
+        '<button class="btn sm primary" data-mi="' + mi + '" data-act="review">让教练讲讲错题</button>' +
+        '<button class="btn sm ghost" data-mi="' + mi + '" data-act="publish">发布到题目板块</button>' +
+        '<span class="small muted">这类题不写单词记录，只计本次练习</span></div>'
+      : '<div class="ai-quizbox-f"><button class="btn sm primary" data-mi="' + mi + '" data-act="grade">交卷判分</button>' +
+        '<button class="btn sm ghost" data-mi="' + mi + '" data-act="publish">发布到题目板块</button>' +
+        '<span class="small muted">这类题不写单词记录，只计本次练习</span></div>';
+
+    return '<div class="ai-quizbox ai-cloze">' + head +
+      (cz.title ? '<div class="ai-cloze-t">' + esc(cz.title) + '</div>' : '') +
+      '<div class="qz-mat">' + mat + '</div>' +
+      '<div class="qz-bank">' + bank + '</div>' +
+      tip + detail + foot + '</div>';
+  }
+
   function quizCard(m, mi) {
     var q = m.quiz;
     if (!q) return '';
+    if (q.cloze) return clozeCard(m, mi);
     var body = q.exercises.map(function (ex, i) {
       var it = q.graded ? q.items[i] : null;
       var cls = 'ai-q' + (it ? (it.ok ? ' ok' : ' err') : '');
@@ -930,6 +1098,46 @@
           if (!S.busy) sendText(sug.dataset.prompt);
           return;
         }
+        /* 整篇选词填空：点空位选中/清空，点词库把词填进当前空位 */
+        var blk = e.target.closest('.qz-blank[data-mi]');
+        if (blk) {
+          var bmi = parseInt(blk.dataset.mi, 10);
+          var bmm = S.messages[bmi];
+          if (!bmm || !bmm.quiz || !bmm.quiz.cloze || bmm.quiz.graded) return;
+          var bi = parseInt(blk.dataset.cz, 10);
+          if (bmm.quiz.answers[bi]) delete bmm.quiz.answers[bi];
+          else bmm.quiz.pick = bi;
+          paintMsgs();
+          return;
+        }
+        var wd = e.target.closest('.qz-word[data-mi]');
+        if (wd) {
+          var wmi = parseInt(wd.dataset.mi, 10);
+          var wmm = S.messages[wmi];
+          if (!wmm || !wmm.quiz || !wmm.quiz.cloze || wmm.quiz.graded) return;
+          var k = wd.dataset.czb;
+          var qq = wmm.quiz;
+          var target = -1;
+          if (qq.pick != null && !qq.answers[qq.pick]) target = qq.pick;
+          if (target < 0) {
+            for (var z = 0; z < qq.exercises.length; z++) {
+              if (!qq.answers[z]) { target = z; break; }
+            }
+          }
+          if (target < 0) { TW.toast('十个空都填满了，点空位可以改'); return; }
+          /* 同一个词已经填在别的空里：先把它从那个空里撤掉，避免一词两用 */
+          Object.keys(qq.answers).forEach(function (n2) {
+            if (qq.answers[n2] === k) delete qq.answers[n2];
+          });
+          qq.answers[target] = k;
+          var nxt = -1;
+          for (var z2 = target + 1; z2 < qq.exercises.length; z2++) {
+            if (!qq.answers[z2]) { nxt = z2; break; }
+          }
+          qq.pick = nxt;
+          paintMsgs();
+          return;
+        }
         var opt = e.target.closest('.ai-opt');
         if (opt) {
           var mi = parseInt(opt.dataset.mi, 10);
@@ -1142,11 +1350,26 @@
     var passage = (m.quiz.body && m.quiz.body.length)
       ? m.quiz.body.slice(0, 20)
       : String(m.content || '').slice(0, 12000).split(/\n\s*\n/).filter(Boolean);
-    var rec = TW.quiz.publish({
-      exercises: m.quiz.exercises,
-      body: passage,
-      title: 'AI 出题 · ' + (d.getMonth() + 1) + '/' + d.getDate() + ' · ' + n + ' 题'
-    });
+    var rec = null;
+    if (m.quiz.cloze) {
+      /* 整篇选词填空：直接按 cloze 结构发布，题目板块里就成了原生「选词填空」套题 */
+      var cz = m.quiz.cloze;
+      rec = TW.quiz.publish({
+        kind: 'cloze',
+        title: cz.title || ('AI 出题 · 选词填空 ' + m.quiz.exercises.length + ' 空'),
+        body: cz.body,
+        bank: cz.bank,
+        questions: m.quiz.exercises.map(function (ex) {
+          return { n: ex.n, answer: ex.answer, key: ex.key, explain: ex.explanation };
+        })
+      });
+    } else {
+      rec = TW.quiz.publish({
+        exercises: m.quiz.exercises,
+        body: passage,
+        title: 'AI 出题 · ' + (d.getMonth() + 1) + '/' + d.getDate() + ' · ' + n + ' 题'
+      });
+    }
     if (!rec) { TW.toast('这组题没有可用题目'); return; }
     TW.toast('已发布到题目板块', 'ok');
     paintRail();
@@ -1161,12 +1384,26 @@
       sendText('这组我全对了，接下来该练什么？');
       return;
     }
-    var lines = wrongs.map(function (ex) {
-      var idx = q.exercises.indexOf(ex);
-      var my = q.answers[idx] || '（空）';
-      return '- ' + ex.word + '｜题目：' + ex.question + '｜我的答案：' + my +
-        '｜正确答案：' + answerOf(ex);
-    }).join('\n');
+    var lines;
+    if (q.cloze) {
+      /* 选词填空要带上词库里的词，否则光看字母教练也没法讲 */
+      var wordOf = {};
+      q.cloze.bank.forEach(function (b) { wordOf[b.k] = b.w; });
+      lines = wrongs.map(function (ex) {
+        var idx = q.exercises.indexOf(ex);
+        var my = q.answers[idx] || '（空）';
+        return '- 第 ' + ex.n + ' 空｜我填：' + (my === '（空）' ? my : my + '. ' + (wordOf[my] || '')) +
+          '｜正确：' + ex.answer + '. ' + (wordOf[ex.answer] || ex.key || '') +
+          '｜题目解析：' + (ex.explanation || '无');
+      }).join('\n');
+    } else {
+      lines = wrongs.map(function (ex) {
+        var idx = q.exercises.indexOf(ex);
+        var my = q.answers[idx] || '（空）';
+        return '- ' + ex.word + '｜题目：' + ex.question + '｜我的答案：' + my +
+          '｜正确答案：' + answerOf(ex);
+      }).join('\n');
+    }
     sendText('这组练习我错了 ' + wrongs.length + ' 个，帮我讲一下错在哪、怎么记：\n' + lines);
   }
 
