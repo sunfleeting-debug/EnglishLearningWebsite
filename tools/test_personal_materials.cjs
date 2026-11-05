@@ -34,5 +34,9 @@ function dir(name, entries) { return { kind:'directory', name, async *values() {
  assert.throws(()=>api.validateQuizBundle(missingOption));
  const duplicate=JSON.parse(JSON.stringify(sample)); duplicate.sets.push(duplicate.sets[0]);
  assert.throws(()=>api.validateQuizBundle(duplicate));
+ const wide=JSON.parse(JSON.stringify(sample)); wide.sets[0].type='match'; wide.sets[0].body=[];
+ wide.sets[0].paras=Array.from('ABCDEFGHIJKLMNOPQR', k=>({k,text:'Paragraph '+k}));
+ wide.sets[0].questions=[{n:36,stem:'Statement',options:[],answer:'Q'}];
+ assert.equal(api.validateQuizBundle(wide).length,1);
  console.log('PASS local material scan preserves paths and categorizes papers, writing and audio');
 })().catch(e=>{console.error(e);process.exitCode=1});

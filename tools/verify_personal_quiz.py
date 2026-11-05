@@ -34,7 +34,7 @@ with static_server() as base, sync_playwright() as playwright:
         }''', bundle)
         page.locator('#pm-choose').wait_for()
         page.locator('#pm-choose').click()
-        page.get_by_text('已加载本机可判分题目：15 组、105 题。').wait_for()
+        page.get_by_text('已加载本机可判分题目：21 组、165 题。').wait_for()
         page.locator('a[href="#/quiz?set=personal-cet6-202112-1-reading-1"]').click()
         for question in next(x for x in bundle['sets'] if x['id'].endswith('reading-1'))['questions']:
             page.locator(f'[data-q="{question["n"]}"][data-val="{question["answer"]}"]').click()
@@ -43,6 +43,14 @@ with static_server() as base, sync_playwright() as playwright:
         page.evaluate("() => location.hash='/quiz'")
         page.locator('a[href="#/quiz?set=personal-cet6-202112-1-matching"]').click()
         for question in next(x for x in bundle['sets'] if x['type'] == 'match')['questions']:
+            page.locator(f'[data-q="{question["n"]}"][data-val="{question["answer"]}"]').click()
+        page.locator('#qz-submit').click()
+        assert page.locator('.qz-score b').inner_text() == '10/10'
+        page.evaluate("() => location.hash='/quiz'")
+        page.locator('a[href="#/quiz?set=personal-cet6-202512-3-match"]').click()
+        latest_match = next(x for x in bundle['sets'] if x['id'] == 'personal-cet6-202512-3-match')
+        assert len(latest_match['paras']) == 18
+        for question in latest_match['questions']:
             page.locator(f'[data-q="{question["n"]}"][data-val="{question["answer"]}"]').click()
         page.locator('#qz-submit').click()
         assert page.locator('.qz-score b').inner_text() == '10/10'

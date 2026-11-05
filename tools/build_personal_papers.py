@@ -139,6 +139,46 @@ def parse_docx_reading(paragraphs, start, answers):
                           'answer': answer, 'explain': '答案已对照本机配套解析册。'})
     return body, questions
 
+def parse_exam_cloze(text, answers):
+    region = text.split('more than once.', 1)[1].split('Section B', 1)[0]
+    options = list(re.finditer(r'(?m)^\s*([A-O0])\)\s*([^\n]+)', region))
+    if len(options) != 15:
+        raise ValueError('Cloze word bank does not contain 15 options')
+    bank = {('O' if m.group(1) == '0' else m.group(1)): clean(m.group(2)) for m in options}
+    if sorted(bank) != list('ABCDEFGHIJKLMNO') or len(answers) != 10 or any(a not in bank for a in answers):
+        raise ValueError('Cloze word bank or answers invalid')
+    body = region[:options[0].start()]
+    blank_re = r'(?<!\d)(2[6-9]|3[0-5])(?!\d|\s*%)'
+    numbers = re.findall(blank_re, body)
+    if numbers != [str(n) for n in range(26, 36)]:
+        raise ValueError(f'Cloze blanks invalid: {numbers}')
+    body = re.sub(blank_re, lambda m: '【' + m.group(1) + '】', body)
+    questions = [{'n': n, 'stem': f'第 {n} 空', 'options': [], 'answer': answers[n-26],
+                  'key': bank[answers[n-26]], 'explain': '答案已对照本机配套解析册。'} for n in range(26, 36)]
+    return clean(body), [{'k': k, 'w': bank[k]} for k in 'ABCDEFGHIJKLMNO'], questions
+
+def parse_exam_match(text, answers):
+    region = text.split('more than once.', 1)[1].split('Section B', 1)[1]
+    start = re.search(r'(?m)^\s*A\)\s+', region)
+    end = re.search(r'(?m)^\s*36\.\s+', region)
+    if not start or not end or end.start() <= start.start():
+        raise ValueError('Matching passage missing')
+    passage = region[start.start():end.start()]
+    marks = list(re.finditer(r'(?m)^\s*([A-Z])\)\s+', passage))
+    if not marks or [m.group(1) for m in marks] != list('ABCDEFGHIJKLMNOPQRSTUVWXYZ'[:len(marks)]):
+        raise ValueError('Matching paragraphs incomplete or out of order')
+    paragraphs = [{'k': m.group(1), 'text': clean(passage[m.end():marks[i+1].start() if i+1 < len(marks) else len(passage)])} for i, m in enumerate(marks)]
+    statements = region[end.start():].split('Section C', 1)[0]
+    if len(answers) != 10 or any(a not in [p['k'] for p in paragraphs] for a in answers):
+        raise ValueError('Matching answers refer to missing paragraphs')
+    questions = []
+    for n in range(36, 46):
+        m = re.search(r'(?m)^\s*' + str(n) + r'\.\s*(.*?)(?=^\s*' + str(n+1) + r'\.|\Z)', statements, re.S)
+        if not m:
+            raise ValueError(f'Missing matching question {n}')
+        questions.append({'n': n, 'stem': clean(m.group(1)), 'options': [], 'answer': answers[n-36], 'explain': '答案已对照本机配套解析册。'})
+    return paragraphs, questions
+
 def extract_writing_sections(rows):
     essay, translation = [], []
     section = None
@@ -302,15 +342,29 @@ def build():
                          'title': f'仔细阅读 · Passage {number}', 'source': '本机星火六级资料',
                          'body': [body], 'paras': [], 'bank': [], 'questions': questions})
     # 答案根据 2025.12 三套解析册的相应页面逐题核对。
-    for paper_number, keys in [(1, ('DADBB', 'CACDB')), (2, ('ABCBC', 'DBDAC')), (3, ('BBACC', 'DCBAD'))]:
+    for paper_number, keys, cloze_key, match_key in [
+            (1, ('DADBB', 'CACDB'), 'HJGCEFDKLA', 'CHDLAFMJOG'),
+            (2, ('ABCBC', 'DBDAC'), 'IBMCKADFJO', 'FKJEMIOCNH'),
+            (3, ('BBACC', 'DCBAD'), 'NGFJHMECDB', 'QIAJRLFKBN')]:
         pdf_202512 = next((MATERIALS / '六级真题' / '六级真题').glob(f'2025年12*/**/2025.12六级真题第{paper_number}套*.pdf'))
         with fitz.open(pdf_202512) as latest:
             reading_rows = []
             for page in latest:
                 for line in page.get_text().splitlines():
-                    if re.fullmatch(r'\s*\d{1,2}\s*', line) or re.match(r'^\s*[•・■]\s*2025年12月六级真题', line):
+                    if (re.fullmatch(r'\s*\d{1,2}\s*', line) and int(line.strip()) not in range(26, 36)) or re.match(r'^\s*[•・■]\s*2025年12月六级真题', line):
                         continue
                     reading_rows.append(line)
+        exam_text = '\n'.join(reading_rows)
+        body, bank, cloze_questions = parse_exam_cloze(exam_text, cloze_key)
+        sets.append({'id': f'personal-cet6-202512-{paper_number}-cloze', 'type': 'cloze',
+                     'test': f'2025年12月六级真题 · 第{paper_number}套', 'no': 0,
+                     'title': '选词填空', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [body], 'paras': [], 'bank': bank, 'questions': cloze_questions})
+        paragraphs, match_questions = parse_exam_match(exam_text, match_key)
+        sets.append({'id': f'personal-cet6-202512-{paper_number}-match', 'type': 'match',
+                     'test': f'2025年12月六级真题 · 第{paper_number}套', 'no': 0,
+                     'title': '段落匹配', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                     'body': [], 'paras': paragraphs, 'bank': [], 'questions': match_questions})
         # PDF text order interleaves the right-hand column of Q49 after Q50.
         if paper_number == 2:
             displaced = ['C) A hindrance to social advancement.', 'D) An inevitable end to liberal pursuits.']

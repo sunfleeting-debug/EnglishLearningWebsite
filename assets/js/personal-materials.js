@@ -84,7 +84,7 @@
           (set.type === 'reading' && !set.body.length) ||
           (set.type === 'listening' && (typeof set.audio !== 'string' || !set.audio || set.audio.split('/').some(function (p) { return !p || p === '.' || p === '..' || p.indexOf('\\') >= 0; }))) ||
           (set.type === 'cloze' && (!set.body.length || !Array.isArray(set.bank) || !set.bank.length || !set.bank.every(function (b, i) { return b && b.k === 'ABCDEFGHIJKLMNO'[i] && typeof b.w === 'string' && b.w.trim(); }))) ||
-          (set.type === 'match' && (!Array.isArray(set.paras) || !set.paras.length || !set.paras.every(function (p, i) { return p && p.k === 'ABCDEFGHIJKLMNO'[i] && typeof p.text === 'string' && p.text.trim(); }))) ||
+          (set.type === 'match' && (!Array.isArray(set.paras) || !set.paras.length || !set.paras.every(function (p, i) { return p && p.k === 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[i] && typeof p.text === 'string' && p.text.trim(); }))) ||
           !Array.isArray(set.questions) || !set.questions.length) throw new Error('题库中存在不完整的题组');
       ids[set.id] = true;
       var numbers = {};

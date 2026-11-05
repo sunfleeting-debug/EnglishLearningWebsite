@@ -1,5 +1,5 @@
 import unittest
-from build_personal_papers import parse_questions, parse_listening, extract_writing_sections, parse_docx_reading
+from build_personal_papers import parse_questions, parse_listening, extract_writing_sections, parse_docx_reading, parse_exam_cloze
 
 class Questions(unittest.TestCase):
     def test_reads_wrapped_stems_and_options(self):
@@ -40,6 +40,15 @@ class Questions(unittest.TestCase):
         self.assertEqual(body, 'A passage.')
         self.assertEqual(questions[0]['stem'], 'What does it mean?')
         self.assertEqual(questions[0]['answer'], 'B')
+
+    def test_cloze_preserves_percentages_and_checks_bank(self):
+        words = '\n'.join(chr(65+i) + ') word' + str(i) for i in range(15))
+        source = 'more than once.\n' + ' '.join(str(n) for n in range(26, 36)) + ' 32% and 35%\n' + words + '\nSection B'
+        body, bank, questions = parse_exam_cloze(source, 'ABCDEFGHIJ')
+        self.assertIn('32% and 35%', body)
+        self.assertIn('【32】', body)
+        self.assertEqual(len(bank), 15)
+        self.assertEqual(questions[-1]['answer'], 'J')
 
 if __name__ == "__main__":
     unittest.main()
