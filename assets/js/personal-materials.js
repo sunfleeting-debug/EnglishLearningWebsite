@@ -253,8 +253,19 @@
       return true;
     });
   }
+  function withPaperNotes(item) {
+    var notes = (window.TW_PAPER_NOTES || {})[item.id];
+    if (!notes) return item;
+    var result = Object.assign({}, item);
+    if (notes.translation) { result.translation = notes.translation; result.translationSource = 'reference'; }
+    if (notes.explanations && notes.answers) result.questions = item.questions.map(function (q) {
+      return notes.answers[q.n] === q.answer && notes.explanations[q.n]
+        ? Object.assign({}, q, {explain: notes.explanations[q.n]}) : q;
+    });
+    return result;
+  }
   TW.personalMaterials = {mount: mount, scanDirectory: scanDirectory, classify: classify, restore: restore,
-    quizSets: function () { return combined(state.quizSets, (window.TW_PERSONAL_PAPERS || {}).sets || []); },
+    quizSets: function () { return combined(state.quizSets, (window.TW_PERSONAL_PAPERS || {}).sets || []).map(withPaperNotes); },
     writingItems: function () { return combined(state.writingItems, (window.TW_PERSONAL_PAPERS || {}).writing || []); },
     validateQuizBundle: validateQuizBundle, audioFile: audioFile};
 })();
