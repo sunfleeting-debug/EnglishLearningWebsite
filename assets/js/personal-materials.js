@@ -254,13 +254,16 @@
     });
   }
   function withPaperNotes(item) {
-    var notes = (window.TW_PAPER_NOTES || {})[item.id];
-    if (!notes) return item;
+    var sources = [(window.TW_PAPER_SCAN_NOTES || {})[item.id], (window.TW_PAPER_NOTES || {})[item.id]];
+    if (!sources[0] && !sources[1]) return item;
     var result = Object.assign({}, item);
-    if (notes.translation) { result.translation = notes.translation; result.translationSource = 'reference'; }
-    if (notes.explanations && notes.answers) result.questions = item.questions.map(function (q) {
-      return notes.answers[q.n] === q.answer && notes.explanations[q.n]
-        ? Object.assign({}, q, {explain: notes.explanations[q.n]}) : q;
+    sources.forEach(function (notes, i) {
+      if (!notes) return;
+      if (notes.translation) { result.translation = notes.translation; result.translationSource = i ? 'reference' : 'scan'; }
+      if (notes.explanations && notes.answers) result.questions = result.questions.map(function (q) {
+        return notes.answers[q.n] === q.answer && notes.explanations[q.n]
+          ? Object.assign({}, q, {explain: notes.explanations[q.n]}) : q;
+      });
     });
     return result;
   }

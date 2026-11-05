@@ -13,7 +13,13 @@ with static_server() as base, sync_playwright() as playwright:
         page.locator('.qz-tr').get_by_text('卢浮宫', exact=False).wait_for()
         page.locator('#qz-submit').click()
         assert '卢浮宫' in page.locator('.qz-exp-t').first.inner_text()
-        page.evaluate("() => location.hash='/quiz?set=personal-cet6-202512-1-reading-1'")
+        page.evaluate("() => location.hash='/quiz?set=personal-cet6-202406-1-cloze'")
+        page.get_by_role('button', name='看参考译文').click()
+        page.get_by_text('参考译文 · 解析册扫描识别').wait_for()
+        page.locator('.qz-tr').get_by_text('音乐', exact=False).wait_for()
+        page.locator('#qz-submit').click()
+        assert '语法判断' in page.locator('.qz-exp-t').first.inner_text()
+        page.evaluate("() => location.hash='/quiz?set=personal-cet6-202112-1-reading-1'")
         page.get_by_role('button', name='AI 翻译文章').wait_for()
         page.evaluate("""() => {
           TW.ai.configured = () => true;

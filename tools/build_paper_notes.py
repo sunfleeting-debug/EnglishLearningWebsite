@@ -92,6 +92,31 @@ def parse_scanned_explanations(text, answers, kind):
     return result
 
 
+def parse_reference_cloze(text, answers):
+    heads = list(re.finditer(r'(?<!\d)(2[6-9]|3[0-5])\s*[.．。]\s*([A-O])\s*\)', text))
+    groups, pending = [], []
+    for i, head in enumerate(heads):
+        pending.append(head)
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        segment = text[head.end():end]
+        if re.search(r'\[确定\s*词性\]', segment):
+            groups.append((pending, segment))
+            pending = []
+    result = {}
+    for group, segment in groups:
+        start = re.search(r'\[确定\s*词性\]', segment)
+        if not start or not re.search(r'\[锁定\s*答\s*案\]', segment):
+            continue
+        value = clean_translation(segment[start.start():])
+        if not 20 <= len(value) <= 1600:
+            continue
+        for head in group:
+            number, answer = int(head.group(1)), head.group(2)
+            if answers.get(number) == answer:
+                result[number] = value
+    return result
+
+
 def main():
     import fitz
     bundle = json.loads((ROOT / '星火六级' / '英语学习站-自动判分题库.json').read_text(encoding='utf-8'))
@@ -114,7 +139,15 @@ def main():
                     continue
                 item = sets[key]
                 note = {'translation': translations[index]}
-                if index:
+                if not index:
+                    begin = re.search(r'Part\s*III', text, re.I)
+                    region = text[begin.start() if begin else 0:markers[0].start()]
+                    answers = {q['n']: q['answer'] for q in item['questions']}
+                    explanations = parse_reference_cloze(region, answers)
+                    if explanations:
+                        note['explanations'] = explanations
+                        note['answers'] = {number: answers[number] for number in explanations}
+                else:
                     region = text[markers[index-1].end():markers[index].start()]
                     answers = {q['n']: q['answer'] for q in item['questions']}
                     explanations = parse_explanations(region, answers, 'match' if index == 1 else 'reading')

@@ -429,8 +429,8 @@
     /* 译文：sunfleeting 2026-11-05 要求「一句一句放在英文原句下面」，
        用 TW.biling 对齐（对齐不出来就退回整段，绝不硬凑） */
     var trans = S.showTrans && set.translation
-      ? '<div class="qz-mat qz-tr"><div class="card-title">参考译文' + (set.translationSource === 'reference' ? ' · 配套解析册' : ' · 逐句对照') + '</div>' +
-        (set.translationSource === 'reference' ? '<p class="qz-p">' + esc(set.translation).replace(/\n/g, '<br>') + '</p>' :
+      ? '<div class="qz-mat qz-tr"><div class="card-title">参考译文' + (set.translationSource === 'reference' ? ' · 配套解析册' : set.translationSource === 'scan' ? ' · 解析册扫描识别' : ' · 逐句对照') + '</div>' +
+        (set.translationSource === 'reference' || set.translationSource === 'scan' ? '<p class="qz-p">' + esc(set.translation).replace(/\n/g, '<br>') + '</p>' :
           ((TW.biling && TW.biling.html(TW.biling.parasOf(set), set.translation)) || esc(set.translation))) +
         '</div>' : '';
 
