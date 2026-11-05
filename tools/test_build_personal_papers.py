@@ -1,5 +1,5 @@
 import unittest
-from build_personal_papers import parse_questions, parse_listening, extract_writing_sections, parse_docx_reading, parse_exam_cloze
+from build_personal_papers import parse_questions, parse_listening, extract_writing_sections, parse_docx_reading, parse_exam_cloze, parse_pdf_listening
 
 class Questions(unittest.TestCase):
     def test_reads_wrapped_stems_and_options(self):
@@ -49,6 +49,14 @@ class Questions(unittest.TestCase):
         self.assertIn('【32】', body)
         self.assertEqual(len(bank), 15)
         self.assertEqual(questions[-1]['answer'], 'J')
+
+    def test_pdf_listening_matches_columns_by_position(self):
+        page = [(20, 10, '1. A) first'), (20, 20, 'B) second'), (250, 9, 'C) third'),
+                (250, 20, 'D) fourth'), (20, 30, '2. A) one'), (20, 40, 'B) two'),
+                (250, 30, 'C) three'), (250, 40, 'D) four'), (20, 60, 'Part III'), (20, 70, 'A) unrelated')]
+        questions = parse_pdf_listening([page], 'BD')
+        self.assertEqual(questions[0]['options'][2]['t'], 'third')
+        self.assertEqual(questions[1]['options'][3]['t'], 'four')
 
 if __name__ == "__main__":
     unittest.main()

@@ -116,6 +116,49 @@ def parse_listening(paragraphs, answers):
                           'answer': answer, 'explain': '答案已对照本机配套解析册；题目和问题以录音为准。'})
     return questions
 
+def parse_pdf_listening(pages, answers):
+    choices = {}
+    previous = None
+    for page in pages:
+        cutoffs = [y for x, y, text in page if re.match(r'^Part\s+(?:III|HI|JU|in)\b', text, re.I)]
+        cutoff = min(cutoffs) if cutoffs else float('inf')
+        headers = []
+        for x, y, text in page:
+            match = re.match(r'^(\d{1,2})\.\s*[A-D]\)', text)
+            if match and y < cutoff and 1 <= int(match.group(1)) <= len(answers):
+                headers.append((y, int(match.group(1))))
+        for x, y, text in page:
+            if y >= cutoff or not re.match(r'^(?:\d{1,2}\.\s*)?[A-D]\)', text):
+                continue
+            labels = list(re.finditer(r'(?<![A-Za-z])([A-D])\)\s*', text))
+            eligible = [(hy, n) for hy, n in headers if hy <= y + 2]
+            number = max(eligible)[1] if eligible else previous
+            if number is None:
+                continue
+            for i, match in enumerate(labels):
+                key = match.group(1)
+                value = clean(text[match.end():labels[i+1].start() if i+1 < len(labels) else len(text)])
+                if key in choices.setdefault(number, {}):
+                    raise ValueError(f'Duplicate PDF listening option {number} {key}')
+                choices[number][key] = value
+        if headers:
+            previous = max(headers)[1]
+    questions = []
+    for n, answer in enumerate(answers, 1):
+        options = choices.get(n, {})
+        if sorted(options) != list('ABCD') or not all(options.values()) or answer not in 'ABCD':
+            raise ValueError(f'Incomplete PDF listening question {n}: {options}')
+        corrections = [(' fbr ', ' for '), ('fbcus', 'focus'), ('foreigns ervice', 'foreign service'),
+                       ('his.country', 'his country'), ('agenfs', "agent's"), ('students5', "students'"),
+                       ('animals5', "animals'"), ('get tom off', 'get torn off')]
+        for key in options:
+            for old, new in corrections:
+                options[key] = options[key].replace(old, new)
+        questions.append({'n': n, 'stem': f'第 {n} 题：问题在录音中播放。',
+                          'options': [{'k': key, 't': options[key]} for key in 'ABCD'],
+                          'answer': answer, 'explain': '答案已对照本机配套解析册；题目和问题以录音为准。'})
+    return questions
+
 def parse_docx_reading(paragraphs, start, answers):
     rows = [p.strip() for p in paragraphs if p.strip()]
     question_index = next(i for i, text in enumerate(rows) if re.match(r'^' + str(start) + r'\.', text))
@@ -349,11 +392,27 @@ def build():
         pdf_202512 = next((MATERIALS / '六级真题' / '六级真题').glob(f'2025年12*/**/2025.12六级真题第{paper_number}套*.pdf'))
         with fitz.open(pdf_202512) as latest:
             reading_rows = []
+            audio_pages = []
             for page in latest:
+                page_lines = []
+                for block in page.get_text('dict')['blocks']:
+                    for line in block.get('lines', []):
+                        value = ''.join(span['text'] for span in line['spans']).strip()
+                        if value:
+                            page_lines.append((line['bbox'][0], line['bbox'][1], value))
+                audio_pages.append(page_lines)
                 for line in page.get_text().splitlines():
                     if (re.fullmatch(r'\s*\d{1,2}\s*', line) and int(line.strip()) not in range(26, 36)) or re.match(r'^\s*[•・■]\s*2025年12月六级真题', line):
                         continue
                     reading_rows.append(line)
+        if paper_number in (1, 2):
+            audio_key = {1: 'ADCABBDCDACABBDBADCBDCACD', 2: 'BACDABDCBCACABDCBDDACCADB'}[paper_number]
+            audio = next((MATERIALS / '六级真题' / '六级真题').glob(f'2025年12*/**/2025.12六级听力第{paper_number}套.mp3'))
+            listen_questions = parse_pdf_listening(audio_pages[:3], audio_key)
+            sets.append({'id': f'personal-cet6-202512-{paper_number}-listening', 'type': 'listening',
+                         'test': f'2025年12月六级真题 · 第{paper_number}套', 'no': 0,
+                         'title': f'听力真题 · 第{paper_number}套', 'source': '本机星火六级资料 · PDF 文本识别，建议对照原卷',
+                         'audio': audio.relative_to(MATERIALS).as_posix(), 'body': [], 'paras': [], 'bank': [], 'questions': listen_questions})
         exam_text = '\n'.join(reading_rows)
         body, bank, cloze_questions = parse_exam_cloze(exam_text, cloze_key)
         sets.append({'id': f'personal-cet6-202512-{paper_number}-cloze', 'type': 'cloze',
