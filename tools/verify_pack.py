@@ -20,14 +20,36 @@ with sync_playwright() as p:
     page.on("pageerror", lambda e: errs.append(str(e)))
     page.add_init_script("localStorage.setItem('typingcet.guest','1')")
 
-    # ---- 题库列表
+    # ---- 题库数据注入 + 「题目」板块只管手写题（真题已搬到 #/zhenti）
     page.goto(BASE + "#/quiz", wait_until="load")
     page.wait_for_timeout(900)
     n_sets = page.evaluate("(window.TW_QUIZ_ZHENTI||[]).length")
     check("quiz-zhenti 注入", n_sets == 22, n_sets)
-    txt = page.inner_text("body")
-    check("列表出现 2024年6月真题", "2024年6月真题" in txt, "")
-    check("列表出现 2022年12月真题", "2022年12月真题" in txt, "")
+    base_n = page.evaluate("TW.quiz.bank('base').length")
+    check("题目板块不含真题（bank('base') < 全量）",
+          base_n == page.evaluate("TW.quiz.bank().length") - 22, base_n)
+    check("题目板块卡片数 == bank('base')", page.locator(".qz-card").count() >= base_n, "")
+
+    # ---- 四六级真题板块（按套组织）
+    page.goto(BASE + "#/zhenti", wait_until="load")
+    page.wait_for_timeout(900)
+    check("导航有「四六级真题」", page.locator('button.nav-item[data-path="/zhenti"]').count() >= 1, "")
+    n_papers = page.locator(".zt-paper").count()
+    check("真题板块列出套卡（>=15）", n_papers >= 15, n_papers)
+    ztxt = page.inner_text("body")
+    check("真题板块出现 2024年6月真题", "2024年6月真题" in ztxt, "")
+    check("真题板块出现 2022年12月真题", "2022年12月真题" in ztxt, "")
+    check("年份筛选在", page.locator(".zt-fchip").count() >= 2, page.locator(".zt-fchip").count())
+    # 点第一套 → 模块清单
+    page.locator(".zt-paper").first.click()
+    page.wait_for_timeout(700)
+    n_mods = page.locator(".zt-mod").count()
+    check("套详情有模块卡片", n_mods >= 2, n_mods)
+    # 从模块进作答页，返回按钮要指回这一套
+    page.locator(".zt-mod").first.click()
+    page.wait_for_timeout(900)
+    back = page.eval_on_selector("a.btn.ghost", "e => e.getAttribute('href')")
+    check("作答页返回指向 #/zhenti?paper=", back and back.startswith("#/zhenti?paper="), back)
 
     # ---- 选词填空一套
     page.goto(BASE + "#/quiz?set=zt2406-1-cloze", wait_until="load")

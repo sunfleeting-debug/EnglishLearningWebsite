@@ -199,8 +199,10 @@
   }
 
   function renderList(host) {
-    var sum = TW.quiz.summary();
-    var bank = TW.quiz.bank();
+    /* 真题已经搬到「四六级真题」板块（#/zhenti，按套组织），这里只列手写题/AI 题/本机导入题，
+       否则 22 套真题会把列表挤成几十张平铺卡片，看不出哪些是「练手的小题」。 */
+    var sum = TW.quiz.summary('base');
+    var bank = TW.quiz.bank('base');
     var pub = TW.quiz.published();
     var groups = {};
     bank.forEach(function (s) { (groups[s.test] = groups[s.test] || []).push(s); });
@@ -225,8 +227,8 @@
     '</div>';
 
     host.innerHTML = '<div class="wrap">' +
-      TW.ui.pageHead('题目板块', '六级阅读真题（选词填空 / 段落匹配 / 仔细阅读）+ AI 出的题，做完当场看完整解析',
-        '<a class="btn ghost" href="#/reading">' + TW.icon('file', 15) + ' 真题阅读原文</a>') +
+      TW.ui.pageHead('题目板块', '单篇练手题（选词填空 / 段落匹配 / 仔细阅读）+ AI 出的题；整卷真题在「四六级真题」板块',
+        '<a class="btn ghost" href="#/zhenti">' + TW.icon('file', 15) + ' 四六级真题（按套练）</a>') +
       '<div id="personal-materials"></div>' +
       '<div class="grid stats" style="margin-bottom:1.2rem">' +
         '<div class="stat-card"><div class="stat-num">' + sum.sets + '</div><div class="stat-label">题目组</div></div>' +
@@ -356,6 +358,13 @@
       pick + exp + '</div>';
   }
 
+  /** 真题从「四六级真题」板块（#/zhenti）点进来，返回就该回那一套；
+      手写题/AI 题/本机导入题照旧回题目板块。 */
+  function backOf(set) {
+    var b = (TW.zhenti && TW.zhenti.back) ? TW.zhenti.back(set) : null;
+    return b || { href: '#/quiz', label: '回题目板块' };
+  }
+
   function renderSet(host, id) {
     var set = TW.quiz.get(id);
     if (!set) {
@@ -430,9 +439,11 @@
     }
 
     if (localAudio && localAudioId === set.id && localAudio.parentNode) localAudio.parentNode.removeChild(localAudio);
+    var back = backOf(set);
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead(set.test + (set.no ? ' · Passage ' + set.no : ''), meta.join(' · '),
-        '<a class="btn ghost" href="#/quiz">' + TW.icon('arrowLeft', 15) + ' 回题目板块</a>') +
+        '<a class="btn ghost" href="' + back.href + '">' + TW.icon('arrowLeft', 15) + ' ' +
+          esc(back.label) + '</a>') +
       scoreBar +
       (set.type === 'listening' ? '<div class="card card-pad"><div class="card-title">真题录音</div><p class="small muted">请播放本机录音；问题在录音中，题面提供选项。</p><div id="qz-local-audio">正在读取录音…</div></div>' : '') +
       '<div class="card card-pad qz-sheet">' +

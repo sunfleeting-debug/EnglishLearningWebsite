@@ -2326,3 +2326,75 @@ html.dark .ai-send.stop::after { background: #fff; }
 #pm-viewer pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:50vh; overflow:auto; }
 
 #pm-viewer .pm-image { display:block; max-width:100%; height:auto; margin-top:.7rem; }
+
+/* ---------------- 四六级真题板块（#/zhenti，2026-11-05） ----------------
+   按「套」组织，一张卡＝一套卷子：上面是套名与完成度，中间是这套包含的模块 chips，
+   下面是细进度条。视觉上比题目板块的卡片更「像一张卷子」：左侧一道深色书脊，
+   套名用衬线体（--font-display），年份筛选做成小圆片。 */
+.zt-filter { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.9rem; }
+.zt-fchip {
+  font: inherit; font-size: 12.5px; padding: 0.2rem 0.72rem; cursor: pointer;
+  border-radius: 20px; border: 1px solid var(--line); background: var(--card); color: var(--text-2);
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.zt-fchip:hover { border-color: var(--accent); color: var(--text); }
+.zt-fchip.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+.zt-papers { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 0.7rem; }
+.zt-paper {
+  position: relative; display: block; text-decoration: none; color: var(--text);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 0.85rem 0.95rem 0.8rem 1.15rem; overflow: hidden;
+  transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+/* 左侧书脊：用伪元素而不是 border-left，圆角才不会把色块削掉 */
+.zt-paper::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--accent); opacity: 0.85;
+}
+.zt-paper:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: 0 6px 18px -12px rgba(33, 26, 25, 0.5); }
+.zt-paper-h { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.55rem; }
+.zt-paper-name {
+  font-family: var(--font-display); font-size: 15.5px; line-height: 1.35; flex: 1 1 auto; min-width: 0;
+}
+.zt-chips { display: flex; flex-wrap: wrap; gap: 0.28rem; margin-bottom: 0.55rem; }
+.zt-chip {
+  display: inline-flex; align-items: center; gap: 0.22rem;
+  font-size: 11.5px; padding: 0.1rem 0.45rem; border-radius: 5px;
+  background: var(--bg-soft); color: var(--text-3);
+}
+.zt-chip i { font-style: normal; font-family: var(--mono); font-size: 10.5px; opacity: 0.75; }
+.zt-chip.done { background: var(--ok-soft); color: var(--ok); }
+.zt-bar { height: 3px; border-radius: 3px; background: var(--accent-2); overflow: hidden; margin-bottom: 0.45rem; }
+.zt-bar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
+.zt-paper-m { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* 一套的模块清单 */
+.zt-mods { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.6rem; }
+.zt-mod {
+  position: relative; display: block; text-decoration: none; color: var(--text);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 0.8rem 0.9rem 0.75rem; transition: border-color 0.18s, transform 0.18s;
+}
+.zt-mod:hover { border-color: var(--accent); transform: translateY(-1px); }
+.zt-mod.done { background: var(--card-2); }
+.zt-mod-h { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; }
+.zt-mod-k { font-family: var(--mono); font-size: 11px; color: var(--text-3); letter-spacing: 0.04em; }
+.zt-mod-h .tag { margin-left: auto; }
+.zt-mod-t { font-size: 14.5px; line-height: 1.45; margin-bottom: 0.25rem; }
+.zt-audio {
+  font-size: 10.5px; padding: 0.05rem 0.35rem; border-radius: 4px; vertical-align: 1px;
+  background: var(--accent-2); color: var(--accent);
+}
+.zt-mod-m { margin-bottom: 0.45rem; }
+.zt-go {
+  display: inline-flex; align-items: center; gap: 0.2rem;
+  font-size: 12.5px; color: var(--accent); opacity: 0.75;
+}
+.zt-mod:hover .zt-go { opacity: 1; }
+
+@media (max-width: 560px) {
+  .zt-papers { grid-template-columns: 1fr; }
+  .zt-mods { grid-template-columns: 1fr; }
+  .zt-paper { padding-left: 1.05rem; }
+}

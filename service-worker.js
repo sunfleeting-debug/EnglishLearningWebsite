@@ -1,5 +1,5 @@
 /* Versioned app-shell cache for the installable mobile web app. */
-const CACHE_VERSION = 'english-learning-v1.11.0-quiz-timer-perq';
+const CACHE_VERSION = 'english-learning-v1.12.0-zhenti-board';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const SHELL = [
@@ -11,7 +11,7 @@ const SHELL = [
   './assets/js/ai.js', './assets/js/ai-materials.js', './assets/js/word-chat.js', './assets/js/study-chat.js', './assets/js/personal-materials.js', './assets/js/quiz.js', './assets/js/motion.js', './assets/js/app.js',
   './assets/js/views/home.js', './assets/js/views/books.js', './assets/js/views/word.js',
   './assets/js/views/practice.js', './assets/js/views/sentences.js', './assets/js/views/review.js',
-  './assets/js/views/ai.js', './assets/js/views/quiz.js', './assets/js/views/writing.js', './assets/js/views/listening.js', './assets/js/biling.js',
+  './assets/js/views/ai.js', './assets/js/views/quiz.js', './assets/js/views/zhenti.js', './assets/js/views/writing.js', './assets/js/views/listening.js', './assets/js/biling.js',
   './assets/js/views/srs.js', './assets/js/views/audio.js', './assets/js/views/stats.js',
   './assets/js/views/resources.js', './assets/js/views/reading.js', './assets/js/views/settings.js',
   './assets/js/views/account.js', './assets/js/views/admin.js',

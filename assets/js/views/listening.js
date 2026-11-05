@@ -291,10 +291,12 @@
     }
     var qn = totalQ(set);
     var answered = Object.keys(S.answers).filter(function (k) { return S.answers[k]; }).length;
+    /* 真题听力是从「四六级真题」板块点进来的，返回就回那一套（TW.zhenti.back 认 ls-zt 前缀） */
+    var back = (TW.zhenti && TW.zhenti.back) ? (TW.zhenti.back(set) || { href: '#/listening', label: '回听力列表' }) : { href: '#/listening', label: '回听力列表' };
 
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead(set.title, set.kindName + ' · ' + set.topic + ' · ' + qn + ' 题',
-        '<a class="btn ghost" href="#/listening">' + TW.icon('arrowLeft', 15) + ' 回听力列表</a>') +
+        '<a class="btn ghost" href="' + back.href + '">' + TW.icon('arrowLeft', 15) + ' ' + esc(back.label) + '</a>') +
 
       '<div class="card card-pad ls-player">' +
         '<div class="row" style="gap:.5rem;flex-wrap:wrap;align-items:center">' +

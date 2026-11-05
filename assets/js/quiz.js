@@ -38,17 +38,26 @@
 
   /** 题库里的真题（静态数据，可能因为脚本没加载而缺席）
       2026-11-05 起三处来源：data/quiz.js（扫描件生成）+ data/quiz-more.js（真题/模拟，手写）
-      + data/quiz-zhenti.js（tools/build_pack.py 从真题 PDF 抽取，答案已交叉校验） */
-  function bank() {
+      + data/quiz-zhenti.js（tools/build_pack.py 从真题 PDF 抽取，答案已交叉校验）
+      ⚠️ 真题已经单独搬到「四六级真题」板块（#/zhenti，按套组织），
+         所以列表页用 bank('base') 只拿手写题；get/result/summary 不带 scope 时仍然是全量，
+         否则从真题板块点进 #/quiz?set=zt... 会「找不到这组题」。 */
+  function bank(scope) {
     var out = [];
     var a = window.TW_QUIZ;
     if (a && Array.isArray(a.sets)) out = out.concat(a.sets);
     var b = window.TW_QUIZ_MORE;
     if (b && Array.isArray(b.sets)) out = out.concat(b.sets);
     var c = window.TW_QUIZ_ZHENTI;
-    if (c && Array.isArray(c)) out = out.concat(c);
+    if (c && Array.isArray(c) && scope !== 'base') out = out.concat(c);
     if (TW.personalMaterials) out = out.concat(TW.personalMaterials.quizSets());
     return out;
+  }
+
+  /** 只拿真题（四六级真题板块用） */
+  function zhentiBank() {
+    var c = window.TW_QUIZ_ZHENTI;
+    return (c && Array.isArray(c)) ? c.slice() : [];
   }
 
   /** AI 发布出来的题：结构补齐成和真题一样的形状 */
@@ -154,9 +163,9 @@
     write();
   }
 
-  /** 概览：做了几组、平均正确率 */
-  function summary() {
-    var list = all(), done = 0, right = 0, total = 0;
+  /** 概览：做了几组、平均正确率（scope='base' 时只看手写题，与列表页口径一致） */
+  function summary(scope) {
+    var list = bank(scope).concat(publishedSets()), done = 0, right = 0, total = 0;
     list.forEach(function (s) {
       var r = S.results[s.id];
       if (!r) return;
@@ -189,7 +198,7 @@
   read();
 
   TW.quiz = {
-    bank: bank, all: all, get: get, result: result, saveResult: saveResult,
+    bank: bank, zhenti: zhentiBank, all: all, get: get, result: result, saveResult: saveResult,
     clearResult: clearResult, publish: publish, removePublished: removePublished,
     summary: summary, judge: judge, norm: norm, fromExercises: fromExercises,
     published: publishedSets, error: function () { return loadErr; }

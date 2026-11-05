@@ -201,6 +201,16 @@ def main():
         # 同理只判下限：题库 = 手写 13 套 + 真题 22 套，以后还会加
         check("线上题库 >= 13 套", pg.evaluate("() => TW.quiz.bank().length") >= 13, True)
 
+        # 四六级真题板块（按套组织，真题不再混在「题目」里）
+        pg.goto(URL + "#/zhenti", wait_until="load", timeout=60000)
+        pg.wait_for_timeout(1000)
+        check("线上导航有「四六级真题」",
+              pg.locator('button.nav-item[data-path="/zhenti"]').count() >= 1, True)
+        check("线上真题板块列出套卡（>=15）", pg.locator(".zt-paper").count() >= 15, True)
+        check("线上「题目」板块不含真题",
+              pg.evaluate("() => TW.quiz.bank('base').length") < pg.evaluate("() => TW.quiz.bank().length"), True)
+        pg.screenshot(path=str(SHOTS / "32-live-zhenti.png"))
+
         # 移动端
         pg.set_viewport_size({"width": 390, "height": 844})
         pg.goto(URL, wait_until="load", timeout=60000)

@@ -241,11 +241,13 @@
     var ai = !!(TW.ai && TW.ai.configured && TW.ai.configured());
     var wc = wordCount(draft);
     var target = it.type === 'trans' ? '建议 120–180 词' : '要求 150–200 词';
+    /* 真题作文/翻译从「四六级真题」板块进来，返回就回那一套（TW.zhenti.back 认 wr-zt/tr-zt 前缀） */
+    var back = (TW.zhenti && TW.zhenti.back) ? (TW.zhenti.back(it) || { href: '#/writing', label: '回写作列表' }) : { href: '#/writing', label: '回写作列表' };
 
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead(it.title, (it.type === 'trans' ? '翻译' : '作文') + ' · ' + it.sub +
         ' · 建议 ' + (it.minutes || 30) + ' 分钟',
-        '<a class="btn ghost" href="#/writing">' + TW.icon('arrowLeft', 15) + ' 回写作列表</a>') +
+        '<a class="btn ghost" href="' + back.href + '">' + TW.icon('arrowLeft', 15) + ' ' + esc(back.label) + '</a>') +
 
       '<div class="card card-pad wr-prompt">' +
         '<div class="wr-h">题目' +
