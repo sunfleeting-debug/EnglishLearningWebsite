@@ -174,6 +174,16 @@
       mods += pg.total; qs += pg.qtotal; touched += pg.done;
     });
 
+    /* 分两个区：有客观题（听力/选词/匹配/阅读）的套，和只抽到作文+翻译的套。
+       为什么要分：资料包里很多年份的解析册答案核不出来，客观题整题被剔除，
+       结果「最新那几套」卡片上只剩汉译英+命题作文——按时间平铺时用户会以为
+       「真题里根本没有题目」（sunfleeting 2026-11-05 就是这么以为的）。 */
+    var withPaper = [], onlyWr = [];
+    list.forEach(function (p) {
+      var has = p.items.some(function (it) { return it.kind !== 'trans' && it.kind !== 'essay'; });
+      (has ? withPaper : onlyWr).push(p);
+    });
+
     var years = yearsOf(all);
     var chips = '<div class="zt-filter">' +
       [''].concat(years).map(function (y) {
@@ -181,9 +191,18 @@
           '" data-year="' + y + '">' + (y ? y + ' 年' : '全部') + '</button>';
       }).join('') + '</div>';
 
-    var body = list.length
-      ? '<div class="zt-papers">' + list.map(function (p) { return paperCard(p, cache); }).join('') + '</div>'
-      : '<div class="card card-pad">' + TW.ui.empty('这个年份还没有导入真题') + '</div>';
+    var body = '';
+    if (withPaper.length) {
+      body += '<div class="zt-sec-h"><h3>含客观题的套</h3>' +
+        '<span class="small muted">' + withPaper.length + ' 套 · 听力 / 选词填空 / 段落匹配 / 仔细阅读</span></div>' +
+        '<div class="zt-papers">' + withPaper.map(function (p) { return paperCard(p, cache); }).join('') + '</div>';
+    }
+    if (onlyWr.length) {
+      body += '<div class="zt-sec-h"><h3>只收录了作文与翻译</h3>' +
+        '<span class="small muted">' + onlyWr.length + ' 套 · 客观题答案无法交叉核验，整题剔除，不是漏抓</span></div>' +
+        '<div class="zt-papers">' + onlyWr.map(function (p) { return paperCard(p, cache); }).join('') + '</div>';
+    }
+    if (!body) body = '<div class="card card-pad">' + TW.ui.empty('这个年份还没有导入真题') + '</div>';
 
     host.innerHTML = '<div class="wrap">' +
       TW.ui.pageHead('四六级真题',
@@ -196,9 +215,10 @@
       '</div>' +
       chips + body +
       '<div class="card card-pad muted small" style="margin-top:1rem">' +
-        '<b>说明</b>：题目与答案由真题 PDF 抽取，只收录答案可交叉核验的套次——' +
-        '拿不到可靠答案的题已整题剔除，所以同一套的模块数可能不等。' +
-        '资料包里没有听力原文的套次，只给选项和录音（跟考场一样，问题要听）。' +
+        '<b>为什么有的套只有作文和翻译</b>：客观题（听力/选词/匹配/阅读）收录的前提是' +
+        '「答案能从答案速查或解析册交叉核验」，核不出来就整题剔除，绝不猜。' +
+        '目前客观题覆盖 ' + all.filter(function (p) { return p.items.some(function (it) { return it.kind !== 'trans' && it.kind !== 'essay'; }); }).length +
+        ' 套，其余年份只有作文/翻译题面。资料包里没有听力原文的套次，只给选项和录音（和考场一样，问题要听）。' +
       '</div>' +
     '</div>';
 

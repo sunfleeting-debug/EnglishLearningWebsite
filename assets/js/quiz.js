@@ -67,7 +67,18 @@
         id: p.id, type: 'mixed', test: 'AI 出题', no: 0,
         title: p.title || 'AI 出题', source: 'AI 教练', topic: p.word || '',
         minutes: 0, body: Array.isArray(p.body) ? p.body : [], paras: [], bank: [],
-        questions: p.questions || [], ai: true, ts: p.ts
+        /* kind 是 2026-11-05 才加的字段：更早发布的记录里没有，
+           按「有选项＝choice / 有 target word＝spell / 其余＝fill」补一个，
+           不然老数据在新作答页上认不出题型、也就没有「中文提示」的说明条。 */
+        questions: (p.questions || []).map(function (q) {
+          if (q && q.kind) return q;
+          var kind = (q && q.options && q.options.length) ? 'choice' : ((q && q.word) ? 'spell' : 'fill');
+          var copy = {};
+          Object.keys(q || {}).forEach(function (k) { copy[k] = q[k]; });
+          copy.kind = kind;
+          return copy;
+        }),
+        ai: true, ts: p.ts
       };
     });
   }
@@ -126,6 +137,9 @@
       }
       out.push({
         n: i + 1, stem: String(ex.question),
+        /* kind 保留 AI 给的题型（choice/spell/fill）：作答页要据此提示
+           「这是中文释义提示、请拼英文」，否则中文题干看着像「题目没显示」。 */
+        kind: String(ex.type || ''),
         options: opts, answer: ans,
         explain: String(ex.explanation || ex.exp || ''),
         word: String(ex.word || '')

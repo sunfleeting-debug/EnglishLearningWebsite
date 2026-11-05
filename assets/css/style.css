@@ -2398,3 +2398,15 @@ html.dark .ai-send.stop::after { background: #fff; }
   .zt-mods { grid-template-columns: 1fr; }
   .zt-paper { padding-left: 1.05rem; }
 }
+
+/* 真题板块的两个分区标题（含客观题的套 / 只收录了作文与翻译的套） */
+.zt-sec-h { display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; margin: 0.2rem 0 0.6rem; }
+.zt-sec-h + .zt-papers + .zt-sec-h { margin-top: 1.5rem; }
+.zt-sec-h h3 { font-family: var(--font-display); font-size: 16px; font-weight: 500; margin: 0; }
+
+/* 作答页的题型提示条（AI 出的拼写题/填空题：说明题面是中文提示、要用英文作答） */
+.qz-kind {
+  display: inline-block; margin: 0.15rem 0 0.35rem;
+  font-size: 11.5px; padding: 0.1rem 0.45rem; border-radius: 4px;
+  background: var(--accent-2); color: var(--text-2);
+}

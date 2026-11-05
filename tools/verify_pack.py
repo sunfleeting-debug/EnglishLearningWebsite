@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """真题数据上线前自查：题库/作文/听力三个板块能否正常渲染、有没有 JS 报错。"""
+import json
 import os
 import sys
 from playwright.sync_api import sync_playwright
@@ -154,6 +155,38 @@ with sync_playwright() as p:
     check("没变回重新加载", page.evaluate("(document.querySelector('audio.ls-audio')||{}).src||''").endswith("cet6-1912-1.mp3"), "")
 
     check("无 JS 异常", not errs, "; ".join(errs[:3]))
+
+    # ---- 真题板块分区：含客观题的套 / 只收录作文翻译的套
+    page.goto(BASE + "#/zhenti", wait_until="load")
+    page.wait_for_timeout(900)
+    secs = page.eval_on_selector_all(".zt-sec-h h3", "e => e.map(x => x.textContent)")
+    check("真题板块分两区", len(secs) == 2, secs)
+    counts = page.eval_on_selector_all(".zt-papers", "e => e.map(x => x.children.length)")
+    check("含客观题的套 >=7", bool(counts) and counts[0] >= 7, counts)
+
+    # ---- AI 出的拼写题：必须有题型提示、题头不能泄露答案词
+    ctx2 = b.new_context(viewport={"width": 1180, "height": 900})
+    ctx2.add_init_script("localStorage.setItem('typingcet.guest','1')")
+    ai = {"published": [{"id": "ai-verify", "title": "AI 出题 · 2 题", "ts": 1, "word": "", "body": [],
+          "questions": [
+              {"n": 1, "stem": "n. 应用；申请书（首字母 a，9 个字母）", "options": [], "answer": "application",
+               "explain": "apply 的名词形式", "word": "application"},
+              {"n": 2, "stem": "The report ______ that costs would rise.",
+               "options": [{"k": "A", "t": "indicates"}, {"k": "B", "t": "indicate"},
+                           {"k": "C", "t": "indicating"}, {"k": "D", "t": "indicated"}],
+               "answer": "A", "explain": "主语单数", "word": ""}]}], "results": {}}
+    # 注意要两次 json.dumps：第一次得到数据 JSON，第二次得到能安全塞进 JS 字符串字面量的那层引号/转义
+    ctx2.add_init_script("localStorage.setItem('typingcet.quiz.v1', %s)"
+                         % json.dumps(json.dumps(ai, ensure_ascii=False), ensure_ascii=False))
+    p2 = ctx2.new_page()
+    p2.goto(BASE + "#/quiz?set=ai-verify", wait_until="load")
+    p2.wait_for_timeout(800)
+    check("AI 拼写题有题型提示", p2.locator(".qz-kind").count() >= 1, p2.locator(".qz-kind").count())
+    heads = p2.eval_on_selector_all(".qz-q-h", "e => e.map(x => x.textContent.trim())")
+    check("AI 拼写题题头不泄露答案", all("application" not in h for h in heads), heads)
+    check("AI 选择题正常渲染 4 个选项", p2.locator(".qz-opt").count() == 4, p2.locator(".qz-opt").count())
+    check("AI 题作答无 JS 异常", not errs, "")
+
     b.close()
 
 bad = [x for x in OUT if not x[1]]

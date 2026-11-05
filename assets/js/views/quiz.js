@@ -339,9 +339,14 @@
         return '<button type="button" class="' + cls + '" data-q="' + q.n + '" data-val="' + k + '">' + k + '</button>';
       }).join('') + '</div>';
     } else {
+      var ph = q.kind === 'spell' ? '拼出这个单词' : q.kind === 'fill' ? '填入缺失的单词' : '填答案';
       pick = '<input class="field qz-input" data-q="' + q.n + '" type="text" autocomplete="off" ' +
-        'spellcheck="false" placeholder="填答案" value="' + esc(mine || '') + '"' + (S.graded ? ' disabled' : '') + '>';
+        'spellcheck="false" placeholder="' + ph + '" value="' + esc(mine || '') + '"' + (S.graded ? ' disabled' : '') + '>';
     }
+    /* AI 出的拼写题题面本来就是中文释义提示（看中文写英文），不标一下会被当成「题目没显示」 */
+    var kindChip = '';
+    if (q.kind === 'spell') kindChip = '<span class="qz-kind">拼写题 · 中文提示，用英文作答</span>';
+    else if (q.kind === 'fill') kindChip = '<span class="qz-kind">填空题 · 把 ___ 补成英文</span>';
     var exp = '';
     if (S.graded) {
       var head = '<span class="' + (S.items[q.n] ? 'qz-ok' : 'qz-err') + '">' +
@@ -351,7 +356,9 @@
     }
     return '<div class="qz-q' + it + (T.cur === q.n && !S.graded ? ' cur' : '') + '">' +
       '<div class="qz-q-h"><span class="qz-q-no">' + q.n + '</span>' +
-        (q.word ? '<span class="small muted">' + esc(q.word) + '</span>' : '') + '</div>' +
+        /* q.word 是这题要考的单词＝答案，交卷前绝不能显示（拼写题会直接把答案送出去） */
+        (S.graded && q.word ? '<span class="small muted">' + esc(q.word) + '</span>' : '') + '</div>' +
+      kindChip +
       (set.type === 'cloze' && q.stem && q.stem !== '第 ' + q.n + ' 空'
         ? '<div class="qz-q-t small muted">' + esc(q.stem) + '</div>' : '') +
       (set.type !== 'cloze' ? '<div class="qz-q-t">' + esc(q.stem) + '</div>' : '') +
