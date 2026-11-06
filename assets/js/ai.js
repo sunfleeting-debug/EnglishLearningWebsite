@@ -198,9 +198,38 @@
      免费/中转网关大多挂在 Cloudflare 后面，并按「来源 IP」限流——Worker 的出口 IP 是
      成千上万个 Worker 共用的，特别容易吃到 1015（You are being rate limited）；
      换成用户自己家宽的 IP 往往就没事。直连还顺带省一次转发。
-     通道结果按 baseUrl 记在内存里（transportMemo），别每条消息都去试探一遍。 */
+     通道结果按 baseUrl 记在内存里（transportMemo），别每条消息都去试探一遍。
+
+     🔴 但「退到 Worker」这件事**不能记一辈子**：Worker 出口 IP 是共享的，本来就更容易
+     继续吃 1015；一旦某次偶发限流把 memo 永久钉在 worker 上，这一整个页面会话里每条
+     消息都会走最差的那条路 —— 本来抖一下，变成「一直报错」。
+
+     所以按「为什么退」分开记时效（见 memoWorker / useWorkerOnly）：
+       · ratelimit（1015/429）→ 只记 3 分钟。限流窗口很短，过期就回直连，别赖在最差的通道上；
+       · network（跨域被拦 / 连不上）→ 记 30 分钟。CORS 不会自己变好，每 3 分钟去撞一次没意义。 */
 
   var transportMemo = {};   // baseUrl -> 'direct' | 'worker'
+  var transportAt = {};     // baseUrl -> 记成 'worker' 的时刻
+  var transportWhy = {};    // baseUrl -> 'ratelimit' | 'network'
+  var MEMO_RL = 3 * 60 * 1000;      // 限流退避：3 分钟后重新试直连
+  var MEMO_NET = 30 * 60 * 1000;    // 跨域/网络不走：30 分钟内别再试探
+
+  function memoWorker(burl, why) {
+    transportMemo[burl] = 'worker';
+    transportAt[burl] = Date.now();
+    transportWhy[burl] = (why === 'ratelimit') ? 'ratelimit' : 'network';
+  }
+
+  /** 这个 baseUrl 现在是否只能走 Worker？（过期就清掉记录，下次重新试直连） */
+  function useWorkerOnly(burl) {
+    if (transportMemo[burl] !== 'worker') return false;
+    var ttl = transportWhy[burl] === 'ratelimit' ? MEMO_RL : MEMO_NET;
+    if (Date.now() - (transportAt[burl] || 0) < ttl) return true;
+    delete transportMemo[burl];
+    delete transportAt[burl];
+    delete transportWhy[burl];
+    return false;
+  }
 
   /** 这条错误值不值得换通道再试一次？
       网络/CORS 被拦 → 值得；上游 1015/1020/429（按 IP 限流）→ 也值得，换个出口 IP 可能就通了；
@@ -210,6 +239,20 @@
     if (e.network) return true;
     if (e.status === 429) return true;
     return /1015|1020|1010|rate limit|too many requests/i.test(String(e.message || ''));
+  }
+
+  /** 是不是「上游按 IP 限流」这一类（1015/1020/429）？这类错误是几秒钟的窗口，等一下就过去。 */
+  function isRateLimited(e) {
+    if (!e) return false;
+    if (e.status === 429) return true;
+    return /1015|1020|1010|rate limit|too many requests/i.test(String(e.message || ''));
+  }
+
+  /** 是不是「压根没配后端」这类错误？它跟用户的提问无关，不该拿来顶替真正的失败原因。 */
+  function noBackend(e) {
+    if (!e) return false;
+    if (e.noBackend) return true;
+    return /还没有配置后端地址|后端地址未配置/.test(String(e.message || ''));
   }
 
   function baseOf(pack) { return String(pack.baseUrl || '').replace(/\/+$/, ''); }
@@ -299,16 +342,33 @@
 
     var custom = c.provider === 'custom';
     var burl = baseOf(pack);
-    if (!custom || !burl) return viaWorker();
-    if (transportMemo[burl] === 'worker') return viaWorker();
-    return directFetch(pack).then(function (r) {
-      transportMemo[burl] = 'direct';
-      return r;
-    }, function (e) {
-      if (!retryOther(e) || !/^https:/i.test(burl)) throw e;   // http 的本地接口 Worker 进不去，别白跑
-      transportMemo[burl] = 'worker';
-      return viaWorker();
-    });
+
+    /* 限流（1015/1020/429）先别换通道：等 1.5 秒用同一个出口再来一次。
+       这类限流窗口通常只有几秒，重试往往就通了；而 Worker 的出口 IP 是成千上万个
+       Worker 共用的，切过去大概率继续被限 —— 换通道留到「重试也没用」之后。 */
+    function attempt(allowRetry) {
+      if (!custom || !burl) return viaWorker();
+      if (useWorkerOnly(burl)) return viaWorker();
+      return directFetch(pack).then(function (r) {
+        transportMemo[burl] = 'direct';
+        delete transportAt[burl];
+        delete transportWhy[burl];
+        return r;
+      }, function (e) {
+        if (!retryOther(e) || !/^https:/i.test(burl)) throw e;   // http 的本地接口 Worker 进不去，别白跑
+        if (allowRetry && isRateLimited(e)) {
+          return new Promise(function (ok) { setTimeout(ok, 1500); })
+            .then(function () { return attempt(false); });
+        }
+        memoWorker(burl, isRateLimited(e) ? 'ratelimit' : 'network');
+        return viaWorker().then(null, function (e2) {
+          if (isRateLimited(e) || noBackend(e2)) throw e;   // 见 noBackend() 的注释
+          throw e2;
+        });
+      });
+    }
+
+    return attempt(true);
   }
 
   /* ---------------- 流式对话（聊天界面用） ----------------
@@ -418,20 +478,34 @@
 
     var custom = c.provider === 'custom';
     var burl = baseOf(pack);
-    if (!custom || !burl || transportMemo[burl] === 'worker') return viaWorker();
 
-    var dHeaders = { 'Content-Type': 'application/json' };
-    if (pack.apiKey) dHeaders['Authorization'] = 'Bearer ' + pack.apiKey;
-    return streamOnce(burl + '/chat/completions', dHeaders, bodyDirect, opts, onDelta).then(function (r) {
-      transportMemo[burl] = 'direct';
-      return r;
-    }, function (e) {
-      /* 已经吐了一半内容就别重来了（会把同一段话显示两遍）；http 的本地接口 Worker 也进不去 */
-      if (e && e.partial) throw e;
-      if (!retryOther(e) || !/^https:/i.test(burl)) throw e;
-      transportMemo[burl] = 'worker';
-      return viaWorker();
-    });
+    function attempt(allowRetry) {
+      if (!custom || !burl || useWorkerOnly(burl)) return viaWorker();
+      var dHeaders = { 'Content-Type': 'application/json' };
+      if (pack.apiKey) dHeaders['Authorization'] = 'Bearer ' + pack.apiKey;
+      return streamOnce(burl + '/chat/completions', dHeaders, bodyDirect, opts, onDelta).then(function (r) {
+        transportMemo[burl] = 'direct';
+        delete transportAt[burl];
+        delete transportWhy[burl];
+        return r;
+      }, function (e) {
+        /* 已经吐了一半内容就别重来了（会把同一段话显示两遍）；http 的本地接口 Worker 也进不去 */
+        if (e && e.partial) throw e;
+        if (!retryOther(e) || !/^https:/i.test(burl)) throw e;
+        /* 同 chat()：限流先等 1.5 秒在同一通道重试，别急着换共享 IP 的 Worker */
+        if (allowRetry && isRateLimited(e)) {
+          return new Promise(function (ok) { setTimeout(ok, 1500); })
+            .then(function () { return attempt(false); });
+        }
+        memoWorker(burl, isRateLimited(e) ? 'ratelimit' : 'network');
+        return viaWorker().then(null, function (e2) {
+          if (isRateLimited(e) || noBackend(e2)) throw e;   // 见 noBackend() 的注释
+          throw e2;
+        });
+      });
+    }
+
+    return attempt(true);
   }
 
   /** 一次流式请求。网络层失败标 err.network，已吐过字标 err.partial —— 上层据此决定要不要换通道 */
