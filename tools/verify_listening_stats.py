@@ -22,6 +22,10 @@ with static_server() as base, sync_playwright() as playwright:
         page.get_by_alt_text('完整英文原文 · 原册 第 1 页，点击放大').wait_for()
         page.get_by_text('完整中文译文 · 原册').click()
         page.get_by_alt_text('完整中文译文 · 原册 第 1 页，点击放大').wait_for()
+        page.evaluate("() => location.hash='/quiz?set=personal-cet6-202512-2-listening'")
+        page.get_by_text('这套听力的完整中文译文还在整理。').wait_for()
+        page.get_by_text('完整英文原文 · 原册').click()
+        page.get_by_alt_text('完整英文原文 · 原册 第 1 页，点击放大').wait_for()
         page.evaluate("""() => {
           localStorage.setItem('typingcet.listen.v1', JSON.stringify({results: {sample: {right: 8, total: 10, ts: Date.now()}}}));
           const item = TW_WRITING.items.find(x => x.type === 'trans');

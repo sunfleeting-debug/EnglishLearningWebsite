@@ -51,6 +51,24 @@ def main():
             'combined': render(source, range(3, last + 1), dest, 'combined', dpi=150, quality=70)
         }
         print(f'{yearmonth}-{number}: {last - 2} pages', flush=True)
+    # Later answer books contain the English scripts but not full Chinese translations.
+    # Keep this provenance explicit in the UI rather than presenting answer rationales as translations.
+    originals = [
+        ('202112', 1, 7), ('202112', 2, 7), ('202206', 1, 7), ('202209', 1, 6),
+        ('202212', 1, 7), ('202212', 2, 7), ('202303', 1, 5),
+        ('202306', 1, 7), ('202306', 2, 6), ('202312', 1, 9), ('202312', 2, 10),
+        ('202412', 1, 6), ('202412', 2, 6), ('202506', 1, 10), ('202506', 2, 10),
+        ('202512', 1, 9), ('202512', 2, 9), ('202606', 1, 10), ('202606', 2, 11),
+    ]
+    for yearmonth, number, last in originals:
+        folder = next(PAPERS.glob(f'{yearmonth[:4]}年{yearmonth[4:]}*'))
+        source = next(p for p in folder.rglob('*.pdf') if ('解析' in p.name or '详解' in p.name) and f'第{number}套' in p.name)
+        dest = TARGET / f'{yearmonth}-{number}'
+        output[f'personal-cet6-{yearmonth}-{number}-listening'] = {
+            'original': render(source, range(2, last + 1), dest, 'original', dpi=140, quality=70),
+            'originalOnly': True,
+        }
+        print(f'{yearmonth}-{number}: English script pages 2–{last}', flush=True)
     (ROOT / 'data' / 'personal-listening-scans.js').write_text(
         'window.TW_PERSONAL_LISTENING_SCANS = ' + json.dumps(output, ensure_ascii=False, separators=(',', ':')) + ';\n',
         encoding='utf-8')

@@ -422,14 +422,14 @@
       '<div class="st-head"><div class="card-title">听力原文与译文</div>' +
       (listeningText && listeningText.length ? '<button class="btn sm ghost" id="qz-listening-text">' +
         (S.showListeningText ? '收起原文与译文' : '查看原文与译文') + '</button>' : '') + '</div>' +
-      (listeningText && listeningText.length ? '<div class="small muted">已整理 ' + listeningText.length + ' 段文字对照。' + (listeningScans ? '完整原文和译文可在下方查看。' : '其他段落还在整理。') + '中文为参考翻译。</div>' +
+      (listeningText && listeningText.length ? '<div class="small muted">已整理 ' + listeningText.length + ' 段文字对照。' + (listeningScans && !listeningScans.originalOnly ? '完整原文和译文可在下方查看。' : '其他段落的译文还在整理。') + '中文为参考翻译。</div>' +
         (S.showListeningText ? listeningText.map(function (section) {
           return '<h3>' + esc(section.title) + '</h3>' + section.lines.map(function (line) {
             return '<div class="qz-p"><p>' + esc(line[0]) + '</p><p class="muted">' + esc(line[1]) + '</p></div>';
           }).join('');
-        }).join('') : '') : (listeningScans ? '' : '<div class="small muted">这套听力的原文和译文还在整理。</div>')) +
+        }).join('') : '') : (listeningScans && !listeningScans.originalOnly ? '' : '<div class="small muted">这套听力的完整中文译文还在整理。</div>')) +
       (listeningScans ? '<div class="small muted">以下为完整原册页面，可点击图片放大，其中包含题目解析。</div>' +
-        (listeningScans.combined ? scanBook('完整原文与译文 · 原册', listeningScans.combined) :
+        (listeningScans.originalOnly ? scanBook('完整英文原文 · 原册', listeningScans.original) : listeningScans.combined ? scanBook('完整原文与译文 · 原册', listeningScans.combined) :
           scanBook('完整英文原文 · 原册', listeningScans.original) + scanBook('完整中文译文 · 原册', listeningScans.translation)) : '') + '</div>';
 
     var matHead = '<div class="qz-mat-h">' +
