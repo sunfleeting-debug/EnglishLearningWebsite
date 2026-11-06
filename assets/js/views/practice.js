@@ -207,14 +207,10 @@
     /** 复习队列 / 生词本分组：先把记录还原成 {w, s, m} 再解析成词条 */
     function recordsFor(src) {
       if (src === 'srs') {
-        /* 🔴 乱序（sunfleeting：不要按「最近答错/逾期最久」的固定顺序背）：
-           Fisher-Yates 洗牌，词池在会话快照里，同一会话内顺序稳定 */
-        var due = TW.store.srs.dueList().map(function (r) { return { w: r.w, s: r.s, m: r.m }; });
-        for (var i = due.length - 1; i > 0; i--) {
-          var j = Math.floor(Math.random() * (i + 1));
-          var t = due[i]; due[i] = due[j]; due[j] = t;
-        }
-        return due;
+        /* 顺序 / 乱序统一交给 resolvePool 处理：这里只按队列原序返回（到期日 → 入队时间）。
+           之前无条件 Fisher-Yates 洗牌，导致「设置里选顺序」对复习队列完全无效——
+           复习页上那个「顺序 / 乱序」开关也点不出效果。 */
+        return TW.store.srs.dueList().map(function (r) { return { w: r.w, s: r.s, m: r.m }; });
       }
       /* status=learned（复习页「自由复习已学的词」）映射到 progressItems 的 touched 池；
          status=recent（生词本「最近学过」）也走 touched 池，再按时间范围过滤、倒序。 */
@@ -264,7 +260,9 @@
         out = out.concat(heavy);
       }
       if (cfg.order === 'random') out = TW.shuffle(out);
-      else out = sortByRecentWrong(out);   // 顺序模式也按「最近答错优先」，刚错的先见
+      /* 复习队列的顺序是「最该复习的先」（到期日早 → 入队早），不要再按最近答错重排，
+         否则「顺序」出来的其实是错的顺序（复习页那个开关就是为这个加的）。 */
+      else if (cfg.src !== 'srs') out = sortByRecentWrong(out);
       return out;
     }
 

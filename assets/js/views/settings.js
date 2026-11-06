@@ -42,10 +42,10 @@
 
         '<div class="card card-pad" style="margin-bottom:1rem">' +
           '<div class="card-title" style="margin-bottom:.3rem">练习偏好</div>' +
-          '<div class="set-row"><div><div class="set-label">出题顺序</div><div class="set-hint">顺序练习便于按音频推进，随机练习用于抽查</div></div>' +
+          '<div class="set-row"><div><div class="set-label">出题顺序</div><div class="set-hint">顺序＝按词表 / 到期早晚推进；乱序＝每轮重新打乱。复习页上也能直接切</div></div>' +
             '<div class="seg" id="set-order">' +
               '<button data-val="seq" class="' + (s.order === 'seq' ? 'active' : '') + '">顺序</button>' +
-              '<button data-val="random" class="' + (s.order === 'random' ? 'active' : '') + '">随机</button>' +
+              '<button data-val="random" class="' + (s.order === 'random' ? 'active' : '') + '">乱序</button>' +
             '</div></div>' +
           '<div class="set-row"><div><div class="set-label">每轮单词数</div><div class="set-hint">一轮练习包含的单词数量</div></div>' +
             '<select class="field" id="set-size">' +

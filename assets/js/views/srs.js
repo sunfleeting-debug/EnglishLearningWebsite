@@ -30,6 +30,14 @@
 
   function render(host, query) {
     var mode = MODES.some(function (m) { return m.id === query.mode; }) ? query.mode : 'type';
+    /* 复习顺序（sunfleeting 2026-11-06）：在复习页直接能选，不用绕到设置页。
+       与「设置 · 出题顺序」是同一个开关，选了就记住，下次进来还是它。 */
+    var order = (query.order === 'random' || query.order === 'seq')
+      ? query.order : (TW.store.settings.order === 'random' ? 'random' : 'seq');
+    var orderName = order === 'random' ? '乱序' : '顺序';
+    /* URL 里显式带了 order（分享链接 / 返回上一页）就以它为准，并同步进设置——
+       否则页面显示「顺序」、实际去练习又按设置里的「乱序」出词，两边打架。 */
+    if (query.order && order !== TW.store.settings.order) TW.store.setSetting('order', order);
     var showAll = query.all === '1';
     var stats = TW.store.srs.stats();
     var due = TW.store.srs.dueList();
@@ -101,6 +109,12 @@
       return '<button data-mode="' + m.id + '" class="' + (mode === m.id ? 'active' : '') + '">' + m.name + '</button>';
     }).join('');
 
+    /* 顺序 / 乱序：顺序＝按到期早晚（逾期最久的先），乱序＝每轮重新打乱 */
+    var orderSeg = '<button data-order="seq" class="' + (order === 'seq' ? 'active' : '') + '" ' +
+        'title="按到期早晚出词：逾期最久的先复习">顺序</button>' +
+      '<button data-order="random" class="' + (order === 'random' ? 'active' : '') + '" ' +
+        'title="每轮重新打乱，避免按固定次序死记">乱序</button>';
+
     /* 自由复习：已学过的词（练过就算），错过的词双倍权重多练（sunfleeting 要求） */
     var learnedN = TW.data.progressItems('learned').length;
     var wrongN = 0;
@@ -138,9 +152,12 @@
         '<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:.6rem">' +
           '<div>' +
             '<div class="card-title">今日任务</div>' +
-            '<div class="small muted">' + (due.length ? '今天有 ' + due.length + ' 个词到期，开始复习吧' : '今天没有到期的词，休息一下 ☕') + '</div>' +
+            '<div class="small muted">' + (due.length
+              ? '今天有 ' + due.length + ' 个词到期，练习时按 <b>' + orderName + '</b> 出词'
+              : '今天没有到期的词，休息一下 ☕') + '</div>' +
           '</div>' +
-          '<div class="row" style="gap:.5rem">' +
+          '<div class="row" style="gap:.5rem;align-items:center;flex-wrap:wrap">' +
+            '<div class="seg" id="sr-order" title="复习时的出词顺序">' + orderSeg + '</div>' +
             '<div class="seg" id="sr-mode">' + modeSeg + '</div>' +
             (due.length
               ? '<button class="btn primary" id="sr-start">' + TW.icon('play', 16) + ' 开始复习（' + due.length + '）</button>'
@@ -174,22 +191,32 @@
     '</div>';
 
     /* ---------- 交互 ---------- */
+    TW.$$('#sr-order button', host).forEach(function (b) {
+      b.addEventListener('click', function () {
+        var v = b.dataset.order;
+        TW.store.setSetting('order', v);       // 与设置页同一个开关，选了就记住
+        TW.$$('#sr-order button', host).forEach(function (x) { x.classList.remove('active'); });
+        b.classList.add('active');
+        TW.app.go('/srs?mode=' + mode + '&order=' + v + (showAll ? '&all=1' : ''));
+        TW.toast(v === 'random' ? '复习顺序：乱序（每轮重新打乱）' : '复习顺序：顺序（到期早的先）');
+      });
+    });
     TW.$$('#sr-mode button', host).forEach(function (b) {
       b.addEventListener('click', function () {
-        TW.app.go('/srs?mode=' + b.dataset.mode + (showAll ? '&all=1' : ''));
+        TW.app.go('/srs?mode=' + b.dataset.mode + '&order=' + order + (showAll ? '&all=1' : ''));
       });
     });
     var start = TW.$('#sr-start', host);
     if (start) start.addEventListener('click', function () {
-      TW.app.go('/practice?src=srs&mode=' + mode);
+      TW.app.go('/practice?src=srs&mode=' + mode + '&order=' + order);
     });
     var freeBtn = TW.$('#sr-free-learned', host);
     if (freeBtn) freeBtn.addEventListener('click', function () {
-      TW.app.go('/practice?src=collection&status=learned&mode=' + mode);
+      TW.app.go('/practice?src=collection&status=learned&mode=' + mode + '&order=' + order);
     });
     var tog = TW.$('#sr-toggle', host);
     if (tog) tog.addEventListener('click', function () {
-      TW.app.go('/srs?mode=' + mode + (showAll ? '' : '&all=1'));
+      TW.app.go('/srs?mode=' + mode + '&order=' + order + (showAll ? '' : '&all=1'));
     });
     var clr = TW.$('#sr-clear', host);
     if (clr) clr.addEventListener('click', function () {
@@ -209,7 +236,10 @@
     var p = TW.$('#sr-go-practice', host);
     if (p) p.addEventListener('click', function () { TW.app.go('/practice'); });
     var f0 = TW.$('#sr-free-learned0', host);
-    if (f0) f0.addEventListener('click', function () { TW.app.go('/practice?src=collection&status=learned'); });
+    if (f0) f0.addEventListener('click', function () {
+      TW.app.go('/practice?src=collection&status=learned&order=' +
+        (TW.store.settings.order === 'random' ? 'random' : 'seq'));
+    });
     var im = TW.$('#sr-import', host);
     if (im) im.addEventListener('click', function () {
       var n = 0;
