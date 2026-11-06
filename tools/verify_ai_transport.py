@@ -1,16 +1,19 @@
 # -*- coding: utf-8 -*-
-"""核验 AI 通道的两条「限流」策略（1015/429 为什么老是缠着你）
+"""核验 AI 请求通道：默认浏览器直连 + 限流退避
    ------------------------------------------------------------
-   覆盖：
-     1. 自定义接口默认走浏览器直连（打 <base>/chat/completions）
-     2. 偶发一次 1015/429 → 自动等 1.5 秒在同一通道重试一次，用户看不到红字
-     3. 持续限流 → 只重试一次就放弃（不会把用户晾在那儿轮询），最终照实报错
-     4. 放弃后才退到 Worker 转发（共享出口 IP），并且这条记录有 3 分钟保质期
-     5. 3 分钟过后自动重新试直连（旧实现是「一次限流，整页会话永久走 Worker」）
+   背景：自定义接口原先「直连失败就退 Worker 转发」，而 Worker 的出口 IP 被上千个
+   Worker 共用，中转网关（按 IP 限流）几乎必然回 1015。更糟的是旧实现会把这次失败
+   永久记住，整页会话都钉在 Worker 上 —— 症状就是用户看到的「经常报 1015」。
 
-   为什么单独测这个：旧实现里 transportMemo 一旦被写成 'worker' 就再也不回退，
-   一次偶发限流会把整个页面会话推到最容易继续被限的那条路上 —— 症状就是你看到
-   的「经常报 1015」。这条断言就是防止它退回去。
+   现在：默认 via='direct'（只直连，绝不偷偷绕后端），失败就在同一通道退避重试一次；
+   想留后路可以切 via='auto'（直连不通再转后端，且按原因分时效）。
+
+   覆盖：
+     1. 开箱即是直连；请求打到 <base>/chat/completions
+     2. 偶发 1015 → 等 1.5 秒在同一通道重试成功
+     3. 持续 1015 → 只重试一次就报真话，且全程不碰后端
+     4. 直连模式下跨域失败也不偷偷转后端
+     5. auto 模式：直连不行才转后端；限流退避 3 分钟、跨域退避 30 分钟后回直连
 
    用法：python tools/verify_ai_transport.py
 """
@@ -26,6 +29,7 @@ BASE = "http://127.0.0.1:%d/" % PORT
 PY = sys.executable
 HOST = "agnes.example.com"
 API = "https://%s/v1" % HOST
+WORKER_HOST = "api.test.local"
 
 TOTAL = [0]
 fails = []
@@ -66,18 +70,26 @@ def wait_http(url, timeout=15):
     return 0
 
 
-# 桩：拦下发往假接口的请求，按 __mode 决定「正常 / 一直限流 / 只限第一次」
+# 桩：直连（agnes.example.com）按 __mode 回「正常 / 一直限流 / 只限第一次 / 跨域被拦」；
+# 转后端（api.test.local）单独计数，用来断言「直连模式下一次都没碰后端」。
 STUB = """
 window.__calls = [];
+window.__worker = [];
 window.__mode = 'ok';
+window.__rln = 0;
 var realFetch = window.fetch.bind(window);
 window.fetch = function (url, init) {
   var u = String(url);
+  if (u.indexOf('%s') >= 0) {
+    window.__worker.push(u);
+    return Promise.resolve(new Response(JSON.stringify({ error: 'worker stub' }), {
+      status: 502, headers: { 'Content-Type': 'application/json' }
+    }));
+  }
   if (u.indexOf('%s') < 0) return realFetch(url, init);
   window.__calls.push(u);
-  var n = window.__calls.length;
   if (window.__mode === 'cors') return Promise.reject(new TypeError('Failed to fetch'));
-  var limited = (window.__mode === 'rl') || (window.__mode === 'rl1' && n === 1);
+  var limited = (window.__mode === 'rl') || (window.__mode === 'rl1' && window.__rln++ === 0);
   var body = limited
     ? { error: { message: 'error code: 1015' } }
     : { model: 'stub', choices: [{ message: { content: 'OK-REPLY' } }] };
@@ -89,11 +101,10 @@ window.fetch = function (url, init) {
 var _now = Date.now.bind(Date);
 window.__nowOff = 0;
 Date.now = function () { return _now() + window.__nowOff; };
-""" % HOST
+""" % (WORKER_HOST, HOST)
 
 
 def main():
-    procs = []
     if not port_free(PORT):
         print("端口被占用")
         return 3
@@ -116,15 +127,33 @@ def main():
             pg.goto(BASE + "#/ai", wait_until="domcontentloaded")
             pg.wait_for_function("() => window.TW && TW.ai && TW.ai.save", timeout=15000)
 
-            # 配一个「自定义接口」；后端置为未配置，这样退到 Worker 会立刻失败，测起来确定
+            # ---- 0. 配置卡上的「连接方式」开关（先只填地址不填 Key，让配置卡露出来）----
+            pg.evaluate("() => TW.ai.save({ provider: 'custom', baseUrl: '%s' })" % API)
+            pg.reload(wait_until="domcontentloaded")
+            pg.wait_for_selector("#ai-via", timeout=15000)
+            check("配置卡有「连接方式」开关", pg.locator("#ai-via button").count(), 2)
+            check("两个选项的文案",
+                  pg.eval_on_selector_all("#ai-via button", "e => e.map(x => x.textContent)"),
+                  ["浏览器直连", "失败转后端"])
+            check("默认高亮「浏览器直连」", pg.inner_text("#ai-via button.active"), "浏览器直连")
+            check("说明里写清了直连不会偷偷绕后端",
+                  "不会偷偷绕到后端" in pg.inner_text(".ai-setup"), True)
+
+            pg.click('#ai-via button[data-via="auto"]')
+            check("点「失败转后端」写进配置", pg.evaluate("() => TW.ai.via()"), "auto")
+            check("高亮跟着走", pg.inner_text("#ai-via button.active"), "失败转后端")
+            pg.click('#ai-via button[data-via="direct"]')
+            check("点回「浏览器直连」", pg.evaluate("() => TW.ai.via()"), "direct")
+
+            # 只配自定义接口，**不设 via** —— 验的就是「开箱默认直连」
             pg.evaluate("""() => {
                 TW.ai.save({ provider: 'custom', baseUrl: '%s',
                              keys: { custom: 'sk-test-1234567890' },
                              models: { custom: 'stub-model' } });
-                TW.api = TW.api || {};
-                TW.api.configured = function () { return false; };
-            }""" % API)
+                TW.api.setBase('https://%s');
+            }""" % (API, WORKER_HOST))
             check("配置就绪（自定义接口）", pg.evaluate("() => TW.ai.configured()"), True)
+            check("默认连接方式 = 浏览器直连", pg.evaluate("() => TW.ai.via()"), "direct")
 
             def ask():
                 return pg.evaluate("""() => TW.ai.chat({ messages: [{ role: 'user', content: 'hi' }] })
@@ -133,76 +162,97 @@ def main():
             def calls():
                 return pg.evaluate("() => window.__calls.slice()")
 
-            def set_mode(m):
-                pg.evaluate("(m) => { window.__mode = m; }", m)
+            def workers():
+                return pg.evaluate("() => window.__worker.length")
 
-            # ---- 1. 正常一次 ----
-            set_mode("ok")
-            r = ask()
-            check("正常请求成功", r, "ok:OK-REPLY")
-            c1 = calls()
-            check("只发了一次请求", len(c1), 1)
-            check("打到自定义接口的 /chat/completions（浏览器直连）",
-                  c1[0], API + "/chat/completions")
+            def reset():
+                pg.evaluate("() => { window.__calls.length = 0; window.__worker.length = 0; }")
 
-            # ---- 2. 偶发限流：自动重试 ----
-            pg.evaluate("() => { window.__calls.length = 0; }")
-            set_mode("rl1")
+            def mode(m):
+                pg.evaluate("(m) => { window.__mode = m; window.__rln = 0; }", m)
+
+            def travel(ms):
+                pg.evaluate("(ms) => { window.__nowOff += ms; }", ms)
+
+            # ---- 1. 正常直连 ----
+            mode("ok")
+            check("正常请求成功", ask(), "ok:OK-REPLY")
+            c = calls()
+            check("只发了一次请求", len(c), 1)
+            check("打到自定义接口的 /chat/completions", c[0], API + "/chat/completions")
+            check("没经过后端转发", workers(), 0)
+
+            # ---- 2. 偶发限流：同通道退避重试 ----
+            reset()
+            mode("rl1")
             t0 = time.time()
             r = ask()
             cost = time.time() - t0
-            check("偶发一次 1015 后自动重试成功（用户看不到红字）", r, "ok:OK-REPLY")
-            c2 = calls()
-            check("重试用的是同一通道（2 次都直连，没被推给 Worker）",
-                  [u for u in c2], [API + "/chat/completions"] * 2)
-            check("重试前等了约 1.5 秒（不是立刻猛打）", cost >= 1.4, True, "%.2fs" % cost)
+            check("偶发一次 1015 后自动重试成功", r, "ok:OK-REPLY")
+            check("两次都是直连（没被推给 Worker）", calls(), [API + "/chat/completions"] * 2)
+            check("重试前等了约 1.5 秒", cost >= 1.4, True, "%.2fs" % cost)
+            check("重试过程也没碰后端", workers(), 0)
 
-            # ---- 3. 持续限流：只重试一次 ----
-            pg.evaluate("() => { window.__calls.length = 0; }")
-            set_mode("rl")
+            # ---- 3. 持续限流：只重试一次，且绝不偷偷转后端 ----
+            reset()
+            mode("rl")
             r = ask()
-            check("持续 1015 时最终报错", r.startswith("err:"), True, r[:120])
-            check("报的是真正的限流原因，不是「后端未配置」这类无关话", "1015" in r, True, r[:120])
-            c3 = calls()
-            check("只重试一次，不做无限轮询", len(c3), 2, "%d 次" % len(c3))
+            check("持续 1015 时最终报错", r.startswith("err:"), True, r[:90])
+            check("报的是真正的限流原因", "1015" in r, True, r[:90])
+            check("只重试一次，不做无限轮询", len(calls()), 2, "%d 次" % len(calls()))
+            check("直连模式下不偷偷绕后端", workers(), 0)
 
-            # ---- 4. 放弃后钉在 Worker，且有保质期 ----
-            pg.evaluate("() => { window.__calls.length = 0; }")
-            set_mode("ok")
+            # ---- 4. 跨域失败也不绕后端 ----
+            reset()
+            mode("cors")
             r = ask()
-            check("限流后短时间内的新请求不再打直连", len(calls()), 0)
-            check("这段时间走 Worker（本测里 Worker 未配置 ⇒ 直接失败）",
-                  "后端地址未配置" in r, True, r[:80])
+            check("跨域被拦时照实报错", "连不上" in r, True, r[:70])
+            check("跨域也只试一次直连", len(calls()), 1)
+            check("跨域同样不绕后端", workers(), 0)
 
-            # ---- 5. 3 分钟后自动试回直连 ----
-            pg.evaluate("() => { window.__nowOff = 186000; }")   # 推后 3 分 6 秒
-            r = ask()
-            check("3 分钟后重新试直连并成功（不再永久钉在 Worker 上）", r, "ok:OK-REPLY")
-            c5 = calls()
-            check("恢复后打的是自定义接口", c5 and c5[-1], API + "/chat/completions")
-
-            pg.evaluate("() => { window.__calls.length = 0; }")
-            r = ask()
-            check("恢复成功后保持直连", [r, len(calls())], ["ok:OK-REPLY", 1])
-
-            # ---- 6. 跨域不通那条路：记久一点，别每 3 分钟白撞一次 ----
-            pg.evaluate("() => { window.__calls.length = 0; }")
-            set_mode("cors")
-            r = ask()
-            check("跨域被拦时照实报错", r.startswith("err:"), True, r[:70])
-            check("报的是「连不上/跨域」而不是「后端未配置」", "连不上" in r, True, r[:70])
-            check("跨域只试一次直连就放弃", len(calls()), 1)
-
-            pg.evaluate("() => { window.__calls.length = 0; }")
-            set_mode("ok")
+            # ---- 5. 显式切到 auto：才允许转后端 ----
+            pg.evaluate("() => TW.ai.setVia('auto')")
+            check("可以切到「失败转后端」", pg.evaluate("() => TW.ai.via()"), "auto")
+            reset()
+            mode("rl")
             ask()
-            check("跨域后短时间也不再去撞直连", len(calls()), 0)
-            pg.evaluate("() => { window.__nowOff += 6 * 60 * 1000; }")   # 再过 6 分钟
+            check("auto 模式撞限流才转后端", workers() >= 1, True, "%d 次" % workers())
+
+            # 限流退避只记 3 分钟：过期自动回直连
+            reset()
+            mode("ok")
             ask()
-            check("跨域不通的记 30 分钟（6 分钟后仍不撞直连）", len(calls()), 0)
-            pg.evaluate("() => { window.__nowOff += 25 * 60 * 1000; }")
+            check("退避期内不再撞直连", len(calls()), 0)
+            travel(186000)
+            r = ask()
+            check("3 分钟后自动回直连并成功", r, "ok:OK-REPLY")
+            check("回直连后打的是自定义接口", calls() and calls()[-1], API + "/chat/completions")
+
+            # ---- 6. 跨域退避 30 分钟（auto 下后端是唯一活路，别每 3 分钟白撞一次） ----
+            reset()
+            mode("cors")
+            ask()
+            check("auto 下跨域失败转后端", workers() >= 1, True, "%d 次" % workers())
+            reset()
+            mode("ok")
+            ask()
+            check("跨域退避期内不撞直连", len(calls()), 0)
+            travel(6 * 60 * 1000)
+            ask()
+            check("6 分钟后仍不撞直连（跨域不是限流，记 30 分钟）", len(calls()), 0)
+            travel(25 * 60 * 1000)
             r = ask()
             check("超过 30 分钟后重新试直连", r, "ok:OK-REPLY")
+
+            # ---- 7. 设置页也挂同一个开关，且读数一致 ----
+            pg.goto(BASE + "#/settings", wait_until="domcontentloaded")
+            pg.wait_for_selector("#set-ai-via", timeout=15000)
+            check("设置页也有「连接方式」", pg.locator("#set-ai-via button").count(), 2)
+            check("设置页高亮跟 #/ai 一致（此刻是 auto）",
+                  pg.inner_text("#set-ai-via button.active"), "失败转后端")
+            pg.click('#set-ai-via button[data-val="direct"]')
+            check("设置页点直连写进配置", pg.evaluate("() => TW.ai.via()"), "direct")
+            check("设置页高亮跟着走", pg.inner_text("#set-ai-via button.active"), "浏览器直连")
 
             check("无 JS 报错", errs, [])
             b.close()

@@ -69,7 +69,8 @@
         '<div class="card card-pad" style="margin-bottom:1rem">' +
           '<div class="card-title" style="margin-bottom:.3rem">AI 英语助手</div>' +
           '<div class="set-hint" style="margin-bottom:.8rem">填自己的 API Key 就能用「学习诊断 / 智能出题 / 对话答疑」。' +
-            'Key 只存在这台设备的浏览器里（独立存储，<b>不参与云同步、也不会写进导出备份</b>），请求经本站 Worker 转发一次到模型官方接口。</div>' +
+            'Key 只存在这台设备的浏览器里（独立存储，<b>不参与云同步、也不会写进导出备份</b>），' +
+            '内置提供方经本站 Worker 转发一次到模型官方接口（不落库）；自定义接口默认由浏览器直连。</div>' +
           '<div class="ai-form">' +
             '<label class="ai-fl"><span>提供方</span>' +
               '<select class="field" id="ai-prov">' + TW.ai.PROVIDERS.map(function (p) {
@@ -83,7 +84,12 @@
             (TW.ai.config().provider === 'custom' ?
               '<label class="ai-fl"><span>接口地址</span>' +
                 '<input class="field" id="ai-base" type="text" autocomplete="off" spellcheck="false" ' +
-                  'placeholder="https://xxx/v1" value="' + TW.esc(TW.ai.config().baseUrl) + '"></label>' : '') +
+                  'placeholder="https://xxx/v1" value="' + TW.esc(TW.ai.config().baseUrl) + '"></label>' +
+              '<label class="ai-fl"><span>连接方式</span>' +
+                '<div class="seg" id="set-ai-via" style="justify-self:start">' +
+                  '<button data-val="direct" class="' + (TW.ai.via() === 'direct' ? 'active' : '') + '">浏览器直连</button>' +
+                  '<button data-val="auto" class="' + (TW.ai.via() === 'auto' ? 'active' : '') + '">失败转后端</button>' +
+                '</div></label>' : '') +
           '</div>' +
           '<div class="row" style="margin-top:.8rem">' +
             '<a class="btn primary" href="#/ai">' + TW.icon('spark', 15) + ' 打开 AI 助手</a>' +
@@ -196,6 +202,17 @@
     });
     var aiBase = TW.$('#ai-base', host);
     if (aiBase) aiBase.addEventListener('change', function () { TW.ai.save({ baseUrl: aiBase.value.trim() }); });
+    /* 连接方式：与 #/ai 的配置卡共用同一个开关（TW.ai.via），别各存一份 */
+    var aiVia = TW.$('#set-ai-via', host);
+    if (aiVia) aiVia.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('button[data-val]');
+      if (!btn) return;
+      TW.ai.setVia(btn.getAttribute('data-val'));
+      Array.prototype.forEach.call(aiVia.querySelectorAll('button'), function (b) {
+        b.classList.toggle('active', b === btn);
+      });
+      TW.toast(btn.getAttribute('data-val') === 'direct' ? '已改为浏览器直连' : '已改为直连失败转后端');
+    });
 
     TW.$('#set-size', host).addEventListener('change', function (e) {
       TW.store.setSetting('sessionSize', parseInt(e.target.value, 10) || 20);

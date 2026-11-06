@@ -4,9 +4,11 @@
    1) **Key 只存本机**：单独用 localStorage 键 typingcet.ai.v1，不进 store.state
       —— store 的「导出备份」会把 state 整个序列化，key 混进去就等于跟着备份文件
       到处跑；也不进同步协议，换设备要重新填（安全 > 方便）。
-   2) **请求走自己的 Worker**（/api/ai/chat）：DeepSeek / 通义 / OpenAI 都不给浏览器
-      CORS 预检响应，直连必被拦。Worker 只转发、不落库。自定义接口如果是本机地址
-      （Ollama / LM Studio 之类），Worker 侧按 SSRF 规则拒绝，这里直接浏览器直连。
+   2) **内置提供方走自己的 Worker**（/api/ai/chat）：DeepSeek / 通义 / OpenAI 都不给浏览器
+      CORS 预检响应，直连必被拦。Worker 只转发、不落库。自定义接口默认反过来——**浏览器
+      直连优先**（config.via='direct'），因为 Worker 的出口 IP 被上千个 Worker 共用，中转
+      网关容易按 IP 限流（1015）。本地地址（Ollama / LM Studio）Worker 侧按 SSRF 规则拒绝，
+      本来就只能直连。
    3) **「Agent」是客户端的三段式**：读数据 → 出诊断/出题 → 判分后复盘。
       不依赖各家的 function calling（deepseek/qwen/claude 的参数格式各不相同，
       统一成工具调用会把兼容性做崩），改成「本地先用确定性代码把学习数据算好，
@@ -33,7 +35,10 @@
   }
 
   function defaults() {
-    return { provider: 'deepseek', keys: {}, models: {}, baseUrl: '', modelLists: {} };
+    /* via: 'direct' = 自定义接口只从浏览器直连（默认）；'auto' = 直连不通再退回 Worker 转发。
+       sunfleeting 2026-11-06 定的默认值：中转网关的 CORS 往往是全开的，而 Worker 的出口 IP
+       被上千个 Worker 共用，最容易吃到上游的 1015 限流 —— 能直连就别绕后端。 */
+    return { provider: 'deepseek', keys: {}, models: {}, baseUrl: '', modelLists: {}, via: 'direct' };
   }
 
   var cache = null;
@@ -49,11 +54,16 @@
         c.models = d.models || {};
         c.baseUrl = String(d.baseUrl || '');
         c.modelLists = d.modelLists || {};
+        c.via = d.via === 'auto' ? 'auto' : 'direct';
       }
     } catch (e) { /* 配置损坏 → 用默认值，不影响主流程 */ }
     cache = c;
     return c;
   }
+
+  /** 连接方式：direct（只直连）/ auto（直连失败转后端） */
+  function via() { return config().via === 'auto' ? 'auto' : 'direct'; }
+  function setVia(v) { return save({ via: v === 'auto' ? 'auto' : 'direct' }); }
 
   function save(patch) {
     var c = config();
@@ -345,21 +355,23 @@
 
     /* 限流（1015/1020/429）先别换通道：等 1.5 秒用同一个出口再来一次。
        这类限流窗口通常只有几秒，重试往往就通了；而 Worker 的出口 IP 是成千上万个
-       Worker 共用的，切过去大概率继续被限 —— 换通道留到「重试也没用」之后。 */
+       Worker 共用的，切过去大概率继续被限 —— 换通道留到「重试也没用」之后。
+       via='direct' 时压根不存在「换通道」这一步，失败就把真实原因交给用户。 */
     function attempt(allowRetry) {
       if (!custom || !burl) return viaWorker();
-      if (useWorkerOnly(burl)) return viaWorker();
+      if (via() === 'auto' && useWorkerOnly(burl)) return viaWorker();
       return directFetch(pack).then(function (r) {
         transportMemo[burl] = 'direct';
         delete transportAt[burl];
         delete transportWhy[burl];
         return r;
       }, function (e) {
-        if (!retryOther(e) || !/^https:/i.test(burl)) throw e;   // http 的本地接口 Worker 进不去，别白跑
         if (allowRetry && isRateLimited(e)) {
           return new Promise(function (ok) { setTimeout(ok, 1500); })
             .then(function () { return attempt(false); });
         }
+        /* 直连模式到此为止；auto 模式下才考虑退后端（http 的本地接口 Worker 进不去，也别白跑） */
+        if (via() === 'direct' || !retryOther(e) || !/^https:/i.test(burl)) throw e;
         memoWorker(burl, isRateLimited(e) ? 'ratelimit' : 'network');
         return viaWorker().then(null, function (e2) {
           if (isRateLimited(e) || noBackend(e2)) throw e;   // 见 noBackend() 的注释
@@ -480,7 +492,7 @@
     var burl = baseOf(pack);
 
     function attempt(allowRetry) {
-      if (!custom || !burl || useWorkerOnly(burl)) return viaWorker();
+      if (!custom || !burl || (via() === 'auto' && useWorkerOnly(burl))) return viaWorker();
       var dHeaders = { 'Content-Type': 'application/json' };
       if (pack.apiKey) dHeaders['Authorization'] = 'Bearer ' + pack.apiKey;
       return streamOnce(burl + '/chat/completions', dHeaders, bodyDirect, opts, onDelta).then(function (r) {
@@ -489,14 +501,15 @@
         delete transportWhy[burl];
         return r;
       }, function (e) {
-        /* 已经吐了一半内容就别重来了（会把同一段话显示两遍）；http 的本地接口 Worker 也进不去 */
+        /* 已经吐了一半内容就别重来了（会把同一段话显示两遍） */
         if (e && e.partial) throw e;
-        if (!retryOther(e) || !/^https:/i.test(burl)) throw e;
         /* 同 chat()：限流先等 1.5 秒在同一通道重试，别急着换共享 IP 的 Worker */
         if (allowRetry && isRateLimited(e)) {
           return new Promise(function (ok) { setTimeout(ok, 1500); })
             .then(function () { return attempt(false); });
         }
+        /* 直连模式到此为止；auto 模式才退后端（http 的本地接口 Worker 也进不去） */
+        if (via() === 'direct' || !retryOther(e) || !/^https:/i.test(burl)) throw e;
         memoWorker(burl, isRateLimited(e) ? 'ratelimit' : 'network');
         return viaWorker().then(null, function (e2) {
           if (isRateLimited(e) || noBackend(e2)) throw e;   // 见 noBackend() 的注释
@@ -1240,6 +1253,8 @@
     apiKey: apiKey,
     modelName: modelName,
     baseUrl: baseUrl,
+    via: via,
+    setVia: setVia,
     configured: configured,
     isLocal: isLocal,
     listModels: listModels,

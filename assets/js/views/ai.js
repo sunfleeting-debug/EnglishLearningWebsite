@@ -820,7 +820,8 @@
     return '<div class="card card-pad ai-setup">' +
       '<div class="card-title" style="margin-bottom:.35rem">先接入一个模型</div>' +
       '<div class="set-hint" style="margin-bottom:.9rem">API Key 只保存在这台设备的浏览器里，' +
-        '不会进云端同步、也不会出现在导出备份里。请求由本站 Worker 转发一次到模型官方接口（不落库、不记日志）。' +
+        '不会进云端同步、也不会出现在导出备份里。内置提供方经本站 Worker 转发一次（不落库、不记日志）；' +
+        '自定义接口默认由浏览器直连。' +
       '</div>' +
       '<div class="ai-prov">' + TW.ai.PROVIDERS.map(function (x) {
         return '<button type="button" class="ai-prov-btn' + (x.id === c.provider ? ' on' : '') +
@@ -834,7 +835,18 @@
         (isCustom ?
           '<label class="ai-fl"><span>接口地址</span>' +
             '<input class="field" id="ai-base" type="text" autocomplete="off" spellcheck="false" ' +
-              'placeholder="https://xxx/v1 或 http://127.0.0.1:11434/v1" value="' + esc(c.baseUrl) + '"></label>'
+              'placeholder="https://xxx/v1 或 http://127.0.0.1:11434/v1" value="' + esc(c.baseUrl) + '"></label>' +
+          '<label class="ai-fl"><span>连接方式</span>' +
+            '<div class="seg" id="ai-via" style="justify-self:start">' +
+              '<button type="button" data-via="direct" class="' +
+                (TW.ai.via() === 'direct' ? 'active' : '') + '">浏览器直连</button>' +
+              '<button type="button" data-via="auto" class="' +
+                (TW.ai.via() === 'auto' ? 'active' : '') + '">失败转后端</button>' +
+            '</div></label>' +
+          '<div class="set-hint" style="margin:0 0 .35rem">' +
+            '直连＝请求从你的浏览器直接发给该接口；被上游限流（1015/429）时只在同一通道重试，' +
+            '不会偷偷绕到后端 —— 后端的出口 IP 是共享的，反而更容易被限。' +
+          '</div>'
           : '') +
         modelField(p) +
       '</div>' +
@@ -1090,6 +1102,17 @@
       });
       if (modelEl) modelEl.addEventListener('change', function () { TW.ai.setModel(modelEl.value.trim()); });
       if (modelSel) modelSel.addEventListener('change', function () { TW.ai.setModel(modelSel.value); });
+
+      /* 连接方式：直连 / 失败转后端。改了就地翻高亮，不重渲染（别把 Key 输入框打断） */
+      var viaEl = TW.$('#ai-via', host);
+      if (viaEl) viaEl.addEventListener('click', function (ev) {
+        var btn = ev.target.closest('button[data-via]');
+        if (!btn) return;
+        TW.ai.setVia(btn.getAttribute('data-via'));
+        Array.prototype.forEach.call(viaEl.querySelectorAll('button'), function (b) {
+          b.classList.toggle('active', b === btn);
+        });
+      });
 
       if (fetchBtn) fetchBtn.addEventListener('click', function () {
         /* 先把输入框里的 Key / 地址落库，否则拉的是上一次保存的凭据 */
