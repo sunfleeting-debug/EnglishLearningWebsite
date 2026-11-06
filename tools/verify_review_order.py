@@ -14,7 +14,10 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PORT = 5182
-BASE = "http://127.0.0.1:%d/" % PORT
+# 不设 BASE 时自己起本地服务；BASE=https://sunfleeting.website/ 就直接跑线上
+_TARGET = os.environ.get("BASE", "").strip()
+BASE = _TARGET or ("http://127.0.0.1:%d/" % PORT)
+LOCAL = not _TARGET
 PY = sys.executable
 
 TOTAL = [0]
@@ -42,11 +45,15 @@ def port_free(p):
 
 
 def wait_http(url, timeout=15):
+    """探活：CF 会拦 Python-urllib 的默认 UA（返回 403），所以带一个浏览器 UA。"""
     import urllib.request
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"})
     end = time.time() + timeout
     while time.time() < end:
         try:
-            with urllib.request.urlopen(url, timeout=1) as r:
+            with urllib.request.urlopen(req, timeout=3) as r:
                 return r.status
         except Exception:
             time.sleep(0.3)
@@ -54,11 +61,15 @@ def wait_http(url, timeout=15):
 
 
 def main():
-    if not port_free(PORT):
-        print("端口被占用")
-        return 3
-    procs = [subprocess.Popen([PY, "tools/serve.py", "-p", str(PORT)], cwd=ROOT,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
+    procs = []
+    if LOCAL:
+        if not port_free(PORT):
+            print("端口被占用")
+            return 3
+        procs = [subprocess.Popen([PY, "tools/serve.py", "-p", str(PORT)], cwd=ROOT,
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)]
+    else:
+        print("目标：" + BASE)
     try:
         if wait_http(BASE + "index.html") != 200:
             print("静态服务未就绪")
