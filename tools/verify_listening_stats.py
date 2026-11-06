@@ -25,6 +25,19 @@ with static_server() as base, sync_playwright() as playwright:
         page.get_by_text('查看完整中文译文').click()
         page.get_by_text('讲座三 · 第 22–25 题').wait_for()
         assert '保修期在电脑摔坏三天前就结束了' in page.locator('.qz-p').first.inner_text()
+        # Check the first and last segments for every set using text translations.
+        translated_sets = page.evaluate("() => Object.keys(TW_PERSONAL_LISTENING_TRANSLATIONS)")
+        for set_id in translated_sets:
+            page.evaluate("id => location.hash='/quiz?set=' + id", set_id)
+            label = ('查看其他段落的中文译文' if '202312-' in set_id else '查看完整中文译文')
+            page.get_by_text(label, exact=True).click()
+            page.get_by_text('讲座三 · 第 22–25 题', exact=True).wait_for()
+            assert len(page.locator('.qz-p').all_inner_texts()) >= 6, set_id
+        page.evaluate("() => location.hash='/quiz?set=personal-cet6-202606-2-listening'")
+        if not page.get_by_text('讲座三 · 第 22–25 题', exact=True).is_visible():
+            page.get_by_text('查看完整中文译文', exact=True).click()
+        page.get_by_text('为慢性病患者开展一个新的药物治疗管理项目', exact=False).wait_for()
+        page.get_by_text('2,000 名英国父母', exact=False).wait_for()
         page.evaluate("() => location.hash='/quiz?set=personal-cet6-202106-1-listening'")
         page.get_by_text('完整原文与译文 · 原册').click()
         page.get_by_alt_text('完整原文与译文 · 原册 第 1 页，点击放大').wait_for()
