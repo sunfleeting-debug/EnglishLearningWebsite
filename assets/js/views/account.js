@@ -255,7 +255,12 @@
       var sy = TW.$('#acct-sync', host);
       if (sy) sy.addEventListener('click', function () {
         TW.toast('正在同步…');
+        /* 学习数据 + AI 配置（含 Key）一起对齐：只刷学习数据的话，
+           用户会以为「立即同步」没把 Key 带上 */
         TW.sync.flush(true).then(function (ok) {
+          return (TW.ai && TW.ai.syncPull ? TW.ai.syncPull() : Promise.resolve(false))
+            .then(function () { return ok; });
+        }).then(function (ok) {
           if (!alive()) return;
           TW.toast(ok ? '同步完成' : '同步失败，请检查网络或后端地址', ok ? 'ok' : 'err');
           paint();

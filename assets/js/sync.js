@@ -118,6 +118,9 @@
       if (!TW.api.configured()) { setStatus('off'); return; }
       if (!TW.api.token()) { setStatus('off'); return; }
       flush(true);
+      /* AI 配置（含 Key）单独走 /api/me/ai：登录后顺手拉一次，
+         新设备就能直接用 AI，不用重新填 Key */
+      if (TW.ai && TW.ai.syncPull) TW.ai.syncPull();
     });
 
     window.addEventListener('pagehide', beacon);
@@ -127,7 +130,10 @@
 
     if (!TW.api.configured()) setStatus('off');
     else if (!TW.api.token()) setStatus('off');
-    else flush(true);      // 带着会话刷新页面：对齐一次（也补上刷新期间可能漏掉的改动）
+    else {
+      flush(true);      // 带着会话刷新页面：对齐一次（也补上刷新期间可能漏掉的改动）
+      if (TW.ai && TW.ai.syncPull) TW.ai.syncPull();
+    }
   }
 
   TW.sync = {

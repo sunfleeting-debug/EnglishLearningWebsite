@@ -126,6 +126,12 @@
     /* 同步：推送增量，服务端合并后回传权威全量 */
     sync: function (delta) { return request('POST', '/api/me/sync', delta, { timeout: 30000 }); },
 
+    /* AI 配置（含 Key）的云端存证：服务端 AES-GCM 加密后落库，取回时解密返回 */
+    aiCfgGet: function () { return request('GET', '/api/me/ai', null, { timeout: 20000 }); },
+    aiCfgPut: function (cfg, at) {
+      return request('PUT', '/api/me/ai', { cfg: cfg, at: at }, { timeout: 20000 });
+    },
+
     /* 管理看板 */
     adminUsers: function () { return request('GET', '/api/admin/users').then(function (r) { return r.users || []; }); },
     adminUser: function (id) { return request('GET', '/api/admin/users/' + encodeURIComponent(id)); },

@@ -69,8 +69,9 @@
         '<div class="card card-pad" style="margin-bottom:1rem">' +
           '<div class="card-title" style="margin-bottom:.3rem">AI 英语助手</div>' +
           '<div class="set-hint" style="margin-bottom:.8rem">填自己的 API Key 就能用「学习诊断 / 智能出题 / 对话答疑」。' +
-            'Key 只存在这台设备的浏览器里（独立存储，<b>不参与云同步、也不会写进导出备份</b>），' +
-            '内置提供方经本站 Worker 转发一次到模型官方接口（不落库）；自定义接口默认由浏览器直连。</div>' +
+            'Key 保存在本机浏览器，<b>登录账号后会加密同步到你的云端</b>（换设备无需重填，' +
+            '但不会写进「导出备份」文件）。内置提供方经本站 Worker 转发一次到模型官方接口（不落库）；' +
+            '自定义接口默认由浏览器直连。</div>' +
           '<div class="ai-form">' +
             '<label class="ai-fl"><span>提供方</span>' +
               '<select class="field" id="ai-prov">' + TW.ai.PROVIDERS.map(function (p) {

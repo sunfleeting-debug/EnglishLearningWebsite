@@ -372,6 +372,95 @@ async function applySync(env, userId, body) {
   return syncedAt;
 }
 
+/* --------------------------------------- AI 配置（含 API Key）的云端加密存证
+   为什么要单独存、还要加密：
+   - Key 是直接扣钱的东西，但只存本机就做不到「手机登录后 AI 直接可用」；
+   - 明文塞进 D1 的话，一次库 dump / 备份外流就全完了 ⇒ 用 env.AI_CFG_KEY 做
+     AES-GCM 加密，整份配置存成一个字符串（IV 每次随机，跟着密文一起存）。
+   - 边界要说清：Worker 手上握着解密密钥，所以这**不是**端到端加密；
+     挡住的是「数据库泄露」和「备份文件外流」这两条最现实的风险。
+   - 没配 AI_CFG_KEY 就一律 503，前端退回「只存本机」，绝不静默丢 Key。
+
+   合并规则：整体后写覆盖（按 at 时间戳），因为配置只有一份，逐字段合并没意义。 */
+
+const AI_CFG_MAX = 8192;          // 加密前的明文上限（正常配置几百字节）
+
+async function aiCfgKey(env) {
+  const raw = String(env.AI_CFG_KEY || '').trim();
+  if (!raw) return null;
+  let bin;
+  try { bin = Uint8Array.from(atob(raw), function (c) { return c.charCodeAt(0); }); }
+  catch (e) { return null; }
+  if (bin.length !== 32) return null;
+  return crypto.subtle.importKey('raw', bin, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+function b64(u8) {
+  let s = '';
+  for (let i = 0; i < u8.length; i += 1) s += String.fromCharCode(u8[i]);
+  return btoa(s);
+}
+
+function unb64(s) {
+  const bin = atob(String(s || ''));
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+
+async function sealCfg(env, obj) {
+  const k = await aiCfgKey(env);
+  if (!k) return '';
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = new TextEncoder().encode(JSON.stringify(obj));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, data));
+  return b64(iv) + '.' + b64(ct);
+}
+
+async function openCfg(env, blob) {
+  const k = await aiCfgKey(env);
+  if (!k || !blob) return null;
+  const parts = String(blob).split('.');
+  if (parts.length !== 2) return null;
+  try {
+    const iv = unb64(parts[0]);
+    const ct = unb64(parts[1]);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, k, ct);
+    return JSON.parse(new TextDecoder().decode(pt));
+  } catch (e) { return null; }        // 换过密钥 / 数据损坏
+}
+
+/* GET /api/me/ai -> {cfg, at}   没存过返回 {cfg:null, at:0} */
+async function handleAiCfgGet(env, auth) {
+  const row = await env.DB.prepare('SELECT ai_cfg, ai_cfg_at FROM users WHERE id = ?')
+    .bind(auth.user.id).first();
+  if (!row || !row.ai_cfg) return jsonBody({ cfg: null, at: 0 });
+  const cfg = await openCfg(env, row.ai_cfg);
+  if (!cfg) return fail('云端 AI 配置解不开（后端密钥可能换过），请在本机重新保存一次 Key', 409);
+  return jsonBody({ cfg: cfg, at: row.ai_cfg_at || 0 });
+}
+
+/* PUT /api/me/ai {cfg, at} -> {ok, at, kept?} */
+async function handleAiCfgPut(request, env, auth) {
+  const body = await readJson(request);
+  const cfg = body.cfg;
+  const at = Math.max(0, Math.floor(Number(body.at) || 0));
+  if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) return fail('缺少配置内容');
+  const text = JSON.stringify(cfg);
+  if (text.length > AI_CFG_MAX) return fail('AI 配置太大（' + text.length + ' 字节）');
+
+  const row = await env.DB.prepare('SELECT ai_cfg_at FROM users WHERE id = ?')
+    .bind(auth.user.id).first();
+  const cur = (row && row.ai_cfg_at) || 0;
+  if (cur > at) return jsonBody({ ok: true, kept: 'server', at: cur });   // 云端更新，别倒退
+
+  const sealed = await sealCfg(env, cfg);
+  if (!sealed) return fail('后端还没配置 AI_CFG_KEY，暂时不能保存到云端', 503);
+  await env.DB.prepare('UPDATE users SET ai_cfg = ?, ai_cfg_at = ? WHERE id = ?')
+    .bind(sealed, at, auth.user.id).run();
+  return jsonBody({ ok: true, at: at });
+}
+
 /* ------------------------------------------------------------- 路由处理 */
 
 /* 邮箱验证是否启用：Resend API（首选，2026-10-18 起）或 QQ SMTP 直连（兜底）任一配置即可 */
@@ -1341,6 +1430,8 @@ export default {
       }
 
       if (path === '/api/me/sync' && method === 'POST') return withCors(await handleSync(request, env, auth));
+      if (path === '/api/me/ai' && method === 'GET') return withCors(await handleAiCfgGet(env, auth));
+      if (path === '/api/me/ai' && method === 'PUT') return withCors(await handleAiCfgPut(request, env, auth));
 
       // ---- 管理接口 ----
       if (path.indexOf('/api/admin') === 0) {

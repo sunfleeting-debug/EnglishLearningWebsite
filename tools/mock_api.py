@@ -245,7 +245,7 @@ def make_handler(app):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body_bytes)))
             self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
+            self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type,Authorization")
             self.send_header("Access-Control-Max-Age", "86400")
             self.end_headers()
@@ -284,6 +284,9 @@ def make_handler(app):
 
         def do_POST(self):
             self.route("POST")
+
+        def do_PUT(self):
+            self.route("PUT")
 
         def route(self, method):
             u = urlparse(self.path)
@@ -327,6 +330,33 @@ def make_handler(app):
                     synced = app.apply_sync(auth["user"]["id"], body)
                     all_ = app.read_all(auth["user"]["id"])
                     return self.js({**all_, "syncedAt": synced})
+
+                # AI 配置存证：mock 里直接存明文 JSON（这是测试替身，不需要真加密）；
+                # 真后端用 env.AI_CFG_KEY 做 AES-GCM，那条由 tools/verify_ai_cfg_api.py 验。
+                if path == "/api/me/ai" and method == "GET":
+                    row = app.db.one("SELECT ai_cfg, ai_cfg_at FROM users WHERE id=?",
+                                     (auth["user"]["id"],))
+                    cfg = None
+                    if row and row["ai_cfg"]:
+                        try:
+                            cfg = json.loads(row["ai_cfg"])
+                        except ValueError:
+                            cfg = None
+                    return self.js({"cfg": cfg, "at": (row["ai_cfg_at"] if row else 0) or 0})
+
+                if path == "/api/me/ai" and method == "PUT":
+                    body = self.body()
+                    cfg = body.get("cfg")
+                    at = int(body.get("at") or 0)
+                    if not isinstance(cfg, dict):
+                        return self.fail("缺少配置内容")
+                    row = app.db.one("SELECT ai_cfg_at FROM users WHERE id=?", (auth["user"]["id"],))
+                    cur = (row["ai_cfg_at"] if row else 0) or 0
+                    if cur > at:
+                        return self.js({"ok": True, "kept": "server", "at": cur})
+                    app.db.run("UPDATE users SET ai_cfg=?, ai_cfg_at=? WHERE id=?",
+                               (json.dumps(cfg), at, auth["user"]["id"]))
+                    return self.js({"ok": True, "at": at})
 
                 if path.startswith("/api/admin"):
                     if not app.is_admin(auth["user"]):

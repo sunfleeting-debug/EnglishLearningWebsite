@@ -819,9 +819,9 @@
     var isCustom = c.provider === 'custom';
     return '<div class="card card-pad ai-setup">' +
       '<div class="card-title" style="margin-bottom:.35rem">先接入一个模型</div>' +
-      '<div class="set-hint" style="margin-bottom:.9rem">API Key 只保存在这台设备的浏览器里，' +
-        '不会进云端同步、也不会出现在导出备份里。内置提供方经本站 Worker 转发一次（不落库、不记日志）；' +
-        '自定义接口默认由浏览器直连。' +
+      '<div class="set-hint" style="margin-bottom:.9rem">API Key 存在这台设备的浏览器里；' +
+        '<b>登录账号后会加密同步到你的云端</b>（换设备登录即可直接用），但不会写进导出备份。' +
+        '内置提供方经本站 Worker 转发一次（不落库、不记日志）；自定义接口默认由浏览器直连。' +
       '</div>' +
       '<div class="ai-prov">' + TW.ai.PROVIDERS.map(function (x) {
         return '<button type="button" class="ai-prov-btn' + (x.id === c.provider ? ' on' : '') +

@@ -254,6 +254,63 @@ def main():
             check("设置页点直连写进配置", pg.evaluate("() => TW.ai.via()"), "direct")
             check("设置页高亮跟着走", pg.inner_text("#set-ai-via button.active"), "浏览器直连")
 
+            # ---- 8. Key 上云：本地改了自动推、云端更新能拉回、旧时间戳不倒退 ----
+            pg.evaluate("""() => {
+                window.__cloud = { cfg: null, at: 0, puts: 0, gets: 0 };
+                TW.api.aiCfgGet = function () {
+                  window.__cloud.gets++;
+                  return Promise.resolve({ cfg: window.__cloud.cfg, at: window.__cloud.at });
+                };
+                TW.api.aiCfgPut = function (cfg, at) {
+                  window.__cloud.puts++;
+                  if (at < window.__cloud.at) return Promise.resolve({ ok: true, kept: 'server' });
+                  window.__cloud.cfg = cfg; window.__cloud.at = at;
+                  return Promise.resolve({ ok: true });
+                };
+                TW.api.token = function () { return 'test-token'; };
+            }""")
+            pg.evaluate("() => TW.ai.setKey('sk-cloud-1234567890')")
+            pg.wait_for_timeout(1700)          # 推送有 1.2s 防抖
+            check("保存 Key 后自动推到云端", pg.evaluate("() => window.__cloud.puts >= 1"), True)
+            check("云端收到的是这把 Key",
+                  pg.evaluate("() => (window.__cloud.cfg.keys || {}).custom"), "sk-cloud-1234567890")
+            check("上传的配置不含本地模型缓存（modelLists）",
+                  pg.evaluate("() => window.__cloud.cfg.modelLists === undefined"), True)
+
+            # 云端更新（比如手机上刚存的）→ 拉下来覆盖本地
+            pg.evaluate("""() => {
+                var at = Date.now() + 60000;
+                window.__cloud.cfg = { provider: 'custom', keys: { custom: 'sk-from-phone' },
+                    models: { custom: 'phone-model' }, baseUrl: 'https://agnes.example.com/v1',
+                    via: 'direct', at: at };
+                window.__cloud.at = at;
+            }""")
+            got = pg.evaluate("() => TW.ai.syncPull().then(function (r) { return [r, TW.ai.apiKey(), TW.ai.modelName()]; })")
+            check("云端更新时能拉下来覆盖", got[0], True)
+            check("取回的是云端那把 Key", got[1], "sk-from-phone")
+            check("模型也跟着回来了", got[2], "phone-model")
+
+            # 本地比云端新 → 不许被旧值倒灌（把本地时钟往后推 2 分钟，模拟「之后才改的」）
+            pg.evaluate("() => { window.__nowOff += 120000; TW.ai.setKey('sk-local-newer'); }")
+            got2 = pg.evaluate("() => TW.ai.syncPull().then(function (r) { return [r, TW.ai.apiKey()]; })")
+            check("本地更新时不被云端旧值覆盖", got2, [False, "sk-local-newer"])
+
+            # 老配置没有 at 字段（这个字段是后加的）：补上时间戳并推上去，别一直空着
+            pg.evaluate("""() => {
+                localStorage.setItem('typingcet.ai.v1', JSON.stringify({
+                    provider: 'custom', keys: { custom: 'sk-legacy-1234567890' },
+                    models: { custom: 'legacy-model' }, baseUrl: 'https://agnes.example.com/v1'
+                }));
+                TW.ai.reload();
+                window.__cloud = { cfg: null, at: 0, puts: 0, gets: 0 };
+            }""")
+            pg.evaluate("() => TW.ai.syncPull()")
+            pg.wait_for_timeout(200)
+            check("没有 at 的老配置也会推上云", pg.evaluate("() => window.__cloud.puts"), 1)
+            check("推上去的还是那把老 Key",
+                  pg.evaluate("() => (window.__cloud.cfg.keys || {}).custom"), "sk-legacy-1234567890")
+            check("并且补了时间戳", pg.evaluate("() => window.__cloud.cfg.at > 0"), True)
+
             check("无 JS 报错", errs, [])
             b.close()
     finally:

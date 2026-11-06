@@ -38,7 +38,7 @@
     /* via: 'direct' = 自定义接口只从浏览器直连（默认）；'auto' = 直连不通再退回 Worker 转发。
        sunfleeting 2026-11-06 定的默认值：中转网关的 CORS 往往是全开的，而 Worker 的出口 IP
        被上千个 Worker 共用，最容易吃到上游的 1015 限流 —— 能直连就别绕后端。 */
-    return { provider: 'deepseek', keys: {}, models: {}, baseUrl: '', modelLists: {}, via: 'direct' };
+    return { provider: 'deepseek', keys: {}, models: {}, baseUrl: '', modelLists: {}, via: 'direct', at: 0 };
   }
 
   var cache = null;
@@ -55,6 +55,7 @@
         c.baseUrl = String(d.baseUrl || '');
         c.modelLists = d.modelLists || {};
         c.via = d.via === 'auto' ? 'auto' : 'direct';
+        c.at = Number(d.at) || 0;          // 配置最后修改时间，云端合并「后写覆盖」用
       }
     } catch (e) { /* 配置损坏 → 用默认值，不影响主流程 */ }
     cache = c;
@@ -67,9 +68,85 @@
 
   function save(patch) {
     var c = config();
-    Object.keys(patch || {}).forEach(function (k) { c[k] = patch[k]; });
+    var keys = Object.keys(patch || {});
+    keys.forEach(function (k) { c[k] = patch[k]; });
+    /* modelLists 只是「这把 Key 能用哪些模型」的本地缓存，不进云端，
+       改它不算改配置（不计时间戳、不触发上传） */
+    var cacheOnly = keys.length === 1 && keys[0] === 'modelLists';
+    if (!cacheOnly) c.at = Date.now();
     try { localStorage.setItem(K, JSON.stringify(c)); } catch (e) {}
+    if (!cacheOnly) schedulePush();
     return c;
+  }
+
+  /* ---------------- 云端存证（Key 跨设备） ----------------
+     为什么值得做：Key 是「手机上能不能直接用 AI」的唯一障碍。存云端也不是明文裸奔 ——
+     Worker 用 env.AI_CFG_KEY 做 AES-GCM 加密后才落库（见 worker/index.js 的 sealCfg）。
+     合并规则：整体后写覆盖（比 at）；配置只有一份，逐字段合并没有意义。
+     没登录 / 后端没配密钥 / 断网 —— 一律静默跳过，本地照常用。 */
+
+  function canSync() {
+    return !!(TW.api && TW.api.token && TW.api.token() && TW.api.aiCfgPut);
+  }
+
+  /** 该上云的那部分：modelLists 是本地缓存（体积大、和设备有关），剔掉 */
+  function cloudCfg() {
+    var c = config();
+    return {
+      provider: c.provider, keys: c.keys || {}, models: c.models || {},
+      baseUrl: String(c.baseUrl || ''), via: via(), at: c.at || 0
+    };
+  }
+
+  var pushTimer = null;
+
+  /** 本地改了配置 → 防抖 1.2s 推云端（别边敲 Key 边发请求） */
+  function schedulePush() {
+    if (!canSync()) return;
+    if (pushTimer) clearTimeout(pushTimer);
+    pushTimer = setTimeout(function () {
+      pushTimer = null;
+      var cfg = cloudCfg();
+      if (!cfg.at) return;
+      TW.api.aiCfgPut(cfg, cfg.at).then(function () {}, function () { /* 离线就等下次 */ });
+    }, 1200);
+  }
+
+  /** 从云端拉一次：云端更新才覆盖本地（新设备登录后「AI 直接可用」靠这条） */
+  function pullCfg() {
+    if (!canSync()) return Promise.resolve(false);
+    return TW.api.aiCfgGet().then(function (r) {
+      var remote = r && r.cfg;
+      if (!remote) {                        // 云端还没有 ⇒ 把本地这份先推上去
+        var c0 = config();
+        /* 老配置里没有 at 字段（这个字段是后加的）：就地补一个，否则「云端空 + 本地 at=0」
+           会一直不推 —— 表现为「我明明填了 Key，云端却一直是空的」 */
+        if (!c0.at) {
+          c0.at = Date.now();
+          try { localStorage.setItem(K, JSON.stringify(c0)); } catch (e) {}
+        }
+        var mine = cloudCfg();
+        return TW.api.aiCfgPut(mine, mine.at).then(function () { return false; },
+                                                    function () { return false; });
+      }
+      var ra = Math.max(Number(r.at) || 0, Number(remote.at) || 0);
+      if (ra <= (config().at || 0)) return false;      // 本地更新（或一样新），不倒退
+      var c = config();
+      c.provider = provider(remote.provider).id;
+      c.keys = remote.keys || {};
+      c.models = remote.models || {};
+      c.baseUrl = String(remote.baseUrl || '');
+      c.via = remote.via === 'auto' ? 'auto' : 'direct';
+      c.at = ra;
+      try { localStorage.setItem(K, JSON.stringify(c)); } catch (e) {}
+      if (TW.toast) TW.toast('已取回云端的 AI 配置');
+      return true;
+    }, function (e) {
+      /* 401（登录过期）/ 503（后端还没配加密密钥）/ 409（解不开）都不该影响本地使用，
+         但 409 要让人知道：多半是后端换过密钥，重新在本机保存一次 Key 即可 */
+      if (e && e.status === 409 && TW.toast) TW.toast('云端 AI 配置解不开，请在本机重新保存一次 Key', 'err');
+      return false;
+    });
   }
 
   function apiKey() { var c = config(); return String(c.keys[c.provider] || ''); }
@@ -1255,6 +1332,10 @@
     baseUrl: baseUrl,
     via: via,
     setVia: setVia,
+    syncPush: schedulePush,
+    syncPull: pullCfg,
+    /** 外部改过 localStorage（导入备份 / 测试）后让内存缓存失效；正常流程用不到 */
+    reload: function () { cache = null; return config(); },
     configured: configured,
     isLocal: isLocal,
     listModels: listModels,

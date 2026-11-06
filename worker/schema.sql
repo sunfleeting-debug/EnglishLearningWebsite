@@ -12,8 +12,14 @@ CREATE TABLE IF NOT EXISTS users (
   name       TEXT NOT NULL DEFAULT '',
   created_at INTEGER NOT NULL,        -- 毫秒时间戳
   last_seen  INTEGER NOT NULL,
-  synced_at  INTEGER NOT NULL DEFAULT 0
+  synced_at  INTEGER NOT NULL DEFAULT 0,
+  ai_cfg     TEXT NOT NULL DEFAULT '', -- AI 配置（含 Key）的 AES-GCM 密文：<ivB64>.<ctB64>
+  ai_cfg_at  INTEGER NOT NULL DEFAULT 0 -- 该配置的写入时间戳（后写覆盖用）
 );
+
+-- 老库补列（新库上面建表已含；重复执行会报 duplicate column，忽略即可）
+-- ALTER TABLE users ADD COLUMN ai_cfg TEXT NOT NULL DEFAULT '';
+-- ALTER TABLE users ADD COLUMN ai_cfg_at INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
 -- 登录会话（不记 cookie，前端拿 token 放 Authorization 头） -------------------
