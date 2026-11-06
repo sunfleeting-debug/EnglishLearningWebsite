@@ -17,6 +17,10 @@ with static_server() as base, sync_playwright() as playwright:
         assert '40%' in page.get_by_text('本月早些时候，名为 Onward', exact=False).inner_text()
         page.locator('[data-q]').first.click()
         page.get_by_text('M: Hello, doctor.').wait_for()
+        page.evaluate("() => location.hash='/quiz?set=personal-cet6-202312-2-listening'")
+        page.get_by_text('查看其他段落的中文译文').click()
+        page.get_by_text('讲座三 · 第 22–25 题').wait_for()
+        assert '2016 年是人类历史上最好的一年' in page.get_by_text('到 2016 年底', exact=False).inner_text()
         page.evaluate("() => location.hash='/quiz?set=personal-cet6-202106-1-listening'")
         page.get_by_text('完整原文与译文 · 原册').click()
         page.get_by_alt_text('完整原文与译文 · 原册 第 1 页，点击放大').wait_for()
@@ -26,10 +30,14 @@ with static_server() as base, sync_playwright() as playwright:
         page.get_by_alt_text('完整英文原文 · 原册 第 1 页，点击放大').wait_for()
         page.get_by_text('完整中文译文 · 原册').click()
         page.get_by_alt_text('完整中文译文 · 原册 第 1 页，点击放大').wait_for()
+        page.evaluate("() => location.hash='/quiz?set=personal-cet6-202209-1-listening'")
+        page.get_by_text('完整英文原文 · 原册').click()
+        assert page.get_by_alt_text('完整英文原文 · 原册 第 1 页，点击放大').get_attribute('src').endswith('original-01.webp')
         page.evaluate("() => location.hash='/quiz?set=personal-cet6-202512-2-listening'")
-        page.get_by_text('这套听力的完整中文译文还在整理。').wait_for()
         page.get_by_text('完整英文原文 · 原册').click()
         page.get_by_alt_text('完整英文原文 · 原册 第 1 页，点击放大').wait_for()
+        page.get_by_text('完整中文译文 · 原册').click()
+        page.get_by_alt_text('完整中文译文 · 原册 第 1 页，点击放大').wait_for()
         page.evaluate("""() => {
           localStorage.setItem('typingcet.listen.v1', JSON.stringify({results: {sample: {right: 8, total: 10, ts: Date.now()}}}));
           const item = TW_WRITING.items.find(x => x.type === 'trans');

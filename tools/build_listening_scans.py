@@ -8,6 +8,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parent.parent
 PAPERS = ROOT / '星火六级' / '六级真题' / '六级真题'
 TARGET = ROOT / 'assets' / 'listening-text'
+TRANSLATIONS = ROOT / '星火六级' / '听力译文（配套）'
 
 
 def render(pdf, pages, directory, kind, dpi=140, quality=85):
@@ -64,10 +65,21 @@ def main():
         folder = next(PAPERS.glob(f'{yearmonth[:4]}年{yearmonth[4:]}*'))
         source = next(p for p in folder.rglob('*.pdf') if ('解析' in p.name or '详解' in p.name) and f'第{number}套' in p.name)
         dest = TARGET / f'{yearmonth}-{number}'
+        first = 1 if yearmonth in ('202209', '202303') else 2
         output[f'personal-cet6-{yearmonth}-{number}-listening'] = {
-            'original': render(source, range(2, last + 1), dest, 'original', dpi=140, quality=70),
+            'original': render(source, range(first, last + 1), dest, 'original', dpi=140, quality=70),
             'originalOnly': True,
         }
+        # The original answer-book QR codes link to these supplied translation booklets.
+        translation_pdf = TRANSLATIONS / ('202506-listening-translation.pdf' if yearmonth == '202506'
+                                   else f'202512-{number}-listening-translation.pdf')
+        if yearmonth in ('202506', '202512'):
+            if not translation_pdf.exists():
+                raise FileNotFoundError(f'缺少配套听力译文：{translation_pdf}')
+            translation_pages = (range(1, 5) if number == 1 else range(5, 9)) if yearmonth == '202506' else range(1, 8)
+            output[f'personal-cet6-{yearmonth}-{number}-listening']['translation'] = render(
+                translation_pdf, translation_pages, dest, 'translation', dpi=150, quality=80)
+            del output[f'personal-cet6-{yearmonth}-{number}-listening']['originalOnly']
         print(f'{yearmonth}-{number}: English script pages 2–{last}', flush=True)
     (ROOT / 'data' / 'personal-listening-scans.js').write_text(
         'window.TW_PERSONAL_LISTENING_SCANS = ' + json.dumps(output, ensure_ascii=False, separators=(',', ':')) + ';\n',
