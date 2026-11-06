@@ -13,6 +13,15 @@ with static_server() as base, sync_playwright() as playwright:
         page.get_by_text('男：你好，医生。').wait_for()
         page.locator('[data-q]').first.click()
         page.get_by_text('M: Hello, doctor.').wait_for()
+        page.evaluate("() => location.hash='/quiz?set=personal-cet6-202106-1-listening'")
+        page.get_by_text('完整原文与译文 · 原册').click()
+        page.get_by_alt_text('完整原文与译文 · 原册 第 1 页，点击放大').wait_for()
+        assert page.locator('img[alt^="完整原文与译文 · 原册"]').count() == 27
+        page.evaluate("() => location.hash='/quiz?set=personal-cet6-202406-1-listening'")
+        page.get_by_text('完整英文原文 · 原册').click()
+        page.get_by_alt_text('完整英文原文 · 原册 第 1 页，点击放大').wait_for()
+        page.get_by_text('完整中文译文 · 原册').click()
+        page.get_by_alt_text('完整中文译文 · 原册 第 1 页，点击放大').wait_for()
         page.evaluate("""() => {
           localStorage.setItem('typingcet.listen.v1', JSON.stringify({results: {sample: {right: 8, total: 10, ts: Date.now()}}}));
           const item = TW_WRITING.items.find(x => x.type === 'trans');
