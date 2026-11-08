@@ -12,7 +12,7 @@
   var TW = window.TW = window.TW || {};
 
   var KEY = 'typingcet.quiz.v1';
-  var S = { published: [], results: {} };
+  var S = { published: [], results: {}, ts: 0 };
   var loadErr = '';
 
   function read() {
@@ -23,17 +23,21 @@
       if (o && typeof o === 'object') {
         S.published = Array.isArray(o.published) ? o.published : [];
         S.results = (o.results && typeof o.results === 'object') ? o.results : {};
+        S.ts = Number(o.ts) || 0;
       }
     } catch (e) {
       loadErr = '本机题目记录读不出来（可能存储空间满了），这次先按空记录显示';
     }
   }
   function write() {
+    S.ts = Date.now();                     // 块级时间戳：云端「同键后写覆盖」靠它
     try {
       window.localStorage.setItem(KEY, JSON.stringify(S));
     } catch (e) {
       loadErr = '题目记录保存失败（浏览器存储已满）';
     }
+    /* 改了就让云同步排一次（登录才会真的发，未登录是空操作） */
+    if (TW.sync && TW.sync.blobDirty) TW.sync.blobDirty(KEY);
   }
 
   /** 题库里的真题（静态数据，可能因为脚本没加载而缺席）
@@ -410,10 +414,50 @@
 
   read();
 
+  /* ---------- 云同步（小数据块） ----------
+     这块 JSON 怎么合并只有这里清楚：results 是按套 id 一条、每条自带 ts；
+     published 是 AI 发布过的题（同一 id 就是同一份题）。所以服务端只做
+     「带时间戳的键值覆盖」，合并算法放在这里，两边真合并、不互相抹。
+     见 worker/index.js 的 handleBlobPut 与 assets/js/sync.js 的 syncBlobs。 */
+
+  /** 整块导出（含块级 ts） */
+  function raw() {
+    return { published: S.published.slice(), results: Object.assign({}, S.results), ts: S.ts || 0 };
+  }
+
+  /** 把云端那份并进来：逐条按 ts 取新，返回本地是否有变化 */
+  function mergeRemote(obj) {
+    if (!obj || typeof obj !== 'object') return false;
+    var changed = false, ts = Number(obj.ts) || 0;
+
+    if (Array.isArray(obj.published)) {
+      obj.published.forEach(function (p) {
+        if (!p || !p.id) return;
+        var i = -1;
+        for (var j = 0; j < S.published.length; j++) if (S.published[j].id === p.id) { i = j; break; }
+        if (i < 0) { S.published.push(p); changed = true; return; }
+        if ((Number(p.ts) || 0) > (Number(S.published[i].ts) || 0)) { S.published[i] = p; changed = true; }
+      });
+    }
+    if (obj.results && typeof obj.results === 'object') {
+      Object.keys(obj.results).forEach(function (id) {
+        var r = obj.results[id];
+        if (!r || typeof r !== 'object') return;
+        var mine = S.results[id];
+        if (!mine) { S.results[id] = r; changed = true; return; }
+        if ((Number(r.ts) || 0) > (Number(mine.ts) || 0)) { S.results[id] = r; changed = true; }
+      });
+    }
+    if (ts > (S.ts || 0)) S.ts = ts;       // 块级时间戳只进不退
+    if (changed) write();
+    return changed;
+  }
+
   TW.quiz = {
     bank: bank, zhenti: zhentiBank, all: all, get: get, result: result, saveResult: saveResult,
     clearResult: clearResult, publish: publish, removePublished: removePublished,
     summary: summary, judge: judge, norm: norm, fromExercises: fromExercises,
-    published: publishedSets, error: function () { return loadErr; }
+    published: publishedSets, error: function () { return loadErr; },
+    raw: raw, mergeRemote: mergeRemote
   };
 })();

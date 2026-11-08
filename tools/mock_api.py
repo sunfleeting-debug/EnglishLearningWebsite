@@ -30,6 +30,9 @@ SCHEMA = ROOT / "worker" / "schema.sql"
 PBKDF2_ITER = 100000
 TOKEN_TTL_MS = 30 * 24 * 3600 * 1000
 MAX_BODY = 6 * 1024 * 1024
+# 小数据块（做题记录）：键名单与 Worker 的 BLOB_KEYS 必须一致，改一处必改另一处
+BLOB_KEYS = ["typingcet.quiz.v1"]
+BLOB_MAX = 512 * 1024
 
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]{2,}$")
 
@@ -357,6 +360,43 @@ def make_handler(app):
                     app.db.run("UPDATE users SET ai_cfg=?, ai_cfg_at=? WHERE id=?",
                                (json.dumps(cfg), at, auth["user"]["id"]))
                     return self.js({"ok": True, "at": at})
+
+                # 小数据块（做题记录）：与 Worker 同规则 —— 白名单键 + 整块后写覆盖，
+                # 块内合并由前端 quiz.js 做（两边的「键名单」必须一致）
+                if path == "/api/me/blobs" and method == "GET":
+                    rows = app.db.q("SELECT k, json, ts FROM user_blobs WHERE user_id=?",
+                                       (auth["user"]["id"],))
+                    blobs = {}
+                    for r in rows:
+                        try:
+                            blobs[r["k"]] = {"data": json.loads(r["json"]), "ts": r["ts"] or 0}
+                        except ValueError:
+                            pass
+                    return self.js({"blobs": blobs})
+
+                if path == "/api/me/blobs" and method in ("PUT", "POST"):
+                    body = self.body()
+                    k = str(body.get("k") or "")
+                    if k not in BLOB_KEYS:
+                        return self.fail("不支持的同步键：" + k)
+                    data = body.get("data")
+                    ts = int(body.get("ts") or 0)
+                    if not isinstance(data, dict):
+                        return self.fail("缺少数据内容")
+                    if not ts:
+                        return self.fail("缺少时间戳（合并要用它判先后）")
+                    text = json.dumps(data)
+                    if len(text) > BLOB_MAX:
+                        return self.fail("数据块太大（%d 字节）" % len(text))
+                    row = app.db.one("SELECT ts FROM user_blobs WHERE user_id=? AND k=?",
+                                     (auth["user"]["id"], k))
+                    cur = (row["ts"] if row else 0) or 0
+                    if cur > ts:
+                        return self.js({"ok": True, "kept": "server", "ts": cur})
+                    app.db.run("INSERT INTO user_blobs (user_id,k,json,ts) VALUES (?,?,?,?) "
+                               "ON CONFLICT(user_id,k) DO UPDATE SET json=excluded.json, ts=excluded.ts",
+                               (auth["user"]["id"], k, text, ts))
+                    return self.js({"ok": True, "ts": ts})
 
                 if path.startswith("/api/admin"):
                     if not app.is_admin(auth["user"]):

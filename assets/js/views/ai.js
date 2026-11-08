@@ -813,6 +813,33 @@
     '</label>';
   }
 
+  /* 云端同步状态的一行文字：让人一眼确认 Key 到底存上去了没，
+     不再靠「手机上还得重新填」这种间接症状去猜（2026-11-08 CORS 事件后加的） */
+  function cloudText() {
+    var logged = !!(TW.api && TW.api.token && TW.api.token());
+    if (!logged) return '云端同步：未登录 —— Key 只存在这台设备上';
+    var st = (TW.ai.cloudStatus && TW.ai.cloudStatus()) || { state: 'off' };
+    if (st.state === 'pushing') return '云端同步：正在加密保存…';
+    if (st.state === 'pulling') return '云端同步：正在检查云端…';
+    if (st.state === 'ok') return '云端同步：已加密保存到账号，换设备登录会自动取回 ✓';
+    if (st.state === 'err') return '云端同步失败：' + (st.msg || '未知原因') + '（本机照常可用）';
+    return '云端同步：登录后会加密保存到账号';
+  }
+
+  function paintCloud() {
+    var el = TW.$('#ai-cloud');
+    if (!el) return;
+    el.textContent = cloudText();
+    el.style.color = (TW.ai.cloudStatus && TW.ai.cloudStatus().state === 'err') ? '#c0392b' : '';
+  }
+
+  var cloudBound = false;
+  function bindCloud() {
+    if (cloudBound) return;
+    cloudBound = true;
+    window.addEventListener('tw:ai-cloud', paintCloud);
+  }
+
   function setupCard() {
     var c = TW.ai.config();
     var p = TW.ai.provider(c.provider);
@@ -823,6 +850,7 @@
         '<b>登录账号后会加密同步到你的云端</b>（换设备登录即可直接用），但不会写进导出备份。' +
         '内置提供方经本站 Worker 转发一次（不落库、不记日志）；自定义接口默认由浏览器直连。' +
       '</div>' +
+      '<div class="set-hint small" id="ai-cloud" style="margin:-.55rem 0 .9rem">' + esc(cloudText()) + '</div>' +
       '<div class="ai-prov">' + TW.ai.PROVIDERS.map(function (x) {
         return '<button type="button" class="ai-prov-btn' + (x.id === c.provider ? ' on' : '') +
           '" data-prov="' + x.id + '"><b>' + esc(x.name) + '</b><span>' + esc(x.hint) + '</span></button>';
@@ -1032,13 +1060,14 @@
 
   function render(host) {
     HOST = host;
+    bindCloud();                       // 状态行要能被异步回调重绘（已绑过就跳过）
     S.threads = TW.ai.listThreads();
     /* configured() 在「Key + 默认模型」齐了就算通，但那一刻用户还在配置卡上选模型，
        不能直接把人踢进聊天页 —— 所以未配置过的人必须先点「保存并开始」。 */
     if (!TW.ai.configured()) S.entered = false;
     var ok = TW.ai.configured() && S.entered !== false;
     host.innerHTML = '<div class="wrap">' +
-      TW.ui.pageHead('AI 英语助手', ok ? '聊天式教练：读你的数据、出题、讲单词' : '先填一个自己的 API Key（只存本机）',
+      TW.ui.pageHead('AI 英语助手', ok ? '聊天式教练：读你的数据、出题、讲单词' : '先接入一个模型：Key 存本机，登录账号后加密同步到云端',
         '<a class="btn ghost" href="#/settings">' + TW.icon('settings', 15) + ' 模型设置</a>') +
       (ok ? shell() : setupCard()) +
     '</div>';

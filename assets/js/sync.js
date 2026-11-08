@@ -121,6 +121,7 @@
       /* AI 配置（含 Key）单独走 /api/me/ai：登录后顺手拉一次，
          新设备就能直接用 AI，不用重新填 Key */
       if (TW.ai && TW.ai.syncPull) TW.ai.syncPull();
+      syncBlobs();          // 做题记录等「本地键」的云端副本
     });
 
     window.addEventListener('pagehide', beacon);
@@ -133,13 +134,71 @@
     else {
       flush(true);      // 带着会话刷新页面：对齐一次（也补上刷新期间可能漏掉的改动）
       if (TW.ai && TW.ai.syncPull) TW.ai.syncPull();
+      syncBlobs();
     }
+  }
+
+  /* ---------------- 小数据块同步（做题记录） ----------------
+     和学习进度不一样：这块 JSON 的内部结构（results 按套 id、每条自带 ts）只有 quiz.js 懂，
+     所以服务端只做「整块 + 时间戳后写覆盖」，合并算法在 quiz.js 的 mergeRemote 里。
+     这里只负责编排，且**必须先拉再推** —— 反过来的话，后同步的设备会拿自己的旧块
+     把另一台刚写进去的记录整块盖掉（这正是「手机做了题电脑看不到」的成因之一）。 */
+  var BLOBS = ['typingcet.quiz.v1'];
+  var blobTimer = null;
+  var blobBusy = false;
+  var blobAgain = false;
+
+  function localBlob(k) {
+    if (k === 'typingcet.quiz.v1' && TW.quiz && TW.quiz.raw) return TW.quiz.raw();
+    return null;
+  }
+  function applyBlob(k, data) {
+    if (k === 'typingcet.quiz.v1' && TW.quiz && TW.quiz.mergeRemote) return TW.quiz.mergeRemote(data);
+    return false;
+  }
+
+  function syncBlobs() {
+    if (!enabled() || !TW.api.blobsGet) return Promise.resolve(false);
+    if (blobBusy) { blobAgain = true; return Promise.resolve(false); }
+    blobBusy = true;
+    return TW.api.blobsGet().then(function (r) {
+      var blobs = (r && r.blobs) || {};
+      var chain = Promise.resolve();
+      BLOBS.forEach(function (k) {
+        var local = localBlob(k);
+        if (!local) return;
+        var remote = blobs[k];
+        var changed = (remote && remote.data) ? applyBlob(k, remote.data) : false;
+        var mine = localBlob(k) || local;
+        var rts = (remote && remote.ts) || 0;
+        if (!remote || changed || (mine.ts || 0) > rts) {
+          chain = chain.then(function () {
+            return TW.api.blobsPut(k, mine, Math.max(mine.ts || 0, Date.now()))
+              .then(null, function () {});
+          });
+        }
+      });
+      return chain;
+    }).then(function () {
+      blobBusy = false;
+      if (blobAgain) { blobAgain = false; return syncBlobs(); }
+      return true;
+    }, function () { blobBusy = false; return false; });
+  }
+
+  /** 本地块改动了（quiz.js 的 write 会调）→ 攒 1.5s 再同步 */
+  function blobDirty() {
+    if (!enabled()) return;
+    if (blobTimer) clearTimeout(blobTimer);
+    blobTimer = setTimeout(function () { blobTimer = null; syncBlobs(); }, 1500);
   }
 
   TW.sync = {
     init: init,
     flush: flush,
     schedule: schedule,
+    syncBlobs: syncBlobs,
+    blobDirty: blobDirty,
     enabled: enabled,
     snapshot: snapshot,
     onChange: onChange,

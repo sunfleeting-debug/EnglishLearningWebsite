@@ -100,21 +100,38 @@
 
   var pushTimer = null;
 
+  /* 云端同步状态：只在 UI 上做一件事 —— 让人看得见「到底存上去了没」。
+     2026-11-08 的教训：CORS 少一个 PUT，上传全部静默失败，界面上却写着「会自动同步」，
+     用户只能靠「手机上还得重新填 Key」这种间接症状才发现。 */
+  var cloud = { state: 'off', msg: '', at: 0 };
+  function cloudStatus() { return { state: cloud.state, msg: cloud.msg, at: cloud.at }; }
+  function setCloud(state, msg) {
+    cloud.state = state;
+    cloud.msg = msg || '';
+    cloud.at = Date.now();
+    try { window.dispatchEvent(new CustomEvent('tw:ai-cloud')); } catch (e) {}
+  }
+
   /** 本地改了配置 → 防抖 1.2s 推云端（别边敲 Key 边发请求） */
   function schedulePush() {
-    if (!canSync()) return;
+    if (!canSync()) { setCloud('off'); return; }
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(function () {
       pushTimer = null;
       var cfg = cloudCfg();
       if (!cfg.at) return;
-      TW.api.aiCfgPut(cfg, cfg.at).then(function () {}, function () { /* 离线就等下次 */ });
+      setCloud('pushing');
+      TW.api.aiCfgPut(cfg, cfg.at).then(function () { setCloud('ok'); },
+        function (e) {
+          setCloud('err', (e && (e.message || e.status)) || '网络错误');
+        });
     }, 1200);
   }
 
   /** 从云端拉一次：云端更新才覆盖本地（新设备登录后「AI 直接可用」靠这条） */
   function pullCfg() {
-    if (!canSync()) return Promise.resolve(false);
+    if (!canSync()) { setCloud('off'); return Promise.resolve(false); }
+    setCloud('pulling');
     return TW.api.aiCfgGet().then(function (r) {
       var remote = r && r.cfg;
       if (!remote) {                        // 云端还没有 ⇒ 把本地这份先推上去
@@ -126,11 +143,14 @@
           try { localStorage.setItem(K, JSON.stringify(c0)); } catch (e) {}
         }
         var mine = cloudCfg();
-        return TW.api.aiCfgPut(mine, mine.at).then(function () { return false; },
-                                                    function () { return false; });
+        return TW.api.aiCfgPut(mine, mine.at).then(function () { setCloud('ok'); return false; },
+                                                    function (e) {
+          setCloud('err', (e && (e.message || e.status)) || '网络错误');
+          return false;
+        });
       }
       var ra = Math.max(Number(r.at) || 0, Number(remote.at) || 0);
-      if (ra <= (config().at || 0)) return false;      // 本地更新（或一样新），不倒退
+      if (ra <= (config().at || 0)) { setCloud('ok'); return false; }   // 本地更新（或一样新），不倒退
       var c = config();
       c.provider = provider(remote.provider).id;
       c.keys = remote.keys || {};
@@ -139,12 +159,17 @@
       c.via = remote.via === 'auto' ? 'auto' : 'direct';
       c.at = ra;
       try { localStorage.setItem(K, JSON.stringify(c)); } catch (e) {}
+      setCloud('ok');
       if (TW.toast) TW.toast('已取回云端的 AI 配置');
       return true;
     }, function (e) {
       /* 401（登录过期）/ 503（后端还没配加密密钥）/ 409（解不开）都不该影响本地使用，
          但 409 要让人知道：多半是后端换过密钥，重新在本机保存一次 Key 即可 */
-      if (e && e.status === 409 && TW.toast) TW.toast('云端 AI 配置解不开，请在本机重新保存一次 Key', 'err');
+      if (e && e.status === 401) setCloud('off');
+      else if (e && e.status === 409) {
+        setCloud('err', '云端配置解不开，请重新保存一次 Key');
+        if (TW.toast) TW.toast('云端 AI 配置解不开，请在本机重新保存一次 Key', 'err');
+      } else setCloud('err', (e && (e.message || e.status)) || '网络错误');
       return false;
     });
   }
@@ -1334,6 +1359,7 @@
     setVia: setVia,
     syncPush: schedulePush,
     syncPull: pullCfg,
+    cloudStatus: cloudStatus,
     /** 外部改过 localStorage（导入备份 / 测试）后让内存缓存失效；正常流程用不到 */
     reload: function () { cache = null; return config(); },
     configured: configured,

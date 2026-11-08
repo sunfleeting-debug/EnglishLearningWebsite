@@ -78,6 +78,17 @@ CREATE TABLE IF NOT EXISTS daily (
   PRIMARY KEY (user_id, day)
 );
 
+-- 小数据块（localStorage 里的「本地键」，目前只有做题记录 typingcet.quiz.v1） ----------
+-- 服务端只做带时间戳的键值存储：同一把 key 后写覆盖；块内合并（按套 id 取 ts 新的）
+-- 由客户端完成，因为它才知道那个 JSON 长什么样。键名单见 worker/index.js 的 BLOB_KEYS。
+CREATE TABLE IF NOT EXISTS user_blobs (
+  user_id TEXT NOT NULL,
+  k       TEXT NOT NULL,              -- localStorage 键名（白名单内）
+  json    TEXT NOT NULL DEFAULT '',   -- 整块 JSON
+  ts      INTEGER NOT NULL DEFAULT 0, -- 该块最后修改时间（毫秒）
+  PRIMARY KEY (user_id, k)
+);
+
 -- 艾宾浩斯复习队列 -----------------------------------------------------------
 CREATE TABLE IF NOT EXISTS srs (
   user_id TEXT NOT NULL,

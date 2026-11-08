@@ -73,7 +73,10 @@ function corsHeaders(env, req) {
   const allow = String(env.ALLOWED_ORIGINS == null ? '*' : env.ALLOWED_ORIGINS).trim();
   const origin = req.headers.get('Origin') || '';
   const h = {
-    'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
+    /* PUT 必须列在这里：/api/me/ai 用 PUT 上传 AI 配置，浏览器会先发预检，
+       少了 PUT 预检就被判「Method PUT is not allowed」，请求根本没有发出去
+       （2026-11-08 实测：线上一直只有 GET,POST，导致 Key 永远上传不上来） */
+    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type,Authorization',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin'
@@ -459,6 +462,50 @@ async function handleAiCfgPut(request, env, auth) {
   await env.DB.prepare('UPDATE users SET ai_cfg = ?, ai_cfg_at = ? WHERE id = ?')
     .bind(sealed, at, auth.user.id).run();
   return jsonBody({ ok: true, at: at });
+}
+
+/* --------------------------------------------------- 小数据块（blob）同步
+   为什么单开一张表而不是塞进 /api/me/sync：
+     progress/daily/srs 的合并规则是「懂业务」的（累计取 max、ts 取新、笔记看 note_ts），
+     往那个白名单里塞新字段，服务端归一化会把它抹掉（历史坑，见 sync.js 注释）。
+     做题记录（typingcet.quiz.v1）是「整块 JSON + 内部按 id 记 ts」，合并语义在客户端更清楚，
+     所以服务端只做一件事：**带时间戳的键值存储，同一把 key 后写覆盖**。
+   白名单是硬约束：只收列得出的键，别让它退化成任意文件桶。 */
+const BLOB_KEYS = ['typingcet.quiz.v1'];
+const BLOB_MAX = 512 * 1024;             // 单键 512KB（做题记录含答案/对错位，正常几十 KB）
+
+async function handleBlobGet(env, auth) {
+  const rows = await env.DB.prepare('SELECT k, json, ts FROM user_blobs WHERE user_id = ?')
+    .bind(auth.user.id).all();
+  const blobs = {};
+  (rows.results || []).forEach(function (r) {
+    let data = null;
+    try { data = JSON.parse(r.json); } catch (e) { data = null; }
+    if (data !== null) blobs[r.k] = { data: data, ts: r.ts || 0 };
+  });
+  return jsonBody({ blobs: blobs });
+}
+
+/* PUT/POST /api/me/blobs {k, data, ts} -> {ok, ts, kept?} */
+async function handleBlobPut(request, env, auth) {
+  const body = await readJson(request);
+  const k = String(body.k || '');
+  if (BLOB_KEYS.indexOf(k) < 0) return fail('不支持的同步键：' + k);
+  if (!body.data || typeof body.data !== 'object') return fail('缺少数据内容');
+  const ts = Math.max(0, Math.floor(Number(body.ts) || 0));
+  if (!ts) return fail('缺少时间戳（合并要用它判先后）');
+  const text = JSON.stringify(body.data);
+  if (text.length > BLOB_MAX) return fail('数据块太大（' + text.length + ' 字节）');
+
+  const row = await env.DB.prepare('SELECT ts FROM user_blobs WHERE user_id = ? AND k = ?')
+    .bind(auth.user.id, k).first();
+  const cur = (row && row.ts) || 0;
+  if (cur > ts) return jsonBody({ ok: true, kept: 'server', ts: cur });   // 云端更新，别倒退
+  await env.DB.prepare(
+    'INSERT INTO user_blobs (user_id, k, json, ts) VALUES (?,?,?,?) ' +
+    'ON CONFLICT(user_id, k) DO UPDATE SET json = excluded.json, ts = excluded.ts')
+    .bind(auth.user.id, k, text, ts).run();
+  return jsonBody({ ok: true, ts: ts });
 }
 
 /* ------------------------------------------------------------- 路由处理 */
@@ -1431,7 +1478,13 @@ export default {
 
       if (path === '/api/me/sync' && method === 'POST') return withCors(await handleSync(request, env, auth));
       if (path === '/api/me/ai' && method === 'GET') return withCors(await handleAiCfgGet(env, auth));
-      if (path === '/api/me/ai' && method === 'PUT') return withCors(await handleAiCfgPut(request, env, auth));
+      /* POST 是 PUT 的等价别名：某些浏览器会把「预检里没有 PUT」的失败结果缓存一阵，
+         收下 POST 就能立刻绕开，不用等人清缓存（语义一致，纯写配置） */
+      if (path === '/api/me/ai' && (method === 'PUT' || method === 'POST')) return withCors(await handleAiCfgPut(request, env, auth));
+
+      /* 小数据块（做题记录等「本地键」的云端副本） */
+      if (path === '/api/me/blobs' && method === 'GET') return withCors(await handleBlobGet(env, auth));
+      if (path === '/api/me/blobs' && (method === 'PUT' || method === 'POST')) return withCors(await handleBlobPut(request, env, auth));
 
       // ---- 管理接口 ----
       if (path.indexOf('/api/admin') === 0) {

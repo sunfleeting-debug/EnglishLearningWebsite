@@ -129,7 +129,23 @@
     /* AI 配置（含 Key）的云端存证：服务端 AES-GCM 加密后落库，取回时解密返回 */
     aiCfgGet: function () { return request('GET', '/api/me/ai', null, { timeout: 20000 }); },
     aiCfgPut: function (cfg, at) {
-      return request('PUT', '/api/me/ai', { cfg: cfg, at: at }, { timeout: 20000 });
+      var payload = { cfg: cfg, at: at };
+      /* 正常走 PUT；万一浏览器把「旧 CORS 头里没有 PUT」的预检结果缓存住了，
+         PUT 会直接报 CORS 错而请求根本没出门 —— 这时改用 POST（服务端同义）兜底 */
+      return request('PUT', '/api/me/ai', payload, { timeout: 20000 }).then(null, function (e) {
+        if (e && e.status) throw e;                       // 服务端明确回了状态码：照实报
+        return request('POST', '/api/me/ai', payload, { timeout: 20000 });
+      });
+    },
+
+    /* 小数据块（做题记录等）：服务端只存「JSON + 时间戳」，合并由客户端做 */
+    blobsGet: function () { return request('GET', '/api/me/blobs', null, { timeout: 20000 }); },
+    blobsPut: function (k, data, ts) {
+      var payload = { k: k, data: data, ts: ts };
+      return request('POST', '/api/me/blobs', payload, { timeout: 20000 }).then(null, function (e) {
+        if (e && e.status) throw e;
+        return request('PUT', '/api/me/blobs', payload, { timeout: 20000 });
+      });
     },
 
     /* 管理看板 */

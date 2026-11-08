@@ -14,10 +14,12 @@
    需要本机有 wrangler（读 D1 原始列）；没有 wrangler 就只跑 HTTP 部分。
 """
 import base64
+import glob
 import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -26,8 +28,24 @@ import uuid
 
 BASE = (os.environ.get("BASE") or "https://api.sunfleeting.website").rstrip("/")
 PROXY = os.environ.get("SMOKE_PROXY", "")
-WRANGLER = os.environ.get("WRANGLER", os.path.expanduser(
-    "~/AppData/Local/npm-cache/_npx/32026684e21afda6/node_modules/.bin/wrangler.cmd"))
+def _find_wrangler():
+    """wrangler 的 npx 缓存目录名是哈希，每次重装都会变 —— 不能写死。
+    依次试：环境变量 WRANGLER > 所有 _npx/*/.../wrangler.cmd > 全局安装。"""
+    env = os.environ.get("WRANGLER", "")
+    if env and os.path.exists(env):
+        return env
+    pat = os.path.expanduser("~/AppData/Local/npm-cache/_npx/*/node_modules/.bin/wrangler.cmd")
+    hits = sorted(glob.glob(pat), key=os.path.getmtime, reverse=True)
+    if hits:
+        return hits[0]
+    for c in ("wrangler", "wrangler.cmd", "wrangler.exe"):
+        p = shutil.which(c)
+        if p:
+            return p
+    return "wrangler"
+
+
+WRANGLER = _find_wrangler()
 DB = os.environ.get("DB", "cet-words")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
