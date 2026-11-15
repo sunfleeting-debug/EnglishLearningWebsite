@@ -298,8 +298,7 @@
     var LV = TW.store.srs.INTERVALS.length;
     var lvCount = [];
     for (var l = 0; l <= LV; l++) lvCount.push(0);
-    Object.keys(TW.store.state.srs || {}).forEach(function (w) {
-      var r = TW.store.state.srs[w];
+    TW.store.srs.active().forEach(function (r) {
       var b = clamp(Number(r.b) || 0, 0, LV);
       lvCount[b]++;
     });

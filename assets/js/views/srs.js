@@ -56,7 +56,7 @@
           '<div class="muted small" style="text-align:center;max-width:560px;margin:0 auto 1rem">' +
             '在「练习」里答错的单词会自动进入复习队列：<b>当天再练一次</b>，之后每答对一次，' +
             '间隔就按 <b>' + spanText() + '</b> 逐档拉长；答错则归零重来（当天已练过就顺延到明天）。' +
-            '你也可以在任意单词详情页点 <b>' + TW.icon('refresh', 13) + '</b> 手动加入。</div>' +
+            '已掌握的词暂不进入复习，取消掌握后恢复原排期。你也可以在单词详情页点 <b>' + TW.icon('refresh', 13) + '</b> 手动加入未掌握的词。</div>' +
           '<div class="row" style="justify-content:center">' +
             '<button class="btn primary" id="sr-go-practice">' + TW.icon('play', 16) + ' 去练习</button>' +
             '<button class="btn" id="sr-import">' + TW.icon('download', 16) + ' 导入生词本里的错词</button>' +
@@ -185,7 +185,7 @@
         '<b>复习规则</b>：练习中答错的词自动进入队列。答对一次升一档，下次复习时间 = 今天 + ' +
         '<b>' + spanText() + '</b>（第一档是当天再巩固一次，之后 1/2/3/4/6/7/10 天逐档拉长，10 天满档）；答错归零档，<b>当天再练一次</b>' +
         '（当天第二次还错就顺延到明天，昨天/更早入队的词同样顺延到明天——避免同一个词把每一轮都占满）。' +
-        '可在「设置」里关闭自动入队。' +
+        '已掌握的词暂不进入复习，取消掌握后恢复原排期。可在「设置」里关闭自动入队。' +
         (stats.total ? ' <button class="btn sm ghost" id="sr-clear" style="margin-left:.4rem">' + TW.icon('trash', 14) + ' 清空队列</button>' : '') +
       '</div>' +
     '</div>';

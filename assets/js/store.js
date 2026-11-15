@@ -321,6 +321,27 @@
 
   function srsKey(word) { return String(word == null ? '' : word).toLowerCase(); }
 
+  // 掌握状态按词条 ID 保存，排期按词面保存；旧记录可能还没有词面快照。
+  function masteredWords() {
+    var words = Object.create(null);
+    Object.keys(state.progress).forEach(function (id) {
+      var p = state.progress[id];
+      if (!p || !p.master) return;
+      var entry = !p.word && TW.data && TW.data.byId ? TW.data.byId(id) : null;
+      var word = p.word || (entry && entry.word) || (id.indexOf('x:') === 0 ? id.slice(2) : '');
+      if (word) words[srsKey(word)] = true;
+    });
+    return words;
+  }
+
+  function activeSrs() {
+    var mastered = masteredWords();
+    return Object.keys(state.srs).filter(function (k) {
+      var r = state.srs[k];
+      return r && !mastered[srsKey(r.w || k)];
+    }).map(function (k) { return state.srs[k]; });
+  }
+
   function enrollRaw(word, src, brief) {
     var k = srsKey(word);
     if (!k) return null;
@@ -340,6 +361,7 @@
 
   /** 手动把单词加入复习队列 */
   function enroll(word, src, brief) {
+    if (masteredWords()[srsKey(word)]) return null;
     var r = enrollRaw(word, src, brief);
     save(); emit('progress');
     return r;
@@ -382,9 +404,7 @@
   /** 到期（含逾期）的词，按逾期天数从多到少排序 */
   function dueList() {
     var t = today();
-    return Object.keys(state.srs).map(function (k) {
-      return state.srs[k];
-    }).filter(function (r) {
+    return activeSrs().filter(function (r) {
       return r.d <= t;
     }).sort(function (a, b) {
       return (a.d < b.d ? -1 : a.d > b.d ? 1 : 0) || a.ts - b.ts;
@@ -395,21 +415,20 @@
 
   /** 未来 n 天每天到期的数量（用于复习页的排期条） */
   function upcoming(days) {
-    var out = [], t = today();
+    var out = [], t = today(), active = activeSrs();
     for (var i = 0; i < days; i++) {
       var d = addDays(t, i);
-      var n = Object.keys(state.srs).filter(function (k) { return state.srs[k].d === d; }).length;
+      var n = active.filter(function (r) { return r.d === d; }).length;
       out.push({ date: d, count: n });
     }
     return out;
   }
 
   function srsStats() {
-    var keys = Object.keys(state.srs);
-    var due = 0, learning = 0, mastered = 0, total = keys.length;
+    var active = activeSrs();
+    var due = 0, learning = 0, mastered = 0, total = active.length;
     var t = today();
-    keys.forEach(function (k) {
-      var r = state.srs[k];
+    active.forEach(function (r) {
       if (r.d <= t) due++;
       if (r.b >= INTERVALS.length) mastered++; else learning++;
     });
@@ -555,11 +574,13 @@
       dueList: dueList,
       dueCount: dueCount,
       upcoming: upcoming,
+      active: activeSrs,
+      isMastered: function (word) { return !!masteredWords()[srsKey(word)]; },
       stats: srsStats,
       remove: srsRemove,
       reset: srsReset,
       get: function (word) { return state.srs[srsKey(word)] || null; },
-      has: function (word) { return !!state.srs[srsKey(word)]; }
+      has: function (word) { return !!state.srs[srsKey(word)] && !masteredWords()[srsKey(word)]; }
     }
   };
 })();

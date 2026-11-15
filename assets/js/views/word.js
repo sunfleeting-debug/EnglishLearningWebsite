@@ -421,6 +421,10 @@
         TW.toast(m ? '已标记掌握' : '已取消掌握');
       }
       else if (k === 'r') {
+        if (TW.store.srs.isMastered(w.word)) {
+          TW.toast('已掌握的单词不会进入复习队列，可先取消掌握');
+          return;
+        }
         if (TW.store.srs.has(w.word)) {
           TW.store.srs.remove(w.word); TW.toast('已移出复习队列');
         } else {
@@ -455,6 +459,10 @@
 
     var srsBtn = TW.$('[data-act="srs"]', host);
     if (srsBtn) srsBtn.addEventListener('click', function () {
+      if (TW.store.srs.isMastered(w.word)) {
+        TW.toast('已掌握的单词不会进入复习队列，可先取消掌握');
+        return;
+      }
       if (TW.store.srs.has(w.word)) {
         TW.store.srs.remove(w.word);
         TW.toast('已移出复习队列');

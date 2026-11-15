@@ -1,0 +1,27 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const window = { TW: { data: { byId: id => ({old: {word: 'OldWord'}}[id] || null) } } };
+const localStorage = { getItem: () => null, setItem: () => {} };
+vm.runInNewContext(fs.readFileSync('assets/js/store.js', 'utf8'), {window, localStorage, setTimeout, clearTimeout, Date});
+const store = window.TW.store;
+const due = store.today();
+store.state.progress = {a:{word:'Mastered',master:true}, b:{word:'learning',master:false}, old:{master:true}, x:{word:'Future',master:true}};
+store.state.srs = {mastered:{w:'MASTERED',d:due,b:1,ts:1}, learning:{w:'learning',d:due,b:0,ts:2}, oldword:{w:'OldWord',d:due,b:2,ts:3}, future:{w:'Future',d:store.addDays(due,1),b:1,ts:4}};
+assert.deepEqual(Array.from(store.srs.dueList(), r=>r.w), ['learning']);
+assert.equal(store.srs.stats().total, 1);
+assert.equal(store.srs.upcoming(2)[1].count, 0);
+assert.equal(store.srs.has('MASTERED'), false);
+assert.ok(store.state.srs.mastered, 'existing schedule must be preserved');
+store.toggleMaster('a');
+assert.deepEqual(Array.from(store.srs.dueList(), r=>r.w), ['MASTERED', 'learning']);
+for(let i=0;i<5;i++)store.markRight('b');
+assert.equal(store.get('b').master,true);
+assert.deepEqual(Array.from(store.srs.dueList(), r=>r.w), ['MASTERED']);
+store.applyRemote({progress:{a:{word:'Mastered',master:true}},daily:{},srs:{mastered:{w:'Mastered',d:due,b:1,ts:1}}});
+// Clear pending local changes to model a fresh incoming sync.
+store.dirty.take();
+store.applyRemote({progress:{a:{word:'Mastered',master:true}},daily:{},srs:{mastered:{w:'Mastered',d:due,b:1,ts:1}}});
+assert.equal(store.srs.dueCount(),0);
+assert.equal(store.srs.enroll('Mastered'), null);
+console.log('PASS mastered words excluded from scheduled review and restored on unmark');

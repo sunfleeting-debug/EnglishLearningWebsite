@@ -151,6 +151,10 @@
           var dueNow = {};
           TW.store.srs.dueList().forEach(function (r) { dueNow[r.w] = 1; });
           var left = resume.session.slice(resume.st.i);
+          // A word may have been marked mastered on its detail page or another device.
+          if (left.some(function (w) { return TW.store.srs.isMastered(w.word); })) {
+            resumed = null; return fresh;
+          }
           var hit = left.some(function (w) { return dueNow[w.word]; });
           if (!hit) { resumed = null; return fresh; }
         }
