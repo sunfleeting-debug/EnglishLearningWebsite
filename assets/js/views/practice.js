@@ -53,9 +53,14 @@
   var resume = null;
   TW.store.onReset(function () { resume = null; });
 
-  /* 「自由复习已学的词」的翻页游标：完成页点「学习下一组」时记录本轮已练的词 id，
+  /* 生词本（src=collection）的翻页游标：完成页点「学习下一组」时记录本轮已练的词 id，
      重新 render 时 resolvePool 把它们排除 → 取下一批；整池翻完一轮则清空从头再来。
-     只在点「学习下一组」时设置（复习页入口进来不排除，永远从最近答错的最前开始）。
+     只在点「学习下一组」时设置（从复习页/生词本入口直接进来不排除，永远从最前开始）。
+     🔴 游标带 key（= 会话续接用的 sKey：词源 + 分组 + 顺序 + 组大小）：
+       换了分组 / 筛选 / 顺序就作废 —— 否则在「待攻克错词」里翻过的批会被带到
+       「我的收藏」里，凭空少掉一批词（sunfleeting 2026-11-16 反馈待攻克错词翻不动时一并收紧）。
+     · 以前只在 status=learned（自由复习已学的词）生效，待攻克错词 / 收藏 / 最近学过
+       练完都只有「再来一轮」⇒ 永远练同一批前 N 个，剩下的词碰不到。现在全分组都翻页。
      模块级生命周期与会话续接快照一致（真刷新后从头开始，行为可预期）。 */
   var freeSkip = null;
 
@@ -173,8 +178,8 @@
       if (resumed) return true;                                 // 会话续接不打断
       if (cfg.src !== '' || cfg.status !== 'all') return true;  // 只管学新词（词书/词典默认筛选）
       if (!session.some(isNew)) return true;                    // 这组全是旧词，无所谓
-      /* 🔴 排除「今天刚答对」的词：2026-11-04 起复习间隔第一档是「今天」，
-         刚答对的词当天会再被抽到一次 —— 如果拿 dueList().length 当提醒条件，
+      /* 🔴 排除「今天刚答对」的词（兜底）：答对一次现在已经排到明天，
+         但存量记录 / 补练过的词仍可能今天到期。如果拿 dueList().length 直接当提醒条件，
          用户刚练完就又被弹「先复习再学新词」，纯属打扰。
          今天刚答错的词（ok=0、ts=今天）仍然要提醒，那正是这条提醒存在的理由。 */
       var tk = TW.store.today();
@@ -247,21 +252,26 @@
       });
       // 生词本「待攻克错词」同样按最近答错排序（随机模式本来就要打乱，跳过）
       if (cfg.status === 'wrong' && cfg.order !== 'random') out = sortByRecentWrong(out);
-      /* 「已学的词」自由复习（sunfleeting 要求）：
-         · 翻页：点过「学习下一组」后 freeSkip 记着本轮已练的词 → 排除，取下一批；
+      /* 生词本翻页（sunfleeting）：
+         · 点过「学习下一组」后 freeSkip 记着本轮已练的词 → 排除，取下一批；
            整池翻完（剩余为空）则清掉游标，从头再来一轮。
-         · 加权：错过的词（w>0）进池两次 = 双倍权重 ⇒ 错误的要多练。 */
-      if (cfg.status === 'learned') {
-        if (freeSkip) {
-          var rest = out.filter(function (w) { return !freeSkip[w.id]; });
+         · 游标 key 与本次会话不一致（换了分组 / 筛选 / 顺序）⇒ 直接作废，别串池。
+         · 加权：自由复习已学的词里，错过的词（w>0）进池两次 = 双倍权重 ⇒ 错误的要多练。 */
+      if (cfg.src === 'collection') {
+        if (freeSkip && freeSkip.key === sKey) {
+          var rest = out.filter(function (w) { return !freeSkip.ids[w.id]; });
           if (rest.length) out = rest;
           else freeSkip = null;                      // 一整轮翻完了，重新开始
+        } else if (freeSkip) {
+          freeSkip = null;                           // 换了词源 / 分组：游标作废
         }
-        var heavy = [];
-        out.forEach(function (w) {
-          if ((TW.store.get(w.id) || {}).w > 0) heavy.push(w);
-        });
-        out = out.concat(heavy);
+        if (cfg.status === 'learned') {
+          var heavy = [];
+          out.forEach(function (w) {
+            if ((TW.store.get(w.id) || {}).w > 0) heavy.push(w);
+          });
+          out = out.concat(heavy);
+        }
       }
       if (cfg.order === 'random') out = TW.shuffle(out);
       /* 复习队列的顺序是「最该复习的先」（到期日早 → 入队早），不要再按最近答错重排，
@@ -705,7 +715,8 @@
             e.preventDefault(); replay();
           }
           else if (e.key === 'w' || e.key === 'W') {
-            var wb = TW.$('[data-act="wrong"]', host);
+            // 生词本 / 复习队列源 → 「继续复习」（reviewq）；词书源 → 「复习错词」（wrong）
+            var wb = TW.$('[data-act="wrong"]', host) || TW.$('[data-act="reviewq"]', host);
             if (wb) { e.preventDefault(); wb.click(); }
           }
           return;
@@ -876,6 +887,15 @@
           var wasMaster = (TW.store.get(w.id) || {}).master;
           st.correct++; TW.store.markRight(w.id);
           logItem(w, true);
+          /* 🔴 待攻克错词本来就在复习体系里：若它还没排期（老数据 / 清过队列 /
+             从没答错过就不会自动入队），这次练对了也要让它进队列 —— 否则练完一轮它既
+             不在队列里、也不会被安排下一次复习，看起来就是「练了也不算复习轮次」
+             （sunfleeting 2026-11-16）。已在队列的词不受影响，照旧按复习规则升档。
+             尊重「设置 · 答错自动加入复习队列」开关：关掉就完全不碰队列。 */
+          if (cfg.status === 'wrong' && TW.store.settings.srsAuto !== false &&
+              !TW.store.srs.get(w.word)) {
+            TW.store.srs.enroll(w.word, w.book, brief);
+          }
           TW.store.srs.onResult(w.word, true, w.book, brief);
           TW.speech.sound.correct();
           if (!wasMaster && (TW.store.get(w.id) || {}).master) {
@@ -963,13 +983,15 @@
         var dueLeft = TW.store.srs.dueCount();
         // 「学习下一组」入口：
         // · 词书练习：这本还有没学的词 → poolSession 会从第一个未学词切起，重复同一 URL 即可
-        // · 自由复习已学的词：池里没有「未学」概念，改用 freeSkip 翻页 ——
-        //   点击时把本轮已练的词记进游标，重 render 后 resolvePool 排除它们取下一批
+        // · 生词本（待攻克错词 / 收藏 / 已掌握 / 最近学过 / 自由复习）：池里没有「未学」概念，
+        //   改用 freeSkip 翻页 —— 点击时把本轮已练的词记进游标，重 render 后
+        //   resolvePool 排除它们取下一批。以前只有 learned 有这个按钮，其余分组练完
+        //   只能「再来一轮」同一批（sunfleeting：待攻克错词练完不会继续下一轮）。
         var remain = 0, hasNext = false, leftN = 0;
         if (cfg.src === '') {
           remain = remainingNewCount();
           hasNext = remain > 0;
-        } else if (cfg.src === 'collection' && cfg.status === 'learned') {
+        } else if (cfg.src === 'collection') {
           var poolIds = {};
           resolvePool(recordsFor(cfg.src)).forEach(function (w) { poolIds[w.id] = 1; });
           var coveredIds = {};
@@ -977,6 +999,7 @@
           leftN = Math.max(0, Object.keys(poolIds).length - Object.keys(coveredIds).length);
           hasNext = leftN > 0;
         }
+        var groupName = TAB_NAME[cfg.status] || '生词本';
         stageEl.innerHTML =
           '<div class="stage">' +
             '<div style="font-size:3rem">🎉</div>' +
@@ -989,11 +1012,20 @@
             '</div>' +
             (cfg.src === 'srs'
               ? '<div class="muted small" style="margin-top:.6rem">复习队列还剩 ' + dueLeft + ' 个到期词</div>'
-              : (hasNext
-                  ? (cfg.src === ''
-                      ? '<div class="muted small" style="margin-top:.6rem">这本词书还有 ' + remain + ' 个词没学</div>'
-                      : '<div class="muted small" style="margin-top:.6rem">已学的词里还有 ' + leftN + ' 个这轮没练到</div>')
-                  : (cfg.src === '' ? '<div class="muted small" style="margin-top:.6rem">这本词书已经全部学完啦 🎉</div>' : ''))) +
+              : '<div class="muted small" style="margin-top:.6rem">' +
+                  (hasNext
+                    ? (cfg.src === ''
+                        ? '这本词书还有 ' + remain + ' 个词没学'
+                        : groupName + '里还有 ' + leftN + ' 个词这轮没练到')
+                    : (cfg.src === ''
+                        ? '这本词书已经全部学完啦 🎉'
+                        : cfg.src === 'collection' ? groupName + '这一组已经全部练完啦 🎉' : '')) +
+                  /* 生词本练习也算复习：把这轮的词推进了复习档位后，队列还剩多少一眼能看到
+                     （以前只有 src=srs 才显示，练完错词完全看不出「算没算进复习轮次」）。 */
+                  (cfg.src === 'collection' && dueLeft
+                    ? '<br>本轮已按复习规则推进档位 · 复习队列今日还剩 <b>' + dueLeft + '</b> 个到期词'
+                    : '') +
+                '</div>') +
             '<div class="practice-actions">' +
               (hasNext
                 ? '<button class="btn primary" id="p-next-group" data-act="nextgroup">' + TW.icon('arrowRight', 16) +
@@ -1002,8 +1034,8 @@
               '<button class="btn' + (hasNext ? '' : ' primary') + '" data-act="again">' +
                 TW.icon('refresh', 16) + ' 再来一轮 <kbd>R</kbd>' + (hasNext ? '' : ' / <kbd>Enter</kbd>') + '</button>' +
               (REC
-                ? (cfg.src === 'srs' && dueLeft
-                    ? '<button class="btn" data-act="wrong">' + TW.icon('refresh', 16) + ' 继续复习（' + dueLeft + '） <kbd>W</kbd></button>'
+                ? (dueLeft
+                    ? '<button class="btn" data-act="reviewq">' + TW.icon('refresh', 16) + ' 继续复习（' + dueLeft + '） <kbd>W</kbd></button>'
                     : '')
                 : '<button class="btn" data-act="wrong">' + TW.icon('x', 16) + ' 复习错词 <kbd>W</kbd></button>') +
               '<button class="btn ghost" data-act="books">' +
@@ -1018,15 +1050,22 @@
           // freeSkip 游标，resolvePool 排除它们 → 取下一批（整池翻完自动清空重开）
           if (b.dataset.act === 'nextgroup') b.onclick = function () {
             if (cfg.src === 'collection') {
-              freeSkip = {};
-              session.forEach(function (w) { freeSkip[w.id] = 1; });
+              /* 游标要**累加**（不是覆盖）：否则翻到第 3 批时第 1 批的词又会被抽回来
+                 （它们按「最近答错」排序本来就靠前，一轮轮下来永远在头几个里打转）。 */
+              var ids = (freeSkip && freeSkip.key === sKey) ? freeSkip.ids : {};
+              session.forEach(function (w) { ids[w.id] = 1; });
+              freeSkip = { key: sKey, ids: ids };
             }
             TW.app.go('/practice?' + srcQuery() + '&mode=' + cfg.mode + '&order=' + cfg.order +
               '&size=' + cfg.size);
           };
           if (b.dataset.act === 'wrong') b.onclick = function () {
             TW.app.go(cfg.src === 'srs' ? '/practice?src=srs&mode=' + cfg.mode
-              : '/practice?' + srcQuery() + '&mode=' + cfg.mode + '&status=wrong');
+              : '/practice?' + srcQuery() + '&mode=' + cfg.mode + '&status=wrong&size=' + cfg.size);
+          };
+          /* 继续复习：回到复习队列（src=srs），练今天剩下的到期词 —— 生词本练完也能接着往下走 */
+          if (b.dataset.act === 'reviewq') b.onclick = function () {
+            TW.app.go('/practice?src=srs&mode=' + cfg.mode + '&order=' + cfg.order);
           };
           if (b.dataset.act === 'books') b.onclick = function () { TW.app.go(backTo()); };
         });

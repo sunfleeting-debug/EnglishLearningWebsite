@@ -689,6 +689,82 @@ def main():
             press("Enter")
             check("继续后正常到第 2 个词", stage_word(pg), k_words[1])
 
+            # ================= L) 待攻克错词：翻页 + 算进复习轮次 =================
+            log("\n--- L) 生词本「待攻克错词」：练完能继续下一组，练对也真进复习轮次 ---")
+            goto("#/")
+            setup(pg)
+            # 🔴 resetAll() 刻意保留复习队列（清进度不该清排期）⇒ 这一节要自己再清一次
+            pg.evaluate("() => TW.store.srs.reset()")
+            # 45 个错词，且**故意不进复习队列**（模拟清过队列 / 关过自动入队时攒下的错词）
+            l_words = pg.evaluate("""(b) => {
+              const ws = TW.data.byBook(b).slice(0, 45);
+              ws.forEach(w => TW.store.markWrong(w.id));
+              return ws.map(w => w.word);
+            }""", BOOK)
+            check("错词池 45 个", len(l_words), 45)
+            check("这 45 个词都还没排进复习队列", pg.evaluate("() => TW.store.srs.stats().total"), 0)
+
+            goto_fresh("#/practice?src=collection&status=wrong&mode=flash&size=20")
+            g1 = []
+            for _ in range(20):
+                g1.append(flash_word(pg))
+                press("Enter")      # 翻面
+                press("Enter")      # 认识
+                press("Enter")      # 反馈继续
+            check("第 1 组完成页出现「学习下一组」（以前错词组只有「再来一轮」）",
+                  act_count(pg, "nextgroup"), 1)
+            check("完成页写明还剩多少词这轮没练到",
+                  "待攻克错词里还有" in finish_text(pg), True, extra=finish_text(pg)[:120])
+            check("今日到期清零后不给「继续复习」（没有可复习的，别给假入口）",
+                  act_count(pg, "reviewq"), 0)
+            check("练过的 20 个词已进复习队列",
+                  pg.evaluate("() => TW.store.srs.stats().total"), 20)
+            check("练对一次就排到明天：今日到期清零（不再原地踏步）",
+                  pg.evaluate("() => TW.store.srs.dueCount()"), 0)
+            check("队列里的词档位 = 第 1 档起、答对一次升到 b=1",
+                  pg.evaluate("""() => {
+                    const k = Object.keys(TW.store.state.srs)[0];
+                    return k ? TW.store.state.srs[k].b : -1;
+                  }"""), 1)
+
+            pg.locator("[data-act='nextgroup']").click()
+            pg.wait_for_timeout(900)
+            check("下一组从第 21 个错词开始（不重练前 20 个）",
+                  flash_word(pg) in l_words and flash_word(pg) not in g1, True,
+                  extra=flash_word(pg))
+            g2 = []
+            for _ in range(20):
+                g2.append(flash_word(pg))
+                press("Enter"); press("Enter"); press("Enter")
+            check("第 2 组与第 1 组零重叠", len(set(g1) & set(g2)), 0)
+            check("第 2 组完成页还有「学习下一组」", act_count(pg, "nextgroup"), 1)
+
+            pg.locator("[data-act='nextgroup']").click()
+            pg.wait_for_timeout(900)
+            g3 = []
+            for _ in range(5):
+                g3.append(flash_word(pg))
+                press("Enter"); press("Enter"); press("Enter")
+            check("第 3 批只剩 5 个词", len(g3), 5)
+            check("第 3 批与前两批零重叠（游标是累加的，不会又抓回第 1 批）",
+                  len(set(g1 + g2) & set(g3)), 0)
+            check("整池翻完后不再给「学习下一组」", act_count(pg, "nextgroup"), 0)
+            check("整池翻完后文案收口", "已经全部练完" in finish_text(pg), True,
+                  extra=finish_text(pg)[:120])
+            check("45 个错词全都在复习队列里了",
+                  pg.evaluate("() => TW.store.srs.stats().total"), 45)
+
+            # 有到期词时完成页才给「继续复习」—— 造一个今天到期的词验一下
+            pg.evaluate("""(b) => {
+              const w = TW.data.byBook(b)[100];
+              TW.store.srs.enroll(w.word, w.book || '', TW.data.brief(w));
+            }""", BOOK)
+            check("手动入队后今日有 1 个到期词",
+                  pg.evaluate("() => TW.store.srs.dueCount()"), 1)
+            goto_fresh("#/practice?src=collection&status=wrong&mode=flash&size=1")
+            press("Enter"); press("Enter"); press("Enter")
+            check("有到期词时完成页出现「继续复习」", act_count(pg, "reviewq"), 1)
+
             # ================= E) 控制台 =================
             log("\n--- E) 控制台 ---")
             real = [e for e in errors]

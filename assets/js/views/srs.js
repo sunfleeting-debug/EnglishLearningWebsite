@@ -1,5 +1,5 @@
 /* 复习页：艾宾浩斯遗忘曲线队列
-   答错的词自动进入队列；答对升档（今天/1/2/3/4/6/7/10 天，8 档封顶），
+   答错的词自动进入队列；答对升档（1/2/3/4/6/7/10 天，7 档满），
    答错归零档、当天再练一次（当天再错就顺延到明天）。 */
 (function () {
   'use strict';
@@ -15,11 +15,16 @@
     { id: 'flash', name: '翻卡记忆' }
   ];
 
-  /** 间隔文案：第一档是 0 天，直接叫「今天」，别显示成「今天 + 0 天」 */
+  /** 间隔文案：1 / 2 / 3 / 4 / 6 / 7 / 10 天（第一档就是「明天再来」） */
   function spanText() {
     return TW.store.srs.INTERVALS.map(function (d) {
-      return d === 0 ? '今天' : d + ' 天';
+      return d === 1 ? '1 天' : d + ' 天';
     }).join(' / ');
+  }
+
+  /** 档位文案：b = 已答对次数（0 = 第 1 档），满档封顶，别显示成「第 8 档」 */
+  function levelText(b) {
+    return Math.min((b || 0) + 1, TW.store.srs.INTERVALS.length);
   }
 
   function dueText(d) {
@@ -98,7 +103,7 @@
           '<span class="sr-brief">' + TW.esc(r.m || '') + '</span>' +
         '</div>' +
         '<div class="sr-side">' +
-          '<span class="tag srs">第 ' + (r.b + 1) + ' 档</span>' +
+          '<span class="tag srs">第 ' + levelText(r.b) + ' 档</span>' +
           (late > 0 ? '<span class="tag err">逾期 ' + late + ' 天</span>' : '<span class="tag">今天</span>') +
           '<button class="star-btn" data-remove="' + TW.esc(r.w) + '" title="移出队列">' + TW.icon('x') + '</button>' +
         '</div>' +
@@ -183,7 +188,7 @@
 
       '<div class="card card-pad muted small" style="margin-top:1rem">' +
         '<b>复习规则</b>：练习中答错的词自动进入队列。答对一次升一档，下次复习时间 = 今天 + ' +
-        '<b>' + spanText() + '</b>（第一档是当天再巩固一次，之后 1/2/3/4/6/7/10 天逐档拉长，10 天满档）；答错归零档，<b>当天再练一次</b>' +
+        '<b>' + spanText() + '</b>（答对一次就排到明天，之后 2/3/4/6/7/10 天逐档拉长，10 天满档）；答错归零档，<b>当天再练一次</b>' +
         '（当天第二次还错就顺延到明天，昨天/更早入队的词同样顺延到明天——避免同一个词把每一轮都占满）。' +
         '已掌握的词暂不进入复习，取消掌握后恢复原排期。可在「设置」里关闭自动入队。' +
         (stats.total ? ' <button class="btn sm ghost" id="sr-clear" style="margin-left:.4rem">' + TW.icon('trash', 14) + ' 清空队列</button>' : '') +

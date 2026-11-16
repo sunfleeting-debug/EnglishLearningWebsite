@@ -265,28 +265,32 @@ def main():
             check("当天再错 → 顺延到明天", res["d2"] > res["today"], extra=res["d2"])
             check("顺延后不再出现在今天队列", res["due"] == [], extra=res["due"])
 
-            # 答对则正常升档。🔴 2026-11-04 起间隔是 今天/1/2/3/4/6/7/10 天：
-            # 第 1 档落在「今天」（当天再巩固一次），第 2 档才是 +1 天。
+            # 答对则正常升档。🔴 2026-11-16 起间隔是 1/2/3/4/6/7/10 天：
+            # 第一档就是「明天再来」（原来是 0 天 = 当天再巩固，导致练完一轮到期数不减少、
+            # 下一轮还是同一批人，sunfleeting 反馈「练了不算复习轮次」）。
             res2 = pg.evaluate("""() => {
                 const S = TW.store;
                 S.resetAll();
                 S.srs.enroll('enroll', 'book1', 'v. 登记');
                 S.srs.onResult('enroll', true, 'book1', 'v. 登记');
                 const r1 = JSON.parse(JSON.stringify(S.state.srs['enroll']));
+                const due1 = S.srs.dueList().length;
                 S.srs.onResult('enroll', true, 'book1', 'v. 登记');
                 const r2 = JSON.parse(JSON.stringify(S.state.srs['enroll']));
                 S.srs.onResult('enroll', true, 'book1', 'v. 登记');
                 const r3 = JSON.parse(JSON.stringify(S.state.srs['enroll']));
-                return { b1: r1.b, d1: r1.d, b2: r2.b, d2: r2.d, b3: r3.b, d3: r3.d,
+                return { b1: r1.b, d1: r1.d, b2: r2.b, d2: r2.d, b3: r3.b, d3: r3.d, due1: due1,
                          today: S.today(), iv: S.srs.INTERVALS.slice() };
             }""")
-            check("间隔表 = 今天/1/2/3/4/6/7/10",
-                  res2["iv"] == [0, 1, 2, 3, 4, 6, 7, 10], extra=res2["iv"])
-            check("第 1 次答对 → 第 1 档、今天再来",
-                  res2["b1"] == 1 and res2["d1"] == res2["today"], extra=res2)
-            check("第 2 次答对 → 第 2 档、明天",
-                  res2["b2"] == 2 and res2["d2"] > res2["today"], extra=res2)
-            check("第 3 次答对 → 第 3 档、更远",
+            check("间隔表 = 1/2/3/4/6/7/10",
+                  res2["iv"] == [1, 2, 3, 4, 6, 7, 10], extra=res2["iv"])
+            check("第 1 次答对 → 第 2 档、明天（不再留在今天）",
+                  res2["b1"] == 1 and res2["d1"] > res2["today"], extra=res2)
+            check("答对后立刻从今日到期里退出（练完一轮能真正推进）",
+                  res2["due1"] == 0, extra=res2["due1"])
+            check("第 2 次答对 → 第 3 档、更远",
+                  res2["b2"] == 2 and res2["d2"] > res2["d1"], extra=res2)
+            check("第 3 次答对 → 第 4 档、再远",
                   res2["b3"] == 3 and res2["d3"] > res2["d2"], extra=res2)
 
             # ---------- E. 统计页图表 / 指标 / 交互（2026-11-04 加） ----------
@@ -426,7 +430,9 @@ def main():
                   extra=pg.evaluate("() => location.hash"))
 
             check("无 JS 报错", len(errors) == 0, extra=errors[:3])
-            browser.close()
+            # 🔴 不调 browser.close()：Playwright 的 close() 在本机会偶发
+            # 「Connection closed while reading from the driver」→ 直接抛异常，
+            # 把后面的汇总（失败 N / 共 M 项）整段吞掉，看起来像测试崩了。靠 os._exit 收尾。
     finally:
         for p in procs:
             try:

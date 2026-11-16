@@ -234,7 +234,8 @@
     var srsChip = '';
     if (srs) {
       var dt = TW.store.diffDays(TW.store.today(), srs.d);
-      srsChip = '<span class="tag srs">' + TW.icon('refresh', 12) + ' 复习第 ' + (srs.b + 1) + ' 档 · ' +
+      srsChip = '<span class="tag srs">' + TW.icon('refresh', 12) + ' 复习第 ' +
+        Math.min((srs.b || 0) + 1, TW.store.srs.INTERVALS.length) + ' 档 · ' +
         (dt <= 0 ? '今天到期' : dt + ' 天后') + '</span>';
     }
 
