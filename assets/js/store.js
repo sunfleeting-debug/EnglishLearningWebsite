@@ -175,8 +175,17 @@
     touchDaily(today());
     r.streak = (r.streak || 0) + 1;
     var autoM = false;
-    if (state.settings.autoMaster !== false && r.streak >= AUTO_MASTER_STREAK && !r.master) {
-      r.master = true; r.autoM = 1; autoM = true;   // autoM 仅作展示标记（是否云同步无所谓）
+    if (state.settings.autoMaster !== false && !r.master) {
+      /* 两条判据都算「学到位了」：
+         ① 连对 5 次（sunfleeting 的要求）；
+         ② **复习档位已经满档**（1/2/3/4/6/7/10 天走完）。满档还挂着「未掌握」本身矛盾 ——
+            复习页显示「第 7 档」却仍被反复抽进复习，正是 2026-11-17 的投诉。
+         注意 srs 记录按词面存、master 按词条 id 存，所以要拿 r.word 去查。 */
+      var srsRec = r.word ? state.srs[srsKey(r.word)] : null;
+      var full = !!(srsRec && (srsRec.b || 0) >= INTERVALS.length);
+      if (r.streak >= AUTO_MASTER_STREAK || full) {
+        r.master = true; r.autoM = 1; autoM = true;   // autoM 仅作展示标记（是否云同步无所谓）
+      }
     }
     save(); emit('progress');
     return autoM;   // 调用方（练习判分/详情页）据此弹「已自动掌握」提示
@@ -536,11 +545,18 @@
        worker 升级后响应自带 note/noteTs，这里自然不再触发。 */
     Object.keys(remote.progress || {}).forEach(function (k) {
       var inc = remote.progress[k];
-      if (inc && inc.noteTs === undefined && state.progress[k] &&
-          state.progress[k].noteTs !== undefined) {
-        inc.note = state.progress[k].note || '';
-        inc.noteTs = state.progress[k].noteTs || 0;
+      if (!inc) return;
+      var loc = state.progress[k];
+      if (!loc) return;
+      if (inc.noteTs === undefined && loc.noteTs !== undefined) {
+        inc.note = loc.note || '';
+        inc.noteTs = loc.noteTs || 0;
       }
+      /* 连对次数兜底（升级窗口期：后端还没返回 streak 时，别把本地连对清零）。
+         🔴 这条字段以前压根不在协议里，而下面 mergeMap 是「整条替换」⇒ 每次同步都把
+         本地 streak 抹掉，连对永远数不到 5、永远不自动掌握（2026-11-17 实测 r=31 仍 master=0）。
+         现在 streak 进了协议（worker/mock 都返回），这里只防旧后端。 */
+      if (inc.streak === undefined && loc.streak !== undefined) inc.streak = loc.streak;
     });
     state.progress = mergeMap(state.progress, remote.progress, isActiveProgress);
     state.daily = mergeMap(state.daily, remote.daily, function (day) { return !!active.daily[day]; });

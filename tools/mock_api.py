@@ -46,7 +46,8 @@ class DB:
         self.conn.executescript(SCHEMA.read_text(encoding="utf-8"))
         # 旧库文件升级：补 note/note_ts 列（列已存在会报错，忽略）
         for alt in ("ALTER TABLE progress ADD COLUMN note TEXT",
-                    "ALTER TABLE progress ADD COLUMN note_ts INTEGER"):
+                    "ALTER TABLE progress ADD COLUMN note_ts INTEGER",
+                    "ALTER TABLE progress ADD COLUMN streak INTEGER NOT NULL DEFAULT 0"):
             try:
                 self.conn.execute(alt)
             except sqlite3.OperationalError:
@@ -109,6 +110,8 @@ def merge_progress(a, b):
         # 笔记取 note_ts 较新的一方（与 worker/index.js mergeProgress 保持一致）
         "note": (a.get("note") or "") if note_from_a else (b.get("note") or ""),
         "noteTs": max(a.get("noteTs") or 0, b.get("noteTs") or 0),
+        # 连对次数：跟「最后改这条记录的那台设备」走（答错要能归零，不能取 max）
+        "streak": newer.get("streak") or 0,
     }
 
 
@@ -160,7 +163,8 @@ class App:
                                       "fav": bool(r["fav"]), "master": bool(r["master"]),
                                       "ts": r["ts"], "word": r["word"] or "",
                                       "src": r["src"] or "", "brief": r["brief"] or "",
-                                      "note": r["note"] or "", "noteTs": r["note_ts"] or 0}
+                                      "note": r["note"] or "", "noteTs": r["note_ts"] or 0,
+                                      "streak": r["streak"] or 0}
         for r in self.db.q("SELECT * FROM daily WHERE user_id=?", (uid,)):
             daily[r["day"]] = {"done": r["done"], "right": r["right"]}
         for r in self.db.q("SELECT * FROM srs WHERE user_id=?", (uid,)):
@@ -193,13 +197,13 @@ class App:
                                         "note": cur["note"] or "", "noteTs": cur["note_ts"] or 0}
             m = merge_progress(rec, cur)
             self.db.run(
-                "INSERT INTO progress (user_id,word_id,w,r,seen,fav,master,ts,word,src,brief,note,note_ts) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,word_id) DO UPDATE SET "
+                "INSERT INTO progress (user_id,word_id,w,r,seen,fav,master,ts,word,src,brief,note,note_ts,streak) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,word_id) DO UPDATE SET "
                 "w=excluded.w, r=excluded.r, seen=excluded.seen, fav=excluded.fav, master=excluded.master, "
                 "ts=excluded.ts, word=excluded.word, src=excluded.src, brief=excluded.brief, "
-                "note=excluded.note, note_ts=excluded.note_ts",
+                "note=excluded.note, note_ts=excluded.note_ts, streak=excluded.streak",
                 (uid, wid, m["w"], m["r"], m["seen"], 1 if m["fav"] else 0, 1 if m["master"] else 0,
-                 m["ts"], m["word"], m["src"], m["brief"], m["note"], m["noteTs"]))
+                 m["ts"], m["word"], m["src"], m["brief"], m["note"], m["noteTs"], m["streak"]))
 
         for day, rec in (body.get("daily") or {}).items():
             cur = self.db.one("SELECT * FROM daily WHERE user_id=? AND day=?", (uid, day))

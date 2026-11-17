@@ -220,7 +220,9 @@ function mergeProgress(a, b) {
     src: newer.src || older.src || '',
     brief: newer.brief || older.brief || '',
     note: (noteFromA ? (a.note || '') : (b.note || '')),
-    noteTs: Math.max(a.noteTs || 0, b.noteTs || 0)
+    noteTs: Math.max(a.noteTs || 0, b.noteTs || 0),
+    /* 连对次数跟着「最后改这条记录的那台设备」走：答错会归零，取 max 会让归零失效 */
+    streak: (newer.streak || 0)
   };
 }
 
@@ -247,6 +249,10 @@ async function readAll(env, userId) {
   (p.results || []).forEach(function (r) {
     progress[r.word_id] = {
       w: r.w, r: r.r, seen: r.seen, fav: !!r.fav, master: !!r.master, ts: r.ts,
+      /* 连对次数：自动掌握（连对 5 次）靠它。以前它是「纯本地字段、不进协议」，
+         结果每次同步都用云端记录整条覆盖本地 ⇒ 永远数不到 5（2026-11-17 实测：
+         r=31、master=0）。现在按 ts 取新者，跨设备也能累计。 */
+      streak: r.streak || 0,
       word: r.word || '', src: r.src || '', brief: r.brief || '',
       note: r.note || '', noteTs: r.note_ts || 0
     };
@@ -300,6 +306,10 @@ async function applySync(env, userId, body) {
     (cur.results || []).forEach(function (r) {
       merged[r.word_id] = {
         w: r.w, r: r.r, seen: r.seen, fav: !!r.fav, master: !!r.master, ts: r.ts,
+      /* 连对次数：自动掌握（连对 5 次）靠它。以前它是「纯本地字段、不进协议」，
+         结果每次同步都用云端记录整条覆盖本地 ⇒ 永远数不到 5（2026-11-17 实测：
+         r=31、master=0）。现在按 ts 取新者，跨设备也能累计。 */
+      streak: r.streak || 0,
         word: r.word || '', src: r.src || '', brief: r.brief || '',
         note: r.note || '', noteTs: r.note_ts || 0
       };
@@ -315,14 +325,15 @@ async function applySync(env, userId, body) {
     await env.DB.batch(part.map(function (row) {
       const r = row.rec;
       return env.DB.prepare(
-        'INSERT INTO progress (user_id,word_id,w,r,seen,fav,master,ts,word,src,brief,note,note_ts) ' +
-        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ' +
+        'INSERT INTO progress (user_id,word_id,w,r,seen,fav,master,ts,word,src,brief,note,note_ts,streak) ' +
+        'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ' +
         'ON CONFLICT(user_id,word_id) DO UPDATE SET ' +
         'w=excluded.w, r=excluded.r, seen=excluded.seen, fav=excluded.fav, master=excluded.master, ' +
         'ts=excluded.ts, word=excluded.word, src=excluded.src, brief=excluded.brief, ' +
-        'note=excluded.note, note_ts=excluded.note_ts')
+        'note=excluded.note, note_ts=excluded.note_ts, streak=excluded.streak')
         .bind(userId, row.id, r.w || 0, r.r || 0, r.seen || 0, r.fav ? 1 : 0, r.master ? 1 : 0,
-              r.ts || 0, r.word || '', r.src || '', r.brief || '', r.note || '', r.noteTs || 0);
+              r.ts || 0, r.word || '', r.src || '', r.brief || '', r.note || '', r.noteTs || 0,
+              r.streak || 0);
     }));
   }
 

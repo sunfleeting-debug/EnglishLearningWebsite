@@ -120,8 +120,11 @@
       '<button data-order="random" class="' + (order === 'random' ? 'active' : '') + '" ' +
         'title="每轮重新打乱，避免按固定次序死记">乱序</button>';
 
-    /* 自由复习：已学过的词（练过就算），错过的词双倍权重多练（sunfleeting 要求） */
-    var learnedN = TW.data.progressItems('learned').length;
+    /* 自由复习：已学过的词（练过就算），错过的词双倍权重多练（sunfleeting 要求）。
+       已掌握的排除在外 —— 掌握了的词不该再占复习额度，否则它会一直出现在每轮开头。 */
+    var learnedN = TW.data.progressItems('learned').filter(function (it) {
+      return !((TW.store.get(it.id) || {}).master);
+    }).length;
     var wrongN = 0;
     Object.keys(TW.store.state.progress).forEach(function (id) {
       var r = TW.store.state.progress[id];

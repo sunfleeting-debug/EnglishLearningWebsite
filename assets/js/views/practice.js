@@ -226,6 +226,16 @@
       var tab = (cfg.status === 'all' || cfg.status === 'new') ? 'wrong'
               : (cfg.status === 'learned' || cfg.status === 'recent') ? 'touched' : cfg.status;
       var items = TW.data.progressItems(tab);
+      if (cfg.status === 'learned') {
+        /* 🔴 「复习已学的词」以前把已掌握的词也一起抽，而且用 progress 的插入顺序
+           ⇒ 每轮都从池子最前面那几个开始（sunfleeting：glamour / installment 永远排最前，
+           练了十几次还是它们）。现在：已掌握的不再进来，顺序改成「最久没练的先」。 */
+        items = items.filter(function (it) {
+          return !((TW.store.get(it.id) || {}).master);
+        }).sort(function (a, b) {
+          return ((TW.store.get(a.id) || {}).ts || 0) - ((TW.store.get(b.id) || {}).ts || 0);
+        });
+      }
       if (cfg.status === 'recent') {
         var cut = Date.now() - TW.store.rangeMs(cfg.range);
         items = items.filter(function (it) {

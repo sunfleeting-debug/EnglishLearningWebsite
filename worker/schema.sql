@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS progress (
   word    TEXT,                       -- 词面快照（词典懒加载，列表要靠它显示）
   src     TEXT,
   brief   TEXT,
+  streak  INTEGER NOT NULL DEFAULT 0, -- 连对次数（连对 5 次自动「已掌握」；答错归零）
   note    TEXT,                       -- 学习笔记（详解页随记）
   note_ts INTEGER,                    -- 笔记最后修改时间（毫秒）
   PRIMARY KEY (user_id, word_id)
@@ -68,6 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_progress_user ON progress(user_id);
 -- 旧库升级（已建过表的 D1 实例执行一次；列已存在会报错，忽略即可）：
 --   ALTER TABLE progress ADD COLUMN note TEXT;
 --   ALTER TABLE progress ADD COLUMN note_ts INTEGER;
+--   ALTER TABLE progress ADD COLUMN streak INTEGER NOT NULL DEFAULT 0;
 
 -- 每日练习量（首页/统计页的柱状图） ------------------------------------------
 CREATE TABLE IF NOT EXISTS daily (
